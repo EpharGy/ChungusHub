@@ -1,0 +1,26 @@
+{
+	// The Bun server's own type-check. It is deliberately NOT the root tsconfig: that one
+	// extends SvelteKit's generated config, whose `include` covers src/ only. Without this
+	// one nothing under server/ is checked at all, and every "mirrors the client type"
+	// comment in there is worth exactly nothing. `bun run check` runs both.
+	//
+	// shared/ is picked up through the server's imports; it is listed so a shared module with
+	// no server consumer yet is still checked.
+	"compilerOptions": {
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"target": "esnext",
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"types": ["bun"],
+		"lib": ["esnext"]
+	},
+	"include": ["server/**/*.ts", "shared/**/*.ts"],
+	// Tests lean on `any` for the dynamically imported db handle, the same reason the root
+	// config skips src tests. `bun test` is what keeps them honest.
+	"exclude": ["server/**/*.test.ts"]
+}

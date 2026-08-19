@@ -1,0 +1,2067 @@
+@import 'tailwindcss';
+
+/* Registered so the conic-gradient "tracing border" highlights (import field/frame
+   flashes) can animate their sweep angle smoothly instead of snapping. */
+@property --flash-angle {
+	syntax: '<angle>';
+	initial-value: 0deg;
+	inherits: false;
+}
+
+@theme {
+	--color-bg-primary: var(--theme-bg-primary);
+	--color-bg-secondary: var(--theme-bg-secondary);
+	--color-bg-tertiary: var(--theme-bg-tertiary);
+	--color-bg-elevated: var(--theme-bg-elevated);
+	--color-bg-solid: var(--theme-bg-solid);
+	--color-sidebar-bg: var(--theme-sidebar-bg);
+	--color-input-bg: var(--theme-input-bg);
+	--color-card-bg: var(--theme-card-bg);
+	--color-overlay: var(--theme-overlay);
+
+	--color-text-primary: var(--theme-text-primary);
+	--color-text-secondary: var(--theme-text-secondary);
+	--color-text-muted: var(--theme-text-muted);
+
+	--color-accent: var(--theme-accent);
+	--color-accent-hover: var(--theme-accent-hover);
+	--color-accent-muted: var(--theme-accent-muted);
+	--color-on-accent: var(--theme-on-accent);
+
+	--color-user-bubble: var(--theme-user-bubble);
+	--color-assistant-bubble: var(--theme-assistant-bubble);
+
+	--color-border: var(--theme-border);
+	--color-border-subtle: var(--theme-border-subtle);
+	--color-border-raised: var(--theme-border-raised);
+
+	--color-error: var(--theme-error);
+	--color-on-error: var(--theme-on-error);
+	--color-success: var(--theme-success);
+	--color-on-success: var(--theme-on-success);
+	--color-warning: var(--theme-warning);
+
+	--font-body: var(--theme-font-body);
+	--font-ui: var(--theme-font-ui);
+	--font-mono: var(--theme-font-mono);
+
+	--spacing-content-max: var(--theme-content-max, 80rem);
+	--spacing-sidebar: var(--theme-sidebar-width, 304px);
+
+	--shadow-sm: var(--theme-shadow-sm);
+	--shadow-md: var(--theme-shadow-md);
+	--shadow-lg: var(--theme-shadow-lg);
+	--shadow-glow: var(--theme-shadow-glow);
+
+	--backdrop-blur: var(--theme-backdrop-blur);
+	--glass-border: var(--theme-glass-border);
+	--color-float-bg: var(--theme-float-bg);
+
+	--radius-sm: var(--theme-radius-sm, 0.5rem);
+	--radius-md: var(--theme-radius-md, 0.8rem);
+	--radius-lg: var(--theme-radius-lg, 1.1rem);
+	--radius-xl: var(--theme-radius-xl, 1.45rem);
+	--radius-full: var(--theme-radius-full, 9999px);
+}
+
+/* First-paint fallback: Graphite × Indigo with default knobs. The runtime
+   source of truth is src/lib/themes/presets.ts. The theme store injects every
+   `--theme-*`/`--user-*` value inline on <html> as soon as it boots. Change the
+   defaults there and mirror them here. */
+:root {
+	--theme-bg-primary: #131417;
+	--theme-bg-secondary: color-mix(in srgb, #1a1c20 70%, transparent);
+	--theme-bg-tertiary: color-mix(in srgb, #24262c 72%, transparent);
+	--theme-bg-elevated: color-mix(in srgb, #1e2025 75%, transparent);
+	--theme-bg-solid: #1e2025;
+
+	--theme-text-primary: #edeef1;
+	--theme-text-secondary: #adb0b8;
+	--theme-text-muted: #80838c;
+
+	--theme-accent: #8e9bd8;
+	--theme-accent-hover: color-mix(in oklab, #8e9bd8 82%, white);
+	--theme-accent-muted: color-mix(in srgb, #8e9bd8 23%, transparent);
+	--theme-on-accent: color-mix(in srgb, #8e9bd8 20%, #16100d);
+
+	--theme-user-bubble: color-mix(in srgb, #272a31 88%, transparent);
+	--theme-assistant-bubble: color-mix(in srgb, #1f2126 88%, transparent);
+
+	--theme-border: #35383f;
+	--theme-border-subtle: #2a2d33;
+	--theme-border-raised: #515459;
+
+	--theme-error: #ef7f7f;
+	--theme-on-error: color-mix(in srgb, #ef7f7f 18%, #16100d);
+	--theme-success: #72cb9b;
+	--theme-on-success: color-mix(in srgb, #72cb9b 18%, #16100d);
+	--theme-warning: #e6bb6a;
+
+	--theme-sidebar-bg: color-mix(in srgb, #131417 86%, black 14%);
+	--theme-input-bg: color-mix(in srgb, #1e2025 58%, transparent);
+	--theme-card-bg: color-mix(in srgb, #1f2126 62%, transparent);
+	--theme-overlay: rgb(0 0 0 / 66%);
+
+	--theme-shadow-sm: 0 2px 12px rgb(0 0 0 / 24%);
+	--theme-shadow-md: 0 18px 40px rgb(0 0 0 / 36%);
+	--theme-shadow-lg: 0 30px 78px rgb(0 0 0 / 50%);
+	--theme-shadow-glow: 0 0 44px rgb(142 155 216 / 25%);
+
+	--theme-backdrop-blur: blur(16px);
+	--theme-glass-border: rgb(53 56 63 / 76%);
+	--theme-panel-bg: color-mix(in srgb, #131417 58%, transparent);
+	--theme-float-bg: color-mix(in srgb, #1e2025 80%, transparent);
+
+	/* The reading column's scrim: the palette's own surface tone, with its strength
+	   kept as a separate number because the shell applies it as `opacity`, which is
+	   what makes the tint's dither fade with the tint. (The background image's dim
+	   is not a theme value. It is plain black, in Workspace.) */
+	--theme-column-shade: #1a1c20;
+	--theme-column-shade-opacity: 0;
+
+	--theme-font-body: 'Newsreader', 'Iowan Old Style', Georgia, serif;
+	--theme-font-ui: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+	--theme-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+	/* User appearance knobs (see AppearanceState). */
+	--user-font-scale: 1;
+	--user-line-height: 1.72;
+	--user-paragraph-spacing: 1.05em;
+	--user-chat-width: 1;
+	--user-bubble-width: 1;
+
+	/* Message card shape + chrome (Settings → Chat). */
+	--msg-radius: 1.59rem;
+	--msg-radius-notch: 0.58rem;
+	--msg-radius-card: 1.1rem;
+	--msg-pad-x: 0.98rem;
+	--msg-pad-top: 0.72rem;
+	--msg-pad-bottom: 0.95rem;
+	--msg-border-width: 1px;
+	--msg-border-color: rgb(42 45 51 / 88%);
+	--msg-shadow: 0 2px 12px rgb(0 0 0 / 24%);
+	--msg-row-gap: clamp(0.45rem, 0.36rem + 0.42vw, 0.75rem);
+	--msg-archived-opacity: 0.6;
+	--msg-actions-idle-opacity: 0;
+	--msg-actions-idle-events: none;
+	--msg-action-label: inline;
+	--msg-action-pad: 0 0.5rem;
+	--msg-action-gap: 0.3rem;
+	--msg-pager-idle-opacity: 1;
+	--msg-pager-idle-events: auto;
+
+	--avatar-ratio: 2 / 3;
+	--avatar-radius: calc(var(--radius-xl) - 0.12rem);
+	--avatar-radius-sm: var(--radius-lg);
+	--avatar-scale: 1;
+
+	/* Story prose accents. Only the colours and the halo are vars; each accent's
+	   face rides a `data-*-face` attribute on <html> (see the .prose block). */
+	--prose-quote-color: color-mix(in srgb, #d08961 80%, #edeef1 20%);
+	--prose-em-color: #adb0b8;
+	--prose-strong-color: #edeef1;
+	--prose-shadow: none;
+}
+
+/* Registered so the feathers interpolate: a docking panel transitions its side's
+   feather to zero (Workspace), and the ramp retracts into the column edge in step
+   with the panel flying in instead of snapping. */
+@property --chat-feather-left {
+	syntax: '<length>';
+	inherits: true;
+	initial-value: 0px;
+}
+
+@property --chat-feather-right {
+	syntax: '<length>';
+	inherits: true;
+	initial-value: 0px;
+}
+
+@layer base {
+	:root {
+		color-scheme: dark;
+		/* The transcript's own measure: the width past which a line stops being
+		   comfortable to read. Every message caps here (MessageList, Message). It is
+		   a MAXIMUM, which is why the column is allowed to sit below it (see the
+		   floor). */
+		--reading-measure: 64rem;
+		/* The two numbers the dock layout is built on. --dock-hold is the width a
+		   dock refuses to go below: once a quarter of the screen would be narrower
+		   than this, the docks stop shrinking and the chat absorbs the rest of the
+		   narrowing instead. The chat can afford it (it is the widest column at
+		   every dock width, and the reading measure above is a ceiling it is nowhere
+		   near down here), whereas a panel squeezed past ~336px starts folding its
+		   own rows. --chat-col-min is where that absorption stops and the docks go
+		   away entirely.
+		   The breakpoint follows: chat floor + two held docks = 76rem. Raise either
+		   constant and the docks vanish sooner; lower either and they survive
+		   further down. Nothing else needs touching. The wall on --dock-hold is
+		   14rem, the ~220px the settings/library pages are container-queried to. */
+		--dock-hold: 21rem;
+		--chat-col-min: 34rem;
+		/* Width cap of the chat column's CONTENT: the transcript rows and the
+		   composer center at this (MessageList's .message-list-content, InputArea's
+		   .input-inner), generously wider than the reading measure so the cards, the
+		   portrait rail and the composer keep some presence around the text. The
+		   chat-width knob multiplies it. It is a content measure in the same family
+		   as --settings-measure, and it must never drive the docks' glue math: the
+		   docks are defined as everything from the column's edge to the screen edge,
+		   so a column capped by a content measure hands every pixel past the cap to
+		   the docks, which on a wide screen inverts the layout into a narrow story
+		   strip between two panels wider than the column they frame. */
+		--chat-content-max: calc(78rem * var(--user-chat-width, 1));
+		/* The dock regime's column, at EVERY window width: the value --chat-col-max
+		   takes inside the 76rem branch below, spelled once here so the branch and
+		   the TitleBar's nav-label probe read the same equation (the full reasoning
+		   for its shape sits on the branch). Outside the branch nothing on screen is
+		   this wide, but it is still the tightest column the current window can be
+		   asked to hold, which is exactly what the nav-label rule keys on
+		   (TitleBar.svelte): unlike the bar's rendered width it moves only in the
+		   window's own direction, so the labels flip once per resize direction
+		   instead of reversing at the dock breakpoint. */
+		--chat-col-docked: min(
+			calc(
+				max(var(--chat-col-min), min(50vw, 100vw - 2 * var(--dock-hold))) *
+					var(--user-chat-width, 1)
+			),
+			calc(100vw - 28rem)
+		);
+		/* Width of the centered chat COLUMN, shared by the chat shell, the chat-area
+		   overlays, the title bar and the side docks' glue math (Workspace). With no
+		   docks to feed, the column hugs the content cap above, and the shell's own
+		   width:100% takes over below that. See the dock branch below for the share
+		   it becomes once the docks are in play. */
+		--chat-col-max: var(--chat-content-max);
+		/* The bay: the empty margin beside the chat column, where the two bottom-left
+		   pictures stand (SpriteLayer, PortraitViewer). Derived from the column's own
+		   width rather than tuned per screen, so it follows the chat-width knob and
+		   holds at any resolution. Floored, because a window narrower than the column
+		   has no margin at all and the pictures have to overlap the story there, which
+		   is what the sprite layer's transparency and inertness are for; and held under
+		   70vw so that floor cannot swallow a phone. */
+		--picture-bay: min(70vw, max(18rem, (100vw - var(--chat-col-max)) / 2));
+		/* How tall a picture in that bay stands. A share of the window rather than a
+		   pixel size, so a character has the same presence on a laptop and on a 4K
+		   screen. **Height is what is fixed and width is what follows**: the picture
+		   is drawn as large as fits inside bay × this, keeping its aspect, so neither
+		   its resolution nor its shape decides how much room it takes. */
+		--picture-height: 62dvh;
+		/* Width cap of the settings form column: the drill-down panel's content
+		   card and the split view's centered body both stop here, so a page reads
+		   at the same measure in either surface instead of stretching to the full
+		   chat column. Capping the COLUMN is what lets every control in a card run
+		   to the same right edge (see .toggle-row); the ~230px dock is untouched. */
+		--settings-measure: 52rem;
+		/* Feather width of the chat/welcome column's side fade: the eased mask in
+		   ChatContainer.svelte and Workspace.svelte (keep those two gradients
+		   identical). Both shells GROW their tint element by this much on each
+		   side, so the ramp spends itself on empty workspace and the solid tint
+		   lands exactly on the column; sized to the column instead, the ramp would
+		   fade across the portrait rail and the composer's shoulders. A side with a
+		   dock glued to it goes to zero (Workspace): there is no empty workspace
+		   left to melt into, and the panel is translucent, so a ramp pushed under
+		   it would simply show through as a dark band along the column. */
+		--chat-feather-left: 5rem;
+		--chat-feather-right: 5rem;
+		/* Dither for the column tint: the tint-vs-backdrop delta is only a few
+		   8-bit levels, so its alpha ramp quantizes into visible bands no matter
+		   how the gradient is eased. CSS can't dither its own gradients (see
+		   ambient/effects/dither.ts for the canvas equivalent), so a low-alpha
+		   noise tile layered over the tint (and faded by the same mask) adds the
+		   per-pixel jitter that breaks the steps up instead.
+		   Authored for a shade at FULL strength, which is where the ramp bands
+		   worst; the shell's `opacity` scales it down with the tint it serves, so
+		   a weaker shade gets proportionally less grain and a shade at zero gets
+		   none. The ceiling is deliberately low: the tint is the palette's own
+		   surface tone now rather than black, a far smaller delta against the
+		   backdrop, so it bands far less and needs correspondingly less jitter.
+		   Grain you can see is worse than a band you cannot. */
+		--chat-col-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.07' intercept='0'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+	}
+
+	/* ===== The dock branch =====
+	   Two regimes, one expression. While there is room, the screen splits in halves,
+	   chat one half and the two docks the other, so every comfortable width reads
+	   50/25/25 instead of the proportions drifting with the viewport (`50vw`). Once
+	   a quarter of the screen would put a dock under --dock-hold, the docks stop
+	   shrinking and the chat pays for the rest of the narrowing instead
+	   (`100vw - 2 × --dock-hold`); `min()` of the two is exactly "hold the docks,
+	   then squeeze the chat", with the crossover falling out on its own rather than
+	   needing a second breakpoint. That asymmetry is deliberate: the chat is the
+	   widest column at every dock width and its content is nowhere near cramped
+	   down here, while a panel squeezed past ~336px starts folding its own rows.
+	   The one with slack gives it up.
+
+	   76rem is therefore not tuned either: it is `--chat-col-min + 2 × --dock-hold`,
+	   the width at which the squeezing hits the chat's own floor. Below it there
+	   are no docks and the column keeps its generous cap. Must match DOCK_QUERY in
+	   src/lib/stores/viewport.svelte.ts (the two spell the same equation). The
+	   expression itself lives on --chat-col-docked in :root above, defined at every
+	   width because the TitleBar's nav-label probe measures it below the breakpoint
+	   too; this branch only assigns it.
+
+	   The alternative (give each dock a fixed minimum and hand the chat every
+	   leftover pixel at ALL widths) is what this replaced, and it is wrong in a
+	   way that only shows on the screens it matters for: the docks stay pinned at
+	   their minimum until the chat hits its own cap, so a 1464px laptop renders
+	   69/15/15 while a 2560px desktop renders 49/25/25. Same code, opposite
+	   layouts. The share is the invariant while there is room; the dock's width is
+	   the invariant once there is not.
+
+	   The knob multiplies the result, so it genuinely trades chat against dock
+	   (0.75 → the docks get ~31% each; 1.2 → ~20%). The OUTER min() then re-imposes
+	   an absolute dock reserve: a knob that pushed the column past
+	   `100vw - 28rem` would starve the docks the media query already promised, and
+	   keeping that promise true at every knob setting is the only reason a plain
+	   media query is honest here instead of a JS geometry check.
+
+	   The share holds at EVERY width above that: the column deliberately has no
+	   ceiling of its own. The docks are everything from the column's edge to the
+	   screen edge (Workspace glues them at 50% ± --chat-col-max / 2), so a ceiling
+	   here hands every pixel past it to the docks: on a 4K screen that renders the
+	   story as a narrow strip between two panels each wider than the column they
+	   frame, with the panels' own content stopped at its measure and floating in
+	   mostly empty glass. Width caps belong to content, never to the partition:
+	   the transcript and the composer center at --chat-content-max inside the
+	   column, the settings pages at --settings-measure inside their panels, and
+	   the width a column holds past its content's measure stays quiet inside that
+	   column instead of being handed to a neighbour. */
+	@media (min-width: 76rem) {
+		:root {
+			--chat-col-max: var(--chat-col-docked);
+		}
+	}
+
+	html,
+	body {
+		height: 100%;
+	}
+
+	body {
+		margin: 0;
+		font-family: var(--font-body);
+		/* No --user-font-scale here: the Text size knob is chat-only, applied where
+		   the chat prose sets its own font-size (.message-prose, .stream-prose).
+		   Multiplying it into the body font leaked the scale into every element
+		   without an explicit font-size and stretched the whole UI vertically. */
+		font-size: clamp(1rem, 0.94rem + 0.22vw, 1.12rem);
+		line-height: var(--user-line-height, 1.72);
+		color: var(--color-text-primary);
+		/* Solid: the old ultra-low-contrast decorative gradients banded badly on
+		   8-bit displays (visible horizontal lines) for almost no visual gain. */
+		background: var(--color-bg-primary);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+		text-rendering: optimizeLegibility;
+	}
+
+	::selection {
+		background-color: var(--color-accent-muted);
+		color: var(--color-text-primary);
+	}
+
+	button,
+	[role='button'] {
+		user-select: none;
+	}
+
+	/* ONE scrollbar system: the standard properties, everywhere, no engine branch.
+	   The ::-webkit-scrollbar block that used to live here (10px, rounded thumb,
+	   inset, a coarse-pointer slimming) is gone because it had not rendered on
+	   Chrome/Edge since Chromium 121 handed these properties precedence over the
+	   pseudo-elements, and there is no honest way left to serve both: Firefox 153
+	   now answers `selector(::-webkit-scrollbar)` with yes for web-compat while
+	   still refusing to apply its colors, so the @supports guard that would have
+	   split them lies in exactly the direction that breaks Firefox. `thin` also
+	   makes the bar the same width in both engines, which is what .panel-scroll's
+	   reserved gutter is sized against. A per-engine width would reserve a
+	   per-engine amount of the panel. */
+	* {
+		box-sizing: border-box;
+		scrollbar-color: var(--color-border) transparent;
+		scrollbar-width: thin;
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 2px;
+	}
+
+	input,
+	select,
+	textarea,
+	button {
+		font: inherit;
+		color: inherit;
+	}
+
+	/* Kill animation and transitions when the user (app setting) or the OS asks. */
+	[data-motion='reduced'] *,
+	[data-motion='reduced'] *::before,
+	[data-motion='reduced'] *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
+	}
+}
+
+@layer components {
+	/* THE recipe for a panel/dialog body that scrolls. Use it instead of spelling
+	   `overflow-y: auto` on a new surface. The reason is `scrollbar-gutter`, which
+	   reserves the bar's track whether or not the bar is showing. Without it the
+	   content box narrows the instant content crosses the panel height, so opening
+	   one disclosure re-flows the whole body sideways and everything right-aligned
+	   in it jumps. Reserving costs the gutter's width permanently; that is the
+	   trade, and it is the right one on any surface whose content length varies.
+	   Layout (flex/height/padding) and scroll-chaining (`overscroll-behavior`) stay
+	   with the component. This recipe owns the overflow axis and the gutter, and
+	   nothing else. It is deliberately NOT a `*` rule: `scrollbar-gutter` reserves
+	   on `overflow: hidden` boxes too, and the panel shells are full of those.
+	   Costs nothing where the platform paints overlay scrollbars (macOS, mobile).
+	   Those reserve no gutter by definition. */
+	.panel-scroll {
+		overflow-y: auto;
+		scrollbar-gutter: stable;
+	}
+
+	/* One frost recipe for floating surfaces over live content: dialogs,
+	   popovers, toasts, modals, the assistant widget. Interior surfaces painted ON
+	   an already-frosted panel must NOT use this. They only need translucent
+	   backgrounds (the card/input tokens); nested backdrop-filters don't
+	   re-blur reliably. Radius and shadow stay with the component. */
+	.surface-float {
+		background: var(--color-float-bg);
+		backdrop-filter: var(--backdrop-blur) saturate(140%);
+		-webkit-backdrop-filter: var(--backdrop-blur) saturate(140%);
+		border: 1px solid var(--glass-border);
+	}
+
+	.card-elevated {
+		background: var(--color-card-bg);
+		border-radius: var(--radius-xl);
+		border: 1px solid var(--color-border-subtle);
+		box-shadow: var(--shadow-md);
+	}
+
+	.glow-hover {
+		transition: box-shadow 180ms ease, transform 180ms ease;
+	}
+
+	.glow-hover:hover {
+		box-shadow: var(--shadow-glow);
+		transform: translateY(-1px);
+	}
+
+	.interactive {
+		transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+	}
+
+	.input-base {
+		background: color-mix(in srgb, var(--color-input-bg) 88%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+		border-radius: var(--radius-lg);
+		transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+	}
+
+	.input-base:hover {
+		border-color: color-mix(in srgb, var(--color-border) 94%, transparent);
+	}
+
+	.input-base:focus-within,
+	.input-base:focus {
+		border-color: color-mix(in srgb, var(--color-accent) 88%, white 12%);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-muted) 75%, transparent);
+	}
+
+	.icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.15rem;
+		height: 2.15rem;
+		padding: 0;
+		border-radius: var(--radius-md);
+		color: var(--color-text-muted);
+		transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
+	}
+
+	.icon-btn:hover {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
+	}
+
+	.icon-btn:active {
+		transform: translateY(1px);
+	}
+
+	/* Shared header for the chat-area utility overlays, in two forms. The base is one
+	   left-aligned toolbar row: the breadcrumb leads (the panel's name quiet, the
+	   subject it holds strong, dim facts after) and tools trail on the right, and a
+	   panel with no subject on screen promotes its own name into the strong slot, so
+	   the loudest text on the bar is always the most specific thing in front of the
+	   reader. `--stacked` below is the second form, for the panels the TitleBar can
+	   name on its own. */
+	.overlay-header {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		min-height: 3.25rem;
+		padding: 0.45rem 1rem;
+		border-bottom: 1px solid var(--color-border-subtle);
+	}
+
+	.overlay-crumb {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	/* The panel's name when something more specific outranks it: inline before the
+	   subject in a breadcrumb, or on its own line above it in the stacked form. */
+	.overlay-crumb-label,
+	.overlay-title {
+		margin: 0;
+		flex-shrink: 0;
+		font-family: var(--font-ui);
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--color-text-muted);
+	}
+
+	/* The stacked header, worn by the panels the TitleBar's nav cluster raises: the
+	   panel's name on its own line, the subject it holds and the controls over that
+	   subject below it, both centered. The name line is there for the widths where
+	   the nav button is a bare icon, and goes the moment that button carries its own
+	   label, or the reader is told the same word twice on one screen. Whether that
+	   label is on is one decision with one writer: TitleBar.svelte stamps
+	   `data-nav-labels` on the root element, and the rule below reads it, so the
+	   name line and the nav label flip together on the same frame with nothing here
+	   to measure or keep in step (contracts.test.ts pins the attribute's name). */
+	.overlay-header--stacked {
+		flex-direction: column;
+		justify-content: center;
+		gap: 0.1rem;
+		padding: 0.4rem 1rem;
+	}
+
+	.overlay-header--stacked .overlay-crumb {
+		flex: 0 1 auto;
+		max-width: 100%;
+		justify-content: center;
+	}
+
+	/* Hidden while the TitleBar's own button carries the word, and hidden rather than
+	   removed: the panel keeps its heading for a reader who navigates by them at every
+	   width. Only the duplicate on screen goes. */
+	:root[data-nav-labels] .overlay-title {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	.overlay-crumb-sep {
+		flex-shrink: 0;
+		font-family: var(--font-ui);
+		font-size: 0.8rem;
+		font-weight: 400;
+		color: color-mix(in srgb, var(--color-text-muted) 55%, transparent);
+		user-select: none;
+	}
+
+	/* The strong slot: the open book/preset/chat, or the promoted panel name. */
+	.overlay-subject {
+		margin: 0;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-ui);
+		font-size: 0.95rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--color-text-primary);
+	}
+
+	/* A nameless subject keeps its muted italics even inside a hover lift. */
+	.overlay-subject.is-untitled {
+		font-style: italic;
+		font-weight: 400;
+		color: var(--color-text-muted);
+	}
+
+	/* Dim trailing facts (counts, standing). Shrinks before the subject does. */
+	.overlay-facts {
+		min-width: 0;
+		flex-shrink: 3;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-ui);
+		font-size: 0.78rem;
+		font-weight: 500;
+		color: var(--color-text-muted);
+	}
+
+	/* Interactive subject (open book, active preset): the same type as the static
+	   form with the chevron as the standing affordance and a soft pill surfacing
+	   on approach or while its menu is open. Its padding is symmetric and it carries
+	   no pull of its own, or the pill's own weight would sit off the line's centre. */
+	.overlay-switch {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		min-width: 0;
+		max-width: 100%;
+		padding: 0.2rem 0.5rem;
+		border: 0;
+		border-radius: var(--radius-md);
+		background: transparent;
+		cursor: pointer;
+		transition: background-color 140ms ease;
+	}
+
+	.overlay-switch:hover,
+	.overlay-switch[aria-expanded='true'] {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 80%, transparent);
+	}
+
+	.overlay-switch:focus-visible {
+		outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+		outline-offset: 1px;
+	}
+
+	/* Trailing controls (settings gear, actions menu, map tools). */
+	.overlay-actions {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	/* The header's one control language: a quiet icon button on the .icon-btn
+	   metric, with the states chrome needs (pressed tools, disabled, a labeled
+	   form). Kept its own recipe so header states never leak into the app-wide
+	   .icon-btn surfaces. */
+	.overlay-action-btn {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.15rem;
+		height: 2.15rem;
+		padding: 0;
+		border: 0;
+		border-radius: var(--radius-md);
+		background: transparent;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
+	}
+
+	.overlay-action-btn:hover:not(:disabled),
+	.overlay-action-btn[aria-expanded='true'] {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
+	}
+
+	.overlay-action-btn:active:not(:disabled) {
+		transform: translateY(1px);
+	}
+
+	.overlay-action-btn:focus-visible {
+		outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+		outline-offset: 1px;
+	}
+
+	.overlay-action-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.overlay-action-btn.is-on {
+		color: var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+	}
+
+	/* A door that carries its name (Stats' picture export): an unlabelled icon is
+	   how a feature made for showing around stays unfound. */
+	.overlay-action-btn--labeled {
+		width: auto;
+		gap: 0.4rem;
+		padding: 0 0.75rem;
+		font-family: var(--font-ui);
+		font-size: 0.78rem;
+		font-weight: 600;
+		white-space: nowrap;
+		color: var(--color-text-secondary);
+	}
+
+	.prose {
+		max-width: min(var(--spacing-content-max), 100%);
+		color: var(--color-text-primary);
+		/* The legibility halo (Settings → Chat → Story Text). Off by default, and
+		   it earns its place the moment prose is read straight off the workspace: a card
+		   dragged to zero opacity, or Manuscript, which never draws one. */
+		text-shadow: var(--prose-shadow, none);
+	}
+
+	/* Anything that paints its own background has nothing to be lifted off, and a halo
+	   under a code face reads as a rendering fault. Inherited, so the children follow. */
+	.prose :is(pre, code, details) {
+		text-shadow: none;
+	}
+
+	.prose p {
+		margin-bottom: var(--user-paragraph-spacing, 1.05em);
+	}
+
+	.prose p:last-child {
+		margin-bottom: 0;
+	}
+
+	/* --- The three story accents ------------------------------------------------
+	   Each answers three questions: a colour (a `--prose-*-color` var) and two faces,
+	   bold and slant, which ride `data-*` attributes on <html> rather than a pair of
+	   weight/style vars. That is load-bearing twice over. A custom property whose
+	   entire value is a CSS-wide keyword IS that keyword for the property itself, so
+	   `--x: inherit` on <html> leaves the property invalid and every var() reader
+	   silently takes its fallback. The neutral answer would render as the shipped
+	   one. And a var has to spell that answer out anyway: `font-style: normal` on
+	   strong text would cancel the emphasis it sits inside, and `***word***` is one
+	   run wearing both accents. So the two rules below ARE the shipped faces, and
+	   each attribute states only its departure; anything unsaid keeps inheriting. */
+	.prose strong {
+		font-family: var(--font-ui);
+		font-weight: 650;
+		color: var(--prose-strong-color, var(--color-text-primary));
+	}
+
+	.prose em {
+		font-style: italic;
+		color: var(--prose-em-color, var(--color-text-secondary));
+	}
+
+	:root[data-em-italic='off'] .prose em {
+		font-style: normal;
+	}
+
+	:root[data-em-bold='on'] .prose em {
+		font-weight: 650;
+	}
+
+	/* The UI font is here to give bold its punch on a serif page, so it leaves with the
+	   bold: a run that is no longer bold has no reason to change typeface. */
+	:root[data-strong-bold='off'] .prose strong {
+		font-family: inherit;
+		font-weight: inherit;
+	}
+
+	:root[data-strong-italic='on'] .prose strong {
+		font-style: italic;
+	}
+
+	.prose code {
+		font-family: var(--font-mono);
+		font-size: 0.82em;
+		background-color: color-mix(in srgb, var(--color-bg-tertiary) 82%, transparent);
+		padding: 0.15em 0.38em;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border-subtle);
+	}
+
+	.prose pre {
+		font-family: var(--font-mono);
+		font-size: 0.82em;
+		background: color-mix(in srgb, var(--color-bg-secondary) 86%, transparent);
+		padding: 1.05em 1.15em;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--color-border-subtle);
+		overflow-x: auto;
+		margin: 1.2em 0;
+	}
+
+	.prose pre code {
+		background: transparent;
+		padding: 0;
+		border: 0;
+	}
+
+	.prose blockquote {
+		border-left: 3px solid color-mix(in srgb, var(--color-accent) 80%, transparent);
+		padding-left: 1rem;
+		margin: 1.2rem 0;
+		color: var(--color-text-secondary);
+		font-style: italic;
+	}
+
+	/* `currentColor` is how the Quoted speech colour turns off: markdown.ts still emits
+	   the span (it also normalizes the quote glyphs), it just takes the colour of the
+	   prose around it. Dialogue ships in the prose's own face, so there is no base rule
+	   here to depart from and both attributes below only ever add. */
+	.prose .quoted-text {
+		color: var(--prose-quote-color, color-mix(in srgb, #d08961 80%, var(--color-text-primary) 20%));
+	}
+
+	:root[data-quote-italic='on'] .prose .quoted-text {
+		font-style: italic;
+	}
+
+	:root[data-quote-bold='on'] .prose .quoted-text {
+		font-weight: 650;
+	}
+
+	/* An explicit colour wins over the app's own accents, and it has to be said out loud
+	   because the cascade says the opposite. `<font color>` is a presentational hint, which
+	   ranks below every author rule, so the quote tint on a span INSIDE it takes the colour
+	   straight back. And coloured dialogue is exactly that shape, a colour wrapped around a
+	   quoted line, which is why it is the thing presets most want and the thing that would
+	   otherwise never work. All three accents are handed back, because a preset that colours
+	   a run means the run.
+
+	   Matched on the elements that carry the colour rather than on a marker attribute: the
+	   colour is already in the DOM, so nothing outside this file needs to cooperate for the
+	   rule to hold. The `style` halves are anchored to the start of the attribute and to the
+	   `; ` between declarations, because sanitizeDecorations re-serializes every surviving
+	   declaration as `property: value` joined by exactly that, which is what keeps
+	   `background-color:` from reading as a text colour here. That shape is a coupling, and
+	   inline-decoration.test.ts pins it. */
+	.prose :is(font[color], [style^='color:'], [style*='; color:']) :is(.quoted-text, strong, em) {
+		color: inherit;
+	}
+
+	/* --- Panels a preset prints -------------------------------------------------
+	   Presets have the model emit <details> blocks of story state, and the reply is
+	   meant to arrive looking the way its author designed it. The split is strict and
+	   it is the whole security boundary: the APP owns the box (its width, padding,
+	   corners, accent bar and chevron) and the PRESET owns only the colour, which it
+	   sets on the summary and which everything below inherits through `currentColor`.
+	   Say nothing and the panel is app-toned; say `color: #3fa7c4` and the title, the
+	   bar and the tint all turn teal together. Nothing here can be resized or moved,
+	   because a block that can be moved can be drawn over the interface as a fake one
+	   (see utils/inline-decoration.ts for the allowlist that enforces it). */
+	.prose details {
+		/* Padding on the container, not the children, so loose text nodes inside a
+		   hand-written panel are inset exactly like wrapped ones.
+
+		   --disclosure-inset is in rem and not em, and that is load-bearing rather than a
+		   preference: the summary cancels this same inset with a negative margin, but it
+		   sets its own smaller font-size, so the two ends of one measurement would resolve
+		   against different fonts and leave the header floating a couple of pixels short of
+		   the box on each side. One absolute unit is what makes the two agree, at every
+		   nesting depth. */
+		--disclosure-inset: 0.85rem;
+		/* One gap, drawn twice: under the header and under the body. Equal, so an open
+		   panel is a header sitting in an even frame rather than text pushed up against
+		   its own title. */
+		--disclosure-gap: 0.7rem;
+		margin: 0.85em 0;
+		padding: 0 var(--disclosure-inset);
+		border: 1px solid var(--color-border-subtle);
+		border-radius: var(--radius-lg);
+		background: color-mix(in srgb, var(--color-bg-secondary) 55%, transparent);
+	}
+
+	/* A closed panel is its header and nothing else. The body's breathing room arrives
+	   with the body, or the fold leaves a strip of dead space under every title. */
+	.prose details[open] {
+		padding-bottom: var(--disclosure-gap);
+	}
+
+	.prose details > summary {
+		/* The one property a preset overrides. Everything else on this line is ours. */
+		color: var(--color-text-secondary);
+		margin-inline: calc(var(--disclosure-inset) * -1);
+		/* The accent bar is part of the inset, not extra to it, so the title starts on the
+		   same vertical as the body text under it. */
+		padding: 0.56em var(--disclosure-inset) 0.56em calc(var(--disclosure-inset) - 3px);
+		border-inline-start: 3px solid currentColor;
+		border-radius: calc(var(--radius-lg) - 1px);
+		background: color-mix(in srgb, currentColor 11%, transparent);
+		font-family: var(--font-ui);
+		font-size: 0.82em;
+		font-weight: 650;
+		letter-spacing: 0.02em;
+		list-style: none;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.prose details[open] > summary {
+		margin-bottom: var(--disclosure-gap);
+		border-end-start-radius: 0;
+		border-end-end-radius: 0;
+	}
+
+	/* The body's own first and last margins fold into the panel's padding, so a body that
+	   opens with a list or closes with a paragraph doesn't add a second gap to the one the
+	   panel already draws. Qualified by [open] for two reasons that happen to agree: a
+	   folded body has no margins worth cancelling, and the transcript's own scoped
+	   `:global(ul)` / `:global(p)` rules carry a component class, so without the attribute
+	   these would lose the specificity race to them and the fold would only work on prose
+	   nobody had styled. */
+	.prose details[open] > summary + * {
+		margin-top: 0;
+	}
+
+	.prose details[open] > :last-child {
+		margin-bottom: 0;
+	}
+
+	.prose details > summary::-webkit-details-marker {
+		display: none;
+	}
+
+	/* Floated rather than flexed: a flex summary would swallow the `text-align` a
+	   preset is allowed to set, and then "alignment is yours" would be a lie. */
+	.prose details > summary::after {
+		content: '';
+		float: right;
+		width: 0.42em;
+		height: 0.42em;
+		margin: 0.3em 0 0 0.6em;
+		border-right: 2px solid currentColor;
+		border-bottom: 2px solid currentColor;
+		transform: rotate(-45deg);
+		opacity: 0.5;
+		transition: transform 160ms ease;
+	}
+
+	.prose details[open] > summary::after {
+		transform: rotate(45deg);
+	}
+
+	.prose details > summary:hover {
+		background: color-mix(in srgb, currentColor 17%, transparent);
+	}
+
+	/* A panel inside a panel is a sub-heading, not a second card: quieter, and it
+	   keeps its own hue. */
+	.prose details details {
+		background: transparent;
+	}
+
+	.prose details details > summary {
+		font-size: 0.78em;
+	}
+
+	.prose div {
+		margin: 0.7em 0;
+	}
+
+	/* A block the preset actually filled needs room inside it, or the colour runs
+	   straight into the words. Matching on the attribute is safe: by the time it
+	   reaches the DOM it has been rewritten into `property: value` pairs. */
+	.prose div[style*='background-color'] {
+		padding: 0.72em 0.85em;
+		border-radius: var(--radius-md);
+	}
+
+	.prose ul,
+	.prose ol {
+		margin: 0.95em 0;
+		padding-left: 1.45em;
+	}
+
+	.prose li {
+		margin: 0.34em 0;
+	}
+
+	.prose h1,
+	.prose h2,
+	.prose h3,
+	.prose h4 {
+		font-family: var(--font-ui);
+		font-weight: 650;
+		line-height: 1.22;
+		color: var(--color-text-primary);
+		margin-top: 1.35em;
+		margin-bottom: 0.6em;
+	}
+
+	.prose h1 {
+		font-size: 1.36em;
+	}
+
+	.prose h2 {
+		font-size: 1.24em;
+	}
+
+	.prose h3 {
+		font-size: 1.12em;
+	}
+
+	.prose a {
+		color: var(--color-accent);
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 0.22em;
+	}
+
+	.prose a:hover {
+		color: var(--color-accent-hover);
+	}
+
+	.prose hr {
+		border: 0;
+		border-top: 1px solid var(--color-border-subtle);
+		margin: 1.6em 0;
+	}
+
+	/* Segmented control (.seg/.seg-btn): originally the Library toolbar's view-mode
+	   switch. The Library now speaks the .brw language below, but lorebook/settings
+	   markup still carries these class names alongside their scoped styles (and
+	   inherits some of these declarations), so the globals stay put. */
+	.seg {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		height: var(--tb-h);
+		padding: 3px;
+		background: color-mix(in srgb, var(--color-bg-tertiary) 80%, transparent);
+		border: 1px solid var(--color-border-subtle);
+		border-radius: var(--radius-md);
+	}
+
+	.seg-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		width: 1.7rem;
+		border-radius: calc(var(--radius-md) - 4px);
+		color: var(--color-text-muted);
+		transition: background-color 140ms ease, color 140ms ease;
+	}
+
+	.seg-btn:hover {
+		color: var(--color-text-primary);
+	}
+
+	/* .seg-btn.is-active lives in the canonical active-state block at the end of
+	   this layer (grouped with .seg-lift). */
+
+	/* Empty-state icon disc: soft accent glow behind the muted icon */
+	.empty-orb {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 9999px;
+		border: 1px solid var(--color-border-subtle);
+		background:
+			radial-gradient(
+				circle at 30% 20%,
+				color-mix(in srgb, var(--color-accent) 14%, transparent),
+				transparent 60%
+			),
+			color-mix(in srgb, var(--color-bg-secondary) 90%, transparent);
+	}
+
+	/* Warning pulse when the user tries to leave with an unsaved new entry open. */
+	.guard-flash {
+		animation: guard-flash-pulse 0.8s ease-out;
+	}
+
+	/* ===== Library browse panels (.brw) =====
+	   Container-driven layout language for the Library's Characters & Personas
+	   browse views and the Lorebook view. The panel measures its own width (dock
+	   ≈ 360–500px, overlay up to the chat column, mobile ≤ 640px), so every
+	   breakpoint below is a container query. Viewport media queries lie when the
+	   panel is a side dock on a wide screen. One calm toolbar row: search flexes,
+	   quiet icon buttons disclose the power features (filter / view options /
+	   more), New is the one primary action. */
+	.brw {
+		--brw-h: 2.125rem;
+		/* Thumb-sized toolbar controls on touch; every control keyed to --brw-h follows. */
+		@media (pointer: coarse) {
+			--brw-h: 2.5rem;
+		}
+		container-type: inline-size;
+		container-name: browse;
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	/* Toolbar row. Also the position context every BrowsePopover panel anchors to,
+	   so popovers drop from the bar's right edge and never overflow a narrow dock. */
+	.brw-bar {
+		position: relative;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.625rem 0.75rem;
+		border-bottom: 1px solid var(--color-border-subtle);
+	}
+
+	/* Search: the front-and-center control, pill-shaped to read distinct from the
+	   square icon buttons beside it. */
+	.brw-search {
+		position: relative;
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+	}
+
+	.brw-search input {
+		height: var(--brw-h);
+		width: 100%;
+		padding: 0 0.85rem 0 2.1rem;
+		border-radius: 9999px;
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		color: var(--color-text-primary);
+	}
+
+	.brw-search input::placeholder {
+		color: var(--color-text-muted);
+	}
+
+	.brw-search .brw-search-icon {
+		position: absolute;
+		left: 0.8rem;
+		pointer-events: none;
+		color: var(--color-text-muted);
+	}
+
+	/* Quiet icon buttons: filter, view options, more */
+	.brw-btn {
+		position: relative;
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: var(--brw-h);
+		height: var(--brw-h);
+		/* ~34px is a marginal thumb target. The coarse-pointer bump lives on .brw
+		   (--brw-h) below so the whole toolbar row scales together. */
+		border: 1px solid transparent;
+		border-radius: var(--radius-md);
+		background: transparent;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+	}
+
+	.brw-btn:hover {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
+		color: var(--color-text-primary);
+	}
+
+	.brw-btn.is-active {
+		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+		color: var(--color-accent);
+	}
+
+	/* Active-filter count pinned to the funnel button's corner */
+	.brw-btn-badge {
+		position: absolute;
+		top: -0.2rem;
+		right: -0.2rem;
+		min-width: 1rem;
+		height: 1rem;
+		padding: 0 0.25rem;
+		border-radius: 9999px;
+		background: var(--color-accent);
+		color: var(--color-on-accent);
+		font-family: var(--font-ui);
+		font-size: 0.625rem;
+		font-weight: 700;
+		line-height: 1rem;
+		text-align: center;
+	}
+
+	/* The one primary action. Icon-only in a tight dock; label appears with room. */
+	.brw-new {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.35rem;
+		height: var(--brw-h);
+		width: var(--brw-h);
+		border-radius: 9999px;
+		background: var(--color-accent);
+		color: var(--color-on-accent);
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		font-weight: 600;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: filter 140ms ease, transform 140ms ease;
+	}
+
+	.brw-new:hover {
+		filter: brightness(1.08);
+	}
+
+	.brw-new:active {
+		transform: scale(0.97);
+	}
+
+	.brw-new-label {
+		display: none;
+	}
+
+	/* ---- Popover internals (panels are BrowsePopover's shell; content lives in
+	   the views, so its language is shared here) ---- */
+	.brw-sec + .brw-sec {
+		margin-top: 0.875rem;
+		padding-top: 0.875rem;
+		border-top: 1px solid var(--color-border-subtle);
+	}
+
+	.brw-sec-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.brw-sec-title {
+		font-family: var(--font-ui);
+		font-size: 0.6563rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-text-muted);
+	}
+
+	/* Option pills (sort, per-page, view mode) */
+	.brw-opts {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.375rem;
+	}
+
+	.brw-opts--3 {
+		grid-template-columns: repeat(3, 1fr);
+	}
+
+	.brw-opt {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.35rem;
+		height: 1.9rem;
+		padding: 0 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		border-radius: var(--radius-md);
+		background: transparent;
+		color: var(--color-text-secondary);
+		font-family: var(--font-ui);
+		font-size: 0.7188rem;
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+	}
+
+	.brw-opt:hover {
+		border-color: var(--color-border);
+		color: var(--color-text-primary);
+	}
+
+	/* Active tint lives in the canonical active-state block at the end of this
+	   layer (grouped with .is-active-tint); only the weight is local. */
+	.brw-opt.is-active {
+		font-weight: 600;
+	}
+
+	.brw-opt--full {
+		width: 100%;
+	}
+
+	/* Tiny ANY/ALL segmented switch in the tag section header */
+	.brw-mini-seg {
+		display: inline-flex;
+		gap: 2px;
+		padding: 2px;
+		background: color-mix(in srgb, var(--color-bg-tertiary) 80%, transparent);
+		border: 1px solid var(--color-border-subtle);
+		border-radius: var(--radius-md);
+	}
+
+	.brw-mini-seg button {
+		padding: 0.1rem 0.45rem;
+		border-radius: calc(var(--radius-md) - 3px);
+		font-family: var(--font-ui);
+		font-size: 0.625rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease;
+	}
+
+	/* .brw-mini-seg button.is-active lives in the canonical active-state block at
+	   the end of this layer (grouped with .seg-lift). */
+
+	/* Tag checklist inside the filter popover */
+	.brw-tag-list {
+		max-height: 11rem;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		margin: 0.375rem -0.25rem 0;
+	}
+
+	.brw-tag-row {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.3rem 0.4rem;
+		border-radius: var(--radius-sm);
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: background-color 120ms ease, color 120ms ease;
+	}
+
+	.brw-tag-row:hover,
+	.brw-tag-row.is-highlighted {
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-primary);
+	}
+
+	.brw-tag-check {
+		width: 0.9rem;
+		height: 0.9rem;
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 3px;
+		border: 1px solid var(--color-border);
+		color: transparent;
+		transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+	}
+
+	.brw-tag-row.is-checked .brw-tag-check {
+		background: var(--color-accent);
+		border-color: var(--color-accent);
+		color: var(--color-on-accent);
+	}
+
+	.brw-tag-name {
+		flex: 1;
+		min-width: 0;
+		text-align: left;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.brw-tag-count {
+		color: var(--color-text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Card-size slider row (view-options popover) */
+	.brw-range {
+		flex: 1;
+		height: 0.3rem;
+		border-radius: 9999px;
+		background: var(--color-bg-tertiary);
+		appearance: none;
+		-webkit-appearance: none;
+		cursor: pointer;
+	}
+
+	.brw-range::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 0.85rem;
+		height: 0.85rem;
+		border-radius: 9999px;
+		background: var(--color-accent);
+		cursor: pointer;
+		transition: transform 120ms ease;
+	}
+
+	.brw-range::-webkit-slider-thumb:hover {
+		transform: scale(1.12);
+	}
+
+	.brw-range::-moz-range-thumb {
+		width: 0.85rem;
+		height: 0.85rem;
+		border: 0;
+		border-radius: 9999px;
+		background: var(--color-accent);
+		cursor: pointer;
+	}
+
+	/* ⋯ menu items */
+	.brw-menu-item {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.45rem 0.65rem;
+		border-radius: var(--radius-md);
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		text-align: left;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease;
+	}
+
+	.brw-menu-item:hover:not(:disabled) {
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-primary);
+	}
+
+	.brw-menu-item:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	/* ---- Active-filter summary line: only exists while something filters the
+	   list, so the default surface stays clean. ---- */
+	.brw-chips {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+		padding: 0.45rem 0.75rem;
+		border-bottom: 1px solid var(--color-border-subtle);
+		font-family: var(--font-ui);
+		font-size: 0.7188rem;
+		color: var(--color-text-muted);
+	}
+
+	.brw-chips-count {
+		white-space: nowrap;
+	}
+
+	.brw-chips-count b {
+		font-weight: 600;
+		color: var(--color-text-secondary);
+	}
+
+	.brw-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.15rem;
+		height: 1.5rem;
+		padding: 0 0.2rem 0 0.55rem;
+		border-radius: 9999px;
+		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
+		color: var(--color-accent);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	.brw-chip-x {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.1rem;
+		height: 1.1rem;
+		border-radius: 9999px;
+		color: inherit;
+		opacity: 0.7;
+		cursor: pointer;
+		transition: opacity 120ms ease, background-color 120ms ease;
+	}
+
+	.brw-chip-x:hover {
+		opacity: 1;
+		background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+	}
+
+	/* Clickable "any of / all of" word between the count and the tag chips */
+	.brw-chip-mode {
+		height: 1.5rem;
+		padding: 0 0.45rem;
+		border-radius: 9999px;
+		border: 1px dashed color-mix(in srgb, var(--color-accent) 45%, transparent);
+		color: var(--color-accent);
+		font-family: var(--font-ui);
+		font-size: 0.65rem;
+		font-weight: 700;
+		letter-spacing: 0.03em;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: background-color 140ms ease;
+	}
+
+	.brw-chip-mode:hover {
+		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+	}
+
+	.brw-chips-clear {
+		margin-left: auto;
+		padding: 0.15rem 0.3rem;
+		border-radius: var(--radius-sm);
+		font-family: var(--font-ui);
+		font-size: 0.7188rem;
+		color: var(--color-text-muted);
+		white-space: nowrap;
+		cursor: pointer;
+		transition: color 140ms ease;
+	}
+
+	.brw-chips-clear:hover {
+		color: var(--color-text-primary);
+	}
+
+	/* ---- Bulk-selection bar: appears under the toolbar while selecting.
+	   Position context for the add/remove-tags popovers. ---- */
+	.brw-bulk {
+		position: relative;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.375rem 0.5rem;
+		padding: 0.5rem 0.75rem;
+		background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+		border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 26%, transparent);
+	}
+
+	/* Exit button: leads the bar, mirrors "this is a mode you leave" */
+	.brw-bulk-x {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.9rem;
+		height: 1.9rem;
+		border-radius: var(--radius-md);
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease;
+	}
+
+	.brw-bulk-x:hover {
+		background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+		color: var(--color-text-primary);
+	}
+
+	.brw-bulk-count {
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+		white-space: nowrap;
+	}
+
+	/* Action labels: icon-only in a tight dock, text appears with room */
+	.brw-bulk-label {
+		display: none;
+	}
+
+	.brw-bulk-count b {
+		font-weight: 700;
+		color: var(--color-accent);
+	}
+
+	.brw-bulk-link {
+		padding: 0.2rem 0.35rem;
+		border-radius: var(--radius-sm);
+		font-family: var(--font-ui);
+		font-size: 0.7188rem;
+		color: var(--color-text-muted);
+		white-space: nowrap;
+		cursor: pointer;
+		transition: color 140ms ease;
+	}
+
+	.brw-bulk-link:hover:not(:disabled) {
+		color: var(--color-text-primary);
+	}
+
+	.brw-bulk-link:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.brw-bulk-spacer {
+		flex: 1 1 0;
+	}
+
+	.brw-bulk-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		height: 1.9rem;
+		padding: 0 0.6rem;
+		border: 1px solid var(--color-border-subtle);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
+		color: var(--color-text-secondary);
+		font-family: var(--font-ui);
+		font-size: 0.7188rem;
+		font-weight: 600;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+	}
+
+	.brw-bulk-btn:hover:not(:disabled) {
+		color: var(--color-text-primary);
+		border-color: var(--color-border);
+		background: var(--color-bg-primary);
+	}
+
+	.brw-bulk-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.brw-bulk-btn--danger {
+		color: var(--color-error);
+	}
+
+	.brw-bulk-btn--danger:hover:not(:disabled) {
+		color: var(--color-error);
+		background: color-mix(in srgb, var(--color-error) 12%, transparent);
+		border-color: color-mix(in srgb, var(--color-error) 30%, transparent);
+	}
+
+	/* ---- Scrollable browse area + pager ---- */
+	.brw-content {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		padding: 0.75rem;
+	}
+
+	.brw-content:focus {
+		outline: none;
+	}
+
+	.brw-grid {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.brw-pager {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.brw-pager-count {
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	/* ---- The panel gets roomier as its container widens ---- */
+	@container browse (min-width: 460px) {
+		.brw-new {
+			width: auto;
+			padding: 0 0.95rem 0 0.8rem;
+		}
+
+		.brw-new-label {
+			display: inline;
+		}
+	}
+
+	@container browse (min-width: 560px) {
+		.brw-pager {
+			flex-direction: row;
+			justify-content: space-between;
+		}
+
+		.brw-bulk-label {
+			display: inline;
+		}
+	}
+
+	@container browse (min-width: 640px) {
+		.brw-bar {
+			padding: 0.75rem 1.5rem;
+			gap: 0.625rem;
+		}
+
+		.brw-chips {
+			padding: 0.45rem 1.5rem;
+		}
+
+		.brw-bulk {
+			padding: 0.5rem 1.5rem;
+		}
+
+		.brw-content {
+			padding: 1.5rem;
+		}
+
+		.brw-grid {
+			gap: 1rem;
+		}
+	}
+
+	@container browse (min-width: 860px) {
+		.brw-content {
+			padding: 2rem 2.25rem;
+		}
+
+		.brw-grid {
+			gap: 1.125rem;
+		}
+	}
+
+	/* Uppercase section/field micro-label (the .brw-sec-title recipe). Local
+	   additions (margins, white-space) stay with the component. */
+	.section-label {
+		display: block;
+		font-family: var(--font-ui);
+		font-size: 0.6563rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-text-muted);
+	}
+
+	/* ===== Settings pages (components/settings) =====
+	   The shared control language of the drill-down pages: the section card with
+	   its head/title/body, toggle rows, and the labeled-slider scaffolding.
+	   Element-qualified where a bare class name is already taken elsewhere:
+	   `section.card` so the mockups' `<div class="card">` message cards never
+	   adopt it, `input.slider` so ui/Slider's `<div class="slider">` wrapper
+	   never does; `.card-head`/`.card-body` are scoped to the card because
+	   SecurityPage reuses those names for its own drifted dialect. Local
+	   additions (margins, variants like .style-card) stay in the component. */
+	section.card {
+		padding: 0.9rem;
+		border: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
+		border-radius: var(--radius-lg);
+		background: color-mix(in srgb, var(--color-bg-secondary) 86%, transparent);
+	}
+
+	section.card .card-head {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin-bottom: 0.7rem;
+	}
+
+	.card-title {
+		font-family: var(--font-ui);
+		font-size: 0.85rem;
+		font-weight: 650;
+		color: var(--color-text-primary);
+	}
+
+	section.card .card-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+	}
+
+	/* The switch rides the card's right edge, flush with every other control in the
+	   card. An input, a pill row and a switch that stop at three different measures
+	   read as a rendering fault, and the right-hand column of switches is what makes
+	   "what's on in here?" a single glance. The measure that keeps the label and its
+	   switch reading as one object is capped once, on the column
+	   (--settings-measure), never per row: a row that caps on its own is the one
+	   thing in the card that doesn't reach the edge. */
+	.toggle-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		/* Bleed back out to the card's padding edge so the hover band lines up with
+		   everything above it instead of insetting the label by the padding. */
+		margin-inline: -0.5rem;
+		padding: 0.3rem 0.5rem;
+		border-radius: var(--radius-md);
+		transition: background-color 120ms ease;
+	}
+
+	/* The pointer affordance follows the `toggleRow` action's own marker, not the
+	   recipe class, so rows that roll their own markup (Security's password lock,
+	   the assistant's permission cards, the lorebook globals) read as clickable too.
+	   Gated on a live switch so a row with a disabled one never promises a click it
+	   won't honor. */
+	[data-row-toggle]:has([role='switch']:not(:disabled)) {
+		cursor: pointer;
+	}
+
+	/* Common region beats proximity: once the pair sits inside one lit box, the
+	   distance between them stops carrying meaning. The band stays on the shared
+	   recipe, which is the only markup that reserves padding for it. */
+	.toggle-row:has([role='switch']:not(:disabled)):hover {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 55%, transparent);
+	}
+
+	/* Link-styled inline button: the reset/override affordances in settings cards
+	   ("clear", "Follow Primary"). Size inherits from the surrounding row. */
+	.link-btn {
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--color-accent);
+		font-family: var(--font-ui);
+		font-size: inherit;
+		font-weight: 600;
+		cursor: pointer;
+		text-decoration: underline;
+		text-underline-offset: 0.15em;
+	}
+
+	/* Fills the card like .toggle-row, for the same reason: a card that mixes the two
+	   reads ragged the moment one of them stops short of the other. The column cap
+	   is what keeps a slider's label and its value readout from ending up a screen
+	   apart. */
+	.slider-block {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.slider-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.slider-label-wrap {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.slider-label {
+		font-family: var(--font-ui);
+		font-size: 0.78rem;
+		color: var(--color-text-primary);
+	}
+
+	.slider-value {
+		font-family: var(--font-mono);
+		font-size: 0.78rem;
+		color: var(--color-text-secondary);
+		min-width: 3.6rem;
+		text-align: right;
+	}
+
+	input.slider {
+		width: 100%;
+		height: 0.5rem;
+		border-radius: var(--radius-full);
+		appearance: none;
+		cursor: pointer;
+		background: color-mix(in srgb, var(--color-bg-tertiary) 90%, transparent);
+	}
+
+	input.slider::-webkit-slider-thumb {
+		width: 1rem;
+		height: 1rem;
+		border-radius: var(--radius-full);
+		border: 0;
+		background: var(--color-accent);
+		box-shadow: var(--shadow-sm);
+		appearance: none;
+		transition: transform 120ms ease, background 140ms ease;
+	}
+
+	input.slider:hover::-webkit-slider-thumb {
+		transform: scale(1.06);
+	}
+
+	input.slider::-moz-range-thumb {
+		width: 1rem;
+		height: 1rem;
+		border-radius: var(--radius-full);
+		border: 0;
+		background: var(--color-accent);
+		box-shadow: var(--shadow-sm);
+	}
+
+	/* ===== Canonical active states =====
+	   The two recipes the app's tabs/pills/segments converge on. The .seg/.brw
+	   state selectors are grouped here (late in the layer) so they keep winning
+	   their source-order ties against the matching :hover rules above. */
+
+	/* Accent-tinted active chip/tab (needs a transparent border on the base state). */
+	.is-active-tint,
+	.brw-opt.is-active {
+		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
+		color: var(--color-accent);
+		border-color: color-mix(in srgb, var(--color-accent) 33%, transparent);
+	}
+
+	/* Active "lifted chip" inside a segmented track. */
+	.seg-lift,
+	.seg-btn.is-active,
+	.brw-mini-seg button.is-active {
+		background: var(--color-bg-primary);
+		color: var(--color-accent);
+		box-shadow: var(--shadow-sm);
+	}
+}
+
+@keyframes guard-flash-pulse {
+	0% {
+		box-shadow: inset 0 0 0 2px transparent;
+	}
+	25% {
+		box-shadow: inset 0 0 0 3px var(--color-error),
+			inset 0 0 26px color-mix(in srgb, var(--color-error) 45%, transparent);
+	}
+	60% {
+		box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-error) 55%, transparent),
+			inset 0 0 14px color-mix(in srgb, var(--color-error) 25%, transparent);
+	}
+	100% {
+		box-shadow: inset 0 0 0 2px transparent;
+	}
+}
+
+@layer utilities {
+	.text-balance {
+		text-wrap: balance;
+	}
+
+	.fade-in {
+		animation: fadeIn 220ms ease-out;
+	}
+
+	.slide-up {
+		animation: slideUp 230ms ease-out;
+	}
+
+	.surface-shell {
+		background: var(--color-bg-primary);
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes slideUp {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+}
+
+@media (max-width: 768px) {
+	@layer base {
+		body {
+			font-size: 1rem;
+		}
+	}
+}
+
+/* ===== Touch: no form control renders below 16px =====
+   iOS Safari zooms the page in the moment a field smaller than that takes focus, and it
+   stays zoomed: a viewport wider than the screen, a caret that scrolls out from under the
+   thumb, taps landing off target. Raising the floor is the only cure that leaves pinch
+   zoom alone. A hard 16 CSS pixels because that is the threshold the engine checks, not a
+   rem. `1em` is what a control inherits (preflight gives form elements `font: inherit`),
+   so a field on a larger surface keeps that surface's size.
+   Unlayered on purpose: inside @layer components this would lose to Tailwind's own
+   text-sm/text-xs, which live in @layer utilities. */
+@media (pointer: coarse) {
+	:is(input, textarea, select) {
+		font-size: max(16px, 1em);
+	}
+}
+
+/* ===== Portrait overlay actions =====
+   The corner buttons that sit on a character's or persona's portrait in its editor
+   (remove, adjust framing). They stay off the picture until asked for, which is what
+   keeps the frame clean, but hover is not a gesture a touch screen has: revealing them
+   with it alone would leave the buttons unreachable on a phone. Each carries its own
+   pill background, so they read on a picture of any brightness with no scrim behind
+   them. Shared because the two editors draw the same frame. */
+.portrait-frame .portrait-overlay-action {
+	opacity: 0;
+	transition: opacity 150ms ease;
+}
+
+.portrait-frame:hover .portrait-overlay-action,
+.portrait-frame:focus-within .portrait-overlay-action {
+	opacity: 1;
+}
+
+@media (pointer: coarse) {
+	.portrait-frame .portrait-overlay-action {
+		opacity: 1;
+	}
+}
+
+/* The browse cards' portraits, which drift in a little on hover. That lift and the stored
+   framing's zoom both want `transform`, so they compose in one rule here: an inline
+   transform from the framing helper would outrank any hover class and freeze the drift,
+   and a hover class would throw the framing away. */
+.browse-card-portrait {
+	transform: scale(var(--portrait-zoom, 1));
+	transition: transform 300ms ease-out;
+}
+
+.group:hover .browse-card-portrait {
+	transform: scale(calc(var(--portrait-zoom, 1) * 1.04));
+}
+
+/* ===== Find in chat =====
+   ChatSearchBar registers its hits in CSS.highlights, so the ranges are painted without
+   the message markup being touched. These rules are document-scoped by definition and
+   cannot live in the component's scoped style. ::highlight() only honours colour,
+   background-color, text-decoration and text-shadow: no box properties, no radius. */
+::highlight(chat-find) {
+	background-color: color-mix(in srgb, var(--color-accent) 28%, transparent);
+	color: var(--color-text-primary);
+}
+
+::highlight(chat-find-current) {
+	background-color: var(--color-accent);
+	color: var(--color-on-accent);
+}

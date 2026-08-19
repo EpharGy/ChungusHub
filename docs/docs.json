@@ -1,0 +1,46 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "ChungusHub",
+  "description": "A self-hosted workspace for long-form roleplay.",
+  "colors": {
+    "primary": "#8e9bd8",
+    "light": "#8e9bd8",
+    "dark": "#4a5aa8"
+  },
+  "appearance": {
+    "default": "dark"
+  },
+  "favicon": "/logo/mascot.png",
+  "logo": {
+    "light": "/logo/mascot.png",
+    "dark": "/logo/mascot.png"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "pages": [
+          "index",
+          "installation",
+          "quickstart",
+          "coming-from-sillytavern",
+          "work-in-progress"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/patcireamo/ChungusHub"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/patcireamo/ChungusHub"
+    }
+  }
+}

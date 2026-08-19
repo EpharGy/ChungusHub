@@ -1,0 +1,259 @@
+/** Domain types for chat and messages */
+
+import type { LorebookTrace } from '$lib/lorebook/types';
+
+export interface Chat {
+	id: string;
+	title: string;
+	createdAt: number;
+	updatedAt: number;
+	rootMessageId: string | null;
+	activeLeafId: string | null;
+	/** The tip of the canonical timeline: the single branch the author has blessed as
+	 *  "the real story". Null until one is marked. The story map draws root→here as the
+	 *  gold spine; independent of activeLeafId (where you currently are). */
+	canonLeafId: string | null;
+	settings: ChatSettings | null;
+	/** The library character this chat is bound to (ST-style: one chat, one character). */
+	characterId: string | null;
+	/** The character version this chat plays against: the ONLY input to which variant
+	 *  every request from this chat uses, whatever the library's active version happens
+	 *  to be. Per-chat and durable: switching is an explicit, reversible act made from
+	 *  the composer's version chip. Null = follow the entry's live data (unversioned
+	 *  characters and legacy chats). */
+	characterVersionId: string | null;
+	/** Starred in the chats panel, which floats favorites into their own section above
+	 *  the time groups. Same meaning as a library entry's favorite flag. */
+	isFavorite: boolean;
+	/** Steering + impersonate state, as an opaque JSON string (or null). The server
+	 *  never parses this column (see server/db.ts mapChat), so it round-trips exactly
+	 *  as written. Always go through `normalizeChatFeatureState` to read it; never
+	 *  inspect the string directly. */
+	featureState: string | null;
+}
+
+/** Everything the chats panel shows about a chat that isn't on the chat row itself,
+ *  aggregated server-side so no message text crosses the wire (see
+ *  server/db.ts `getChatListStats`). `path` is the branch a reader would actually
+ *  read; `total` counts every row in the tree, swipes and dead forks included;
+ *  `lastAt` is when that branch was last written to. */
+export interface ChatListStats {
+	path: number;
+	total: number;
+	lastAt: number | null;
+}
+
+/** A chat's memory weight, asked for before a duplicate offers to carry it along. */
+export interface ChatMemoryFootprint {
+	enabled: boolean;
+	episodes: number;
+}
+
+/**
+ * Whether duplicating this chat has a question to ask at all.
+ *
+ * A chat with no memory in any form is copied on the spot; anything else raises the dialog.
+ * Both doors that duplicate (the Chats panel's row and the composer's `/duplicate`) read
+ * this, because two spellings of the same rule end with one door asking and the other
+ * quietly deciding for the user.
+ */
+export function duplicateAsksAboutMemory(footprint: ChatMemoryFootprint): boolean {
+	return footprint.enabled || footprint.episodes > 0;
+}
+
+/** A user-given name + color for a branch, anchored on the message that heads it.
+ *  `color` is a palette key (see branch-labels.ts), not a raw CSS color, so it stays
+ *  theme-independent. */
+export interface BranchLabel {
+	name: string;
+	color: string;
+}
+
+export interface ChatSettings {
+	model?: string;
+	systemPrompt?: string;
+	temperature?: number;
+	maxTokens?: number;
+}
+
+/** Grammatical person the Impersonate feature writes the user's turn in. */
+export type ImpersonatePerspective = 'first' | 'second' | 'third';
+
+/** Per-chat state for the composer's steering + impersonate features. Persisted on
+ *  Chat.featureState as an opaque JSON string. Always read through
+ *  normalizeChatFeatureState, never constructed by hand except via
+ *  DEFAULT_CHAT_FEATURE_STATE.
+ *
+ *  A stored blob may still carry a `steering` object. Steering notes live in their own rows
+ *  (`steering_notes`, src/lib/types/steering.ts) because one object has no room for a scope,
+ *  so that key is simply not parsed: the blob still reads fine and drops it on the chat's
+ *  next write. What belongs here is the ONE thing genuinely per-chat: the reuse history of
+ *  spent one-shots. */
+export interface ChatFeatureState {
+	/** The last 10 consumed one-shot steering texts, most-recent first, for quick reuse
+	 *  from the composer's popover. */
+	steeringHistory: string[];
+	impersonatePerspective: ImpersonatePerspective;
+}
+
+function defaultChatFeatureState(): ChatFeatureState {
+	return { steeringHistory: [], impersonatePerspective: 'first' };
+}
+
+export const DEFAULT_CHAT_FEATURE_STATE: ChatFeatureState = defaultChatFeatureState();
+
+function normalizeSteeringHistory(raw: unknown): string[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0).slice(0, 10);
+}
+
+function normalizeImpersonatePerspective(raw: unknown): ImpersonatePerspective {
+	return raw === 'first' || raw === 'second' || raw === 'third' ? raw : 'first';
+}
+
+/** Parse + sanitize a chat's feature_state column value: a JSON string (the normal
+ *  wire shape), an already-parsed object (tests, or a caller that unwrapped it
+ *  already), or null. Whitelists enums, clamps depth, caps history. Anything
+ *  corrupt or missing degrades to DEFAULT_CHAT_FEATURE_STATE rather than throwing.
+ *  This is the sanctioned exception to fail-loud (same convention as the settings
+ *  stores' readSetting): pure and store-import-free so the generation path
+ *  (reading straight from the db) and chatStore's reactive path agree exactly. */
+export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
+	let value: unknown = raw;
+	if (typeof raw === 'string') {
+		try {
+			value = JSON.parse(raw);
+		} catch {
+			return defaultChatFeatureState();
+		}
+	}
+	if (value === null || typeof value !== 'object') {
+		return defaultChatFeatureState();
+	}
+	const obj = value as Record<string, unknown>;
+	return {
+		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
+		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective)
+	};
+}
+
+/** Move `text` to the front of a steering history (deduping an exact repeat instead
+ *  of adding a second copy), capped at 10 entries. Pure. Used when a one-shot note
+ *  is consumed (see chatStore.pushSteeringHistory). */
+export function pushSteeringHistoryEntry(history: string[], text: string): string[] {
+	return [text, ...history.filter((entry) => entry !== text)].slice(0, 10);
+}
+
+/** One file the user attached to a chat message. Images only for now; the kind
+ *  field leaves room for other media without another schema change. */
+export interface MessageAttachment {
+	kind: 'image';
+	/** Server-relative path (images/chat/<file>). Render via imageService/fileUrl. */
+	path: string;
+}
+
+export interface Message {
+	id: string;
+	chatId: string;
+	parentId: string | null;
+	role: 'user' | 'assistant' | 'system';
+	content: string;
+	/** The persona this message was sent with, captured at send time. Locks attribution
+	 *  so changing the global active persona never re-labels past messages. User messages
+	 *  only; null for assistant/system and for messages created before this was tracked. */
+	personaId: string | null;
+	/** A name+color for the branch this message heads, shown on the story map. Null for
+	 *  unlabeled messages (the vast majority). Story-map metadata only. */
+	branchLabel: BranchLabel | null;
+	thinking: string | null;
+	/** Images the user sent with this turn (paths under images/chat/ on the server).
+	 *  Null for text-only messages. Vision-capable providers inline them at request time. */
+	attachments: MessageAttachment[] | null;
+	createdAt: number;
+	/** Last rewrite that changed what this turn says. Chat memory compares its summaries
+	 *  against this stamp, so a minor edit deliberately leaves it alone (see below). */
+	editedAt: number | null;
+	/** Last rewrite the user marked as minor: a typo, punctuation, nothing a summary of the
+	 *  turn would record differently. Kept apart from `editedAt` so the transcript can still
+	 *  show the turn as edited without costing the summary that covers it. */
+	minorEditedAt: number | null;
+	/** The sprite label the Sprites engine read this turn as, or null when it has not been read
+	 *  (every user/system turn, and every assistant turn written while the engine was off or the
+	 *  character had no sprites). Deliberately the LABEL and not an image path: a sprite can be
+	 *  re-pointed or removed without falsifying what the turn was read as, and a label with no
+	 *  sprite behind it is simply inert. */
+	spriteLabel: string | null;
+	model: string | null;
+	provider: string | null;
+	tokensPrompt: number | null;
+	tokensCompletion: number | null;
+	finishReason: string | null;
+	/** Wall-clock duration of the live generation that produced this assistant turn
+	 *  (request start → stream complete), in ms. Null for user/system turns, seeded
+	 *  greetings, and pre-feature messages. An imported turn carries it when the source
+	 *  file recorded start and finish stamps. */
+	generationMs: number | null;
+	/** The wait before the model said anything: request start → the first streamed token of
+	 *  either kind, in ms. Null wherever nobody measured it, which includes every
+	 *  non-streamed call, since no token arrives to be the first one. A continuation never
+	 *  rewrites it: this turn started speaking once. */
+	firstTokenMs: number | null;
+	/** How long this turn spent reasoning, in ms, accumulated across continuations the way
+	 *  `generationMs` is. Null for a model that does not reason and for every turn nobody
+	 *  measured. Measured here as the span the reasoning stream occupied; an imported turn
+	 *  carries the exporter's own figure instead, which is a different measurement of the
+	 *  same thing (architecture/sillytavern-interchange.md). */
+	reasoningMs: number | null;
+	/** What the lorebook scan decided for the generation that produced this turn: which entries
+	 *  reached the prompt, the keys that pulled them in and the turn they matched in, and why an
+	 *  entry that could have fired did not. Null for every turn nobody scanned for (user and
+	 *  system rows, seeded greetings, imported chats, anything written before this was kept).
+	 *  A continuation deliberately leaves it alone: it records the scan that opened the turn. */
+	lorebook: LorebookTrace | null;
+	siblingIndex: number;
+}
+
+/** Message with computed tree properties for UI rendering */
+export interface MessageNode extends Message {
+	children: MessageNode[];
+	siblingCount: number;
+	isOnActivePath: boolean;
+	depth: number;
+}
+
+/** Current state of an active chat */
+export interface ChatState {
+	chat: Chat;
+	messageTree: MessageNode | null;
+	activePath: Message[];
+	allMessages: Message[];
+}
+
+/** The generation in flight, and the chat that owns it.
+ *
+ *  Deliberately NOT a field of ChatState: a stream belongs to the chat that started it,
+ *  never to whatever the reader happens to be looking at. Move it back inside the chat
+ *  state and a mid-generation chat switch does two things at once: the running reply's
+ *  tokens spill into the transcript the reader just opened, and the rest of the app reads
+ *  as idle, which unlocks a second generation over the same abort controller. */
+export interface ChatStream {
+	chatId: string;
+	content: string;
+	thinking: string;
+	/** Assistant turn a continue is streaming into: its bubble renders the live tail
+	 *  instead of the streaming indicator. Null while a fresh reply streams. */
+	continuingMessageId: string | null;
+}
+
+/** Action to take after editing a message */
+/** The two things an edit can mean, chosen before the editor opens (Edit vs Branch): rewrite
+ *  the turn in place, or leave it alone and write the text as a new sibling. There is no
+ *  third "rewrite and delete everything below" action any more: a branch reaches the same
+ *  outcome without destroying the timeline it forks from. */
+export type EditAction = 'save_only' | 'create_branch';
+
+/** Action to take when deleting a message */
+export type DeleteAction = 'this_only' | 'with_descendants';
+
+/** Action to take when regenerating a response */
+export type RegenerateAction = 'replace' | 'branch';

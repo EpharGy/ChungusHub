@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en" data-theme="graphite-dark">
+	<head>
+		<meta charset="utf-8" />
+		<script>
+			// crypto.randomUUID only exists in secure contexts (HTTPS / localhost).
+			// When reaching the server over plain HTTP on a LAN IP (e.g. from a phone),
+			// it's missing, so polyfill it with getRandomValues, which is available
+			// everywhere. Must run before any app code that generates IDs.
+			if (!('randomUUID' in crypto)) {
+				crypto.randomUUID = function randomUUID() {
+					return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, function (c) {
+						return (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16);
+					});
+				};
+			}
+		</script>
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+		<!-- The .ico carries the sizes Windows and older browsers ask for; the SVG is what
+		     anything modern picks up. Both are the head rather than the whole raccoon
+		     (static/mark.svg), which has no face left at tab size. -->
+		<link rel="icon" href="/favicon.ico" sizes="32x32" />
+		<link rel="icon" type="image/svg+xml" href="/icon.svg" />
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<meta name="theme-color" content="#131417" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<!-- iOS pins its status bar text colour from this tag and re-reads it on every
+		     navigation, never from theme-color. `black-translucent` means white glyphs
+		     over a transparent bar, which a light palette turns into white on parchment,
+		     so the theme store rewrites this in step with the palette's mode. The value
+		     here is only the first paint, matching the dark default below. -->
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<script>
+			// First paint. The theme is server state, so nothing can read it until the app
+			// has booted, and every load would paint the default palette below until the
+			// blob arrives: a dark flash for anyone reading on a light palette, a
+			// wrong-coloured one for anyone on a palette they built themselves. The theme
+			// store mirrors each resolved paint into this cache (writePaintCache, in
+			// src/lib/stores/theme.svelte.ts), and this stamps it back before the body
+			// paints. The shape is hand-kept between the two.
+			//
+			// A device that has never run the app has nothing cached and correctly falls
+			// through to app.css's :root block. Deliberately no try/catch: a corrupt cache
+			// throws, the console says so, and the page carries on with those same
+			// defaults, which is the honest outcome rather than a silent one.
+			(function () {
+				var raw = localStorage.getItem('chungushub:paint');
+				if (!raw) return;
+				var paint = JSON.parse(raw);
+				var html = document.documentElement;
+				for (var key in paint.vars) html.style.setProperty(key, paint.vars[key]);
+				for (var name in paint.attrs) html.setAttribute(name, paint.attrs[name]);
+				var dark = paint.attrs['data-mode'] === 'dark';
+				html.style.colorScheme = dark ? 'dark' : 'light';
+				document
+					.querySelector('meta[name="theme-color"]')
+					.setAttribute('content', paint.vars['--theme-bg-primary']);
+				document
+					.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+					.setAttribute('content', dark ? 'black-translucent' : 'default');
+			})();
+		</script>
+		<meta name="apple-mobile-web-app-title" content="ChungusHub" />
+		<!-- iOS paints transparency black and rounds the corners itself, so this one is the
+		     plated tile rather than the bare mark. -->
+		<link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+		<title>ChungusHub</title>
+		<link rel="stylesheet" href="/fonts/newsreader.css" />
+		<link rel="stylesheet" href="/fonts/manrope.css" />
+		<link rel="stylesheet" href="/fonts/jetbrains-mono.css" />
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

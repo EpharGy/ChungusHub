@@ -1,0 +1,79 @@
+---
+title: "Installation"
+description: "Run ChungusHub from source or build a portable copy."
+---
+
+## Prerequisites
+
+[Bun](https://bun.sh), and nothing else: the server runs on Bun's standard library alone and
+the database is SQLite.
+
+<CodeGroup>
+
+```powershell Windows
+powershell -c "irm bun.sh/install.ps1 | iex"
+```
+
+```bash Linux / macOS
+curl -fsSL https://bun.sh/install | bash
+```
+
+</CodeGroup>
+
+## Run from source
+
+<Steps>
+  <Step title="Clone and install">
+    ```bash
+    git clone https://github.com/patcireamo/ChungusHub.git
+    cd ChungusHub
+    bun install --frozen-lockfile
+    ```
+  </Step>
+  <Step title="Start it">
+    Double-click `start.bat` on Windows or `start.command` on macOS. On Linux, run `./dev.sh`.
+
+    One launcher runs both halves, the client on port 1420 and the server on 4242. Open
+    [http://localhost:1420](http://localhost:1420) once it is up. **Q** quits both. **B**
+    rebuilds the client into `build/`, which is what port 4242 serves.
+  </Step>
+</Steps>
+
+## Build a portable copy
+
+```bash
+bun run package
+```
+
+This writes `dist/ChungusHub-portable/`: one executable with Bun embedded, the built client,
+and the presets, skills and backgrounds the app ships with. It serves everything from port
+4242, keeps its data beside the executable, and opens a browser on start.
+
+The executable is not signed by a developer certificate, so Windows and macOS both stop it the
+first time. The `README.txt` in that folder says how to get past each.
+
+## Your data
+
+Everything you create lives in `user-data/`: the database, uploaded images, presets, and the
+password hash if you set one. Back that folder up and you have backed up the whole workspace.
+Snapshots land in `backups/` beside it. Nothing leaves the machine except the provider requests
+you configure.
+
+## Environment variables
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `CHUNGUS_PORT` | `4242` | Port the server listens on |
+| `CHUNGUS_HOST` | `0.0.0.0` | Interface to bind once Network Access is on. Loopback either way while it is off |
+| `CHUNGUS_DATA_DIR` | `user-data` next to the app | Where the database and uploads live |
+| `CHUNGUS_ALLOWLIST` | empty | Comma-separated IPs allowed to connect |
+| `CHUNGUS_NO_OPEN` | off | Set to `1` to stop the portable build opening a browser |
+| `CHUNGUS_BACKUP_DIR` | `backups` beside the data dir | Where snapshots are stored |
+| `CHUNGUS_SKIP_UPGRADE_BACKUP` | off | Set to `1` to skip the snapshot taken before a database upgrade |
+
+<Note>
+  A fresh install listens on this computer only: the port is opened on loopback and
+  nothing on your network can see the workspace. To use it from a phone or another
+  machine, turn on **Network Access** under **Settings → Security**, then choose who
+  gets in with the IP allowlist and an optional password.
+</Note>

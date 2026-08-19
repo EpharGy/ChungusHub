@@ -1,0 +1,143 @@
+# Builds the portable distribution on GitHub's runners so a release is something a
+# stranger can check rather than something they have to take on trust: the workflow is
+# in the repo, the logs are public, and nothing is uploaded from a personal machine.
+#
+# Run it from the Actions tab with a version to cut a release: the tag is created on the
+# commit the run started from, so "release what is on the branch right now" needs nothing
+# checked out locally. Leaving the version empty builds and uploads the archives to the
+# run page without releasing, which is how the packaging gets tested. Pushing a `v*` tag
+# does the same as filling the version in.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag, e.g. v0.1.0. Leave empty to build the archives without releasing.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  # One runner per platform rather than cross-compiling from a single one. Each host
+  # builds its own binary natively, which is also what makes the two things that break
+  # a downloaded build work: tar on a real Unix host keeps the executable bit, and
+  # codesign only exists on macOS (scripts/package.ts signs there).
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: macos-latest
+            target: macos-arm64
+          - os: windows-latest
+            target: windows-x64
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Pinned, not floating: a Bun release can regress the macOS signature it writes,
+      # and that regression only shows up as a crash on a user's Mac. Moving this is a
+      # deliberate step with a test build behind it.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - run: bun install --frozen-lockfile
+
+      # What the release is called and what the archives are named, from whichever of the
+      # three entry points started the run. A run with no version is a test build and
+      # borrows the commit, which also keeps a branch name out of the filename: a slash
+      # in one would produce a path instead of a file. The input arrives as an env var
+      # rather than an expression pasted into the script, so a tag typed into the form
+      # cannot run as shell.
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "value=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "value=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: bun run package
+
+      - name: Archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tar -czf "ChungusHub-${{ steps.version.outputs.value }}-${{ matrix.target }}.tar.gz" -C dist ChungusHub-portable
+
+      - name: Archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/ChungusHub-portable -DestinationPath "ChungusHub-${{ steps.version.outputs.value }}-${{ matrix.target }}.zip"
+
+      # compression-level 0 because the archive is already compressed and this upload is
+      # a handoff to the next job, not storage. retention-days 1 for the same reason:
+      # these count against the account's artifact quota until they expire, and three
+      # platforms of a build this size will fill a small one.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: ChungusHub-${{ steps.version.outputs.value }}-${{ matrix.target }}.*
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    needs: package
+    if: github.ref_type == 'tag' || inputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+
+      # Catches a damaged or truncated download. It is not a trust anchor on its own:
+      # anyone who can rewrite the release can rewrite this file with it. The signed
+      # attestation below is the part that cannot be forged after the fact.
+      - name: Write checksums
+        working-directory: release
+        run: sha256sum ChungusHub-* > SHA256SUMS.txt
+
+      # Binds each archive's digest to this repository, this commit and this workflow,
+      # signed by GitHub, verifiable with `gh attestation verify`. Skipped while the
+      # repository is private: attestations are a public-repository feature outside
+      # Enterprise Cloud, and the step fails rather than degrades. Flipping the
+      # repository public is all it takes to turn on, and nothing here changes.
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: release/ChungusHub-*
+
+      # Draft, so the notes get read before anyone can download the thing. `--target` is
+      # what makes a run started from the Actions tab enough on its own: the tag does not
+      # have to exist yet, it gets created on the commit this run built. It is ignored on
+      # the tag-push path, where the tag is already there and already points here.
+      # GH_REPO because this job has nothing checked out: it only moves artifacts around,
+      # and gh otherwise falls back to reading a git remote that is not there.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: gh release create "$VERSION" --draft --target "$GITHUB_SHA" --title "$VERSION" --generate-notes release/*

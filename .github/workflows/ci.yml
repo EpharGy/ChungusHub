@@ -1,0 +1,44 @@
+# Runs on every pull request, so a change from someone the maintainer has never met
+# arrives already type-checked, tested and built. Two runners rather than one: this
+# codebase splits on path separators and line endings, and a Linux-only run would
+# pass while Windows breaks.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push supersedes the run still going for the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Pinned to the version the release builds use, so CI cannot pass on a runtime
+      # the shipped binary is never built with.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+
+      # The Windows runner's disk is slow enough that a test writing a real database takes an
+      # order of magnitude longer here than on a development machine, so bun's 5s default
+      # times out work that is not stuck at all. Something genuinely hung still fails, later.
+      - run: bun test --timeout 30000
+
+      - run: bun run build

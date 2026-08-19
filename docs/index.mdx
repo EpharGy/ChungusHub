@@ -1,0 +1,65 @@
+---
+title: "ChungusHub"
+description: "A self-hosted workspace for long-form roleplay."
+---
+
+ChungusHub is a local-first, privacy-focused LLM frontend for roleplay. Characters, lorebooks and personas use SillyTavern's formats, so most existing libraries should import without trouble.
+
+A chat is a tree rather than a line, so an edit or a regeneration branches instead of overwriting, and the story map lets you find your way around it.
+
+## Start here
+
+<CardGroup cols={3}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get ChungusHub running on your machine.
+  </Card>
+  <Card title="Quickstart" icon="play" href="/quickstart">
+    Connect a provider and open your first story.
+  </Card>
+  <Card title="Coming from SillyTavern" icon="file-import" href="/coming-from-sillytavern">
+    Bring your characters, personas, lorebooks and chats across in one pass.
+  </Card>
+</CardGroup>
+
+## What's inside
+
+<CardGroup cols={2}>
+  <Card title="Chats that branch" icon="git-branch">
+    Take a scene somewhere else without starting a second chat. Every version you
+    wrote stays where it was, and the Story Map shows you where the story split.
+  </Card>
+  <Card title="Chat memory" icon="brain">
+    Older turns fold into summaries so a long story stays inside its budget. Step
+    onto another branch and the memory that comes with it is that branch's.
+  </Card>
+  <Card title="Lorebooks" icon="book">
+    Standalone, shareable world info with scan triggers, recursion and a token
+    budget. Reads and writes SillyTavern's format.
+  </Card>
+  <Card title="Chungus Assistant" icon="sparkles">
+    An assistant that acts on the workspace itself: edit a character, add a lorebook
+    entry, explain a setting and take you to it. You see what it is about to do
+    before it runs.
+  </Card>
+  <Card title="Prompt Builder" icon="wrench">
+    Compose the prompt from ordered, toggleable items. Every item shows what it
+    resolves to and what it costs in tokens.
+  </Card>
+  <Card title="Connections" icon="radar">
+    Several providers side by side, each with its own model and settings, and each
+    part of the app pointed at whichever one you want.
+  </Card>
+</CardGroup>
+
+## On SillyTavern
+
+ChungusHub owes SillyTavern more than a mention. I built it as a SillyTavern user, out of things I admired there and things I wanted to see work another way. It speaks SillyTavern's formats because that is the library people already have, mine included until I moved fully to ChungusHub.
+
+This project is **not** a fork of SillyTavern and shares none of its code.
+
+If you are arriving with one, [bring it across](/coming-from-sillytavern).
+
+<Note>
+  ChungusHub is pre-release and under active development. Expect breaking changes
+  until the first tagged version.
+</Note>

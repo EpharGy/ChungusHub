@@ -1,0 +1,31 @@
+# Line endings, settled here rather than left to whatever each clone happens to have in
+# core.autocrlf. Without this file the answer is per-machine, and the first time one of
+# them writes a file with CRLF the entire file lands in the diff. That is a several-hundred-line
+# change where one line actually moved, and a conflict on every branch that touched it.
+#
+# text=auto lets git decide text from binary by content and normalizes text to LF in the
+# index; eol=lf checks it back out as LF on every platform, so both machines hold the
+# same bytes. Bun, Vite, TypeScript and svelte-check all read LF on Windows without
+# complaint, so there is nothing on that side asking for the other choice.
+* text=auto eol=lf
+
+# Windows shells are the exception. cmd.exe parses a .bat as it runs, line by line, and
+# LF-only files break it around labels and multi-line blocks. The failure is a script
+# that half-runs, not one that refuses to start. .ps1 is not as fragile, but dev.ps1 is
+# launched by start.bat and only ever runs on Windows, so it keeps the endings of the
+# file that calls it.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Assets, marked rather than left to content-sniffing. text=auto classifies these
+# correctly on its own today; the point is that a wrong guess is silent corruption (a font
+# that stops rendering, a webp that will not decode) found long after the commit that
+# caused it, so the guess is worth removing.
+*.webp binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff2 binary

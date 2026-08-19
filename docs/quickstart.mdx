@@ -1,0 +1,45 @@
+---
+title: "Quickstart"
+description: "Connect a provider, bring your characters in, and open your first story."
+---
+
+This walks the shortest path from a fresh install to a story in progress. It assumes
+ChungusHub is already running from [Installation](/installation).
+
+<Steps>
+  <Step title="Add a connection">
+    Open **Settings → Connections** and create one. A connection is a provider, an API
+    key, and a primary model, plus everything that shapes the request: sampling, context
+    size, prompt post-processing, and caching.
+
+    You can keep several connections side by side and point different parts of the app
+    at different ones, so a cheap model can do the background work while your story runs
+    on the good one.
+  </Step>
+
+  <Step title="Bring your characters in">
+    Coming from SillyTavern, go to **Settings → Import** and point it at your profile
+    folder, `data/default-user`. Pick that folder itself: the one above it is refused
+    rather than searched. It reads characters and their sprites, world info, personas,
+    chats and backgrounds in one pass, and reports what came across.
+
+    Starting fresh instead, open the **Library** and create a character there. You can
+    also drop in a character card and edit it afterwards.
+  </Step>
+
+  <Step title="Open a story">
+    Pick a character, then the persona you are playing, and the chat opens. The first
+    message and any alternate greetings arrive as swipeable openings with your persona
+    substituted into them live, so switching persona reflows the greeting instead of
+    stranding an old name in it.
+  </Step>
+
+  <Step title="Look at what you are actually sending">
+    The composer carries a live token count for the assembled prompt, and hovering it
+    breaks that number down. Open **Settings → Prompt Builder** to see the prompt as an
+    ordered list of items, toggle them, reorder them, and watch each one's cost change.
+
+    This is the part worth spending time in. Everything else in ChungusHub feeds this
+    pipeline.
+  </Step>
+</Steps>

@@ -1,0 +1,1186 @@
+<script module lang="ts">
+	// The open book survives overlay close/reopen (this view unmounts with the overlay).
+	let rememberedBookId: string | null = null;
+</script>
+
+<script lang="ts">
+	import { tick } from 'svelte';
+	import Icon from '$lib/components/ui/Icon.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
+	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
+	import LorebookEntryRow from './LorebookEntryRow.svelte';
+	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
+	import LorebookScanTester from './LorebookScanTester.svelte';
+	import LorebookBookSwitcher from './LorebookBookSwitcher.svelte';
+	import { lorebookStore } from '$lib/lorebook/store.svelte';
+	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
+	import { downloadLorebook, readLorebookFile } from '$lib/lorebook/io';
+	import { toastStore } from '$lib/stores/toast.svelte';
+	import { uiStore } from '$lib/stores/ui.svelte';
+	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
+	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
+	import { countTokens } from '$lib/tokenizer';
+	import {
+		partitionEntries,
+		resolveBookActivation,
+		sortEntries,
+		type LorebookEntry,
+		type LorebookEntrySortField,
+		type SortDirection
+	} from '$lib/lorebook/types';
+
+	const reduce =
+		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+	let books = $derived(lorebookStore.books);
+
+	let selectedId = $state<string | null>(rememberedBookId);
+	let selectedBook = $derived(books.find((b) => b.id === selectedId) ?? null);
+
+	// One column, zero navigation: entries unfold in place, any number at once. Nothing on
+	// this page replaces anything else: reaching a thing never means closing another.
+	let expandedIds = $state<Set<string>>(new Set());
+
+	function toggleExpand(id: string) {
+		const next = new Set(expandedIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expandedIds = next;
+	}
+
+	// ===== the book's own title =====
+
+	/** What the open book is made of, empty groups left out: a zero is not a fact worth a slot. */
+	let composition = $derived.by(() => {
+		if (!selectedBook) return [] as { kind: string; count: number }[];
+		const parts = partitionEntries(selectedBook.entries);
+		return [
+			{ kind: 'always', count: parts.alwaysActive.length },
+			{ kind: 'keyword', count: parts.keyword.length },
+			{ kind: 'off', count: parts.disabled.length }
+		].filter((part) => part.count > 0);
+	});
+
+	/** Prompt weight if every enabled entry fired at once: an honest upper bound. */
+	let tokens = $derived(
+		selectedBook
+			? selectedBook.entries.reduce((sum, e) => (e.disable ? sum : sum + countTokens(e.content)), 0)
+			: 0
+	);
+
+	/** Who carries the open book. A book nothing links to never reaches a prompt. */
+	let linked = $derived(
+		selectedBook
+			? characterLibraryStore.entries.filter((en) =>
+					en.data.lorebookIds?.includes(selectedBook.id)
+				)
+			: []
+	);
+
+	/** The one settings strip above the list: both layers of the activation cascade. */
+	let stripOpen = $state(false);
+	/** The scan tester below it: closed until the reader asks what fires. */
+	let testerOpen = $state(false);
+
+	let globals = $derived(lorebookSettingsStore.settings);
+	/**
+	 * The strip's collapsed line: what the open book actually runs with, not what either layer
+	 * holds on its own. A part is lit where the book's value DIFFERS from the default it would
+	 * otherwise take, the same reading the panel's stars give: a value typed back to the
+	 * default is not a difference, however the book happens to store it.
+	 */
+	let summary = $derived.by(() => {
+		const b = selectedBook;
+		if (!b) return [] as { text: string; set: boolean }[];
+		const a = resolveBookActivation(b, globals);
+		const out = [
+			{ text: `scan ${a.scanDepth === 0 ? 'all' : a.scanDepth}`, set: a.scanDepth !== globals.scanDepth },
+			{
+				text: `recursion ${a.recursiveScanning ? 'on' : 'off'}`,
+				set: a.recursiveScanning !== globals.recursiveScanning
+			}
+		];
+		if (a.recursiveScanning) {
+			out.push({
+				text: a.maxRecursionSteps > 0 ? `≤${a.maxRecursionSteps} passes` : '∞ passes',
+				set: a.maxRecursionSteps !== globals.maxRecursionSteps
+			});
+		}
+		out.push({
+			text: `case ${a.caseSensitive ? 'on' : 'off'}`,
+			set: a.caseSensitive !== globals.caseSensitive
+		});
+		out.push({
+			text: `whole words ${a.matchWholeWords ? 'on' : 'off'}`,
+			set: a.matchWholeWords !== globals.matchWholeWords
+		});
+		out.push({
+			text: `budget ${globals.budgetPercent > 0 ? `${globals.budgetPercent}%` : 'off'}`,
+			set: false
+		});
+		return out;
+	});
+
+	let fileInput = $state<HTMLInputElement | null>(null);
+	let searchEl = $state<HTMLInputElement | null>(null);
+	let nameEl = $state<HTMLInputElement | null>(null);
+
+	// ===== search / sort =====
+
+	let search = $state('');
+	let sortField = $state<LorebookEntrySortField>('order');
+	let sortDir = $state<SortDirection>('asc');
+	let sortOpen = $state(false);
+
+	let q = $derived(search.trim().toLowerCase());
+
+	function matches(e: LorebookEntry): boolean {
+		if (!q) return true;
+		return (
+			e.comment.toLowerCase().includes(q) ||
+			e.content.toLowerCase().includes(q) ||
+			e.key.some((k) => k.toLowerCase().includes(q)) ||
+			e.keysecondary.some((k) => k.toLowerCase().includes(q))
+		);
+	}
+
+	let entries = $derived(
+		selectedBook ? sortEntries(selectedBook.entries.filter(matches), sortField, sortDir) : []
+	);
+	let total = $derived(selectedBook?.entries.length ?? 0);
+
+	/** Search hits in the other books, capped so the section stays a hint. */
+	let elsewhere = $derived.by(() => {
+		if (!q) return [] as { bookId: string; bookName: string; entry: LorebookEntry }[];
+		const out: { bookId: string; bookName: string; entry: LorebookEntry }[] = [];
+		for (const b of books) {
+			if (b.id === selectedId) continue;
+			for (const e of b.entries) {
+				if (matches(e)) {
+					out.push({ bookId: b.id, bookName: b.name || 'Untitled lorebook', entry: e });
+					if (out.length >= 8) return out;
+				}
+			}
+		}
+		return out;
+	});
+
+	// ===== bulk selection =====
+
+	let selectMode = $state(false);
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleteOpen = $state(false);
+
+	// Entering/leaving select mode resets the set; entering also folds every open row so
+	// the list reads as a flat checklist.
+	$effect(() => {
+		if (selectMode) expandedIds = new Set();
+		selectedIds = new Set();
+	});
+
+	function toggleSelect(id: string) {
+		const next = new Set(selectedIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selectedIds = next;
+	}
+
+	function bulkSet(patch: { disable: boolean }) {
+		if (!selectedBook) return;
+		for (const id of selectedIds) lorebookStore.updateEntry(selectedBook.id, id, patch);
+	}
+
+	function bulkDelete() {
+		if (!selectedBook) return;
+		for (const id of selectedIds) lorebookStore.removeEntry(selectedBook.id, id);
+		bulkDeleteOpen = false;
+		selectMode = false;
+	}
+
+	// ===== housekeeping effects =====
+
+	// Consume the one-shot deep link (an assistant chip pointing at a book). An id naming
+	// no book is dropped once the list is in, rather than left armed to fire on a future
+	// overlay open; an empty list keeps it armed until the books load.
+	$effect(() => {
+		const pending = uiStore.pendingLorebookId;
+		if (!pending) return;
+		if (books.some((b) => b.id === pending)) {
+			selectedId = pending;
+			uiStore.pendingLorebookId = null;
+		} else if (books.length) {
+			uiStore.pendingLorebookId = null;
+		}
+	});
+
+	// Keep a valid selection: default to the first book, recover if the selected one is gone.
+	$effect(() => {
+		if (!selectedBook && books.length > 0) selectedId = books[0].id;
+	});
+	$effect(() => {
+		rememberedBookId = selectedId;
+	});
+
+	// Mirror the open book into the workspace focus so the assistant auto-attaches "the
+	// lorebook you're editing", and release it on unmount: this view exists exactly while
+	// its overlay is open, so unmounting IS the user navigating away, and a focus left
+	// standing would keep the assistant pointing at a book they closed.
+	$effect(() => {
+		workspaceFocus.setLorebook(selectedId);
+	});
+	$effect(() => () => workspaceFocus.setLorebook(null));
+	// Reset per-book transient UI on book switch. Expanded ids are keyed by entry id, so the
+	// other book's rows simply don't render them. A cross-book jump survives the swap.
+	$effect(() => {
+		selectedId;
+		search = '';
+		selectMode = false;
+	});
+	// Commit pending debounced writes when the view unmounts.
+	$effect(() => () => void lorebookStore.flush());
+
+	// ===== book actions =====
+
+	/** A fresh book opens with the caret in the page's title, which is where it is named. */
+	async function newBook() {
+		const book = await lorebookStore.createBook('');
+		selectedId = book.id;
+		await tick();
+		nameEl?.focus();
+	}
+
+	async function onFiles(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const files = Array.from(input.files ?? []);
+		input.value = '';
+		for (const file of files) {
+			try {
+				const book = await readLorebookFile(file);
+				await lorebookStore.addBook(book);
+				selectedId = book.id;
+				toastStore.success(`Imported "${book.name}" (${book.entries.length} entries)`);
+			} catch (err) {
+				toastStore.failed(`import "${file.name}"`, err);
+			}
+		}
+	}
+
+	// ===== the actions menu (everything you can do TO the book the switcher names) =====
+
+	let actionsOpen = $state(false);
+	let bookDeleteOpen = $state(false);
+
+	/** The menu is a popover over the header, so it leaves before what it opened arrives. */
+	function closeActionsAnd(run: () => void) {
+		actionsOpen = false;
+		run();
+	}
+
+	function exportBook() {
+		if (selectedBook) downloadLorebook(selectedBook);
+	}
+
+	let bookDeleteMessage = $derived.by(() => {
+		const b = selectedBook;
+		if (!b) return '';
+		const n = b.entries.length;
+		const held = n > 0 ? ` and its ${n} ${n === 1 ? 'entry' : 'entries'}` : '';
+		return `Delete "${b.name || 'Untitled lorebook'}"${held}? This cannot be undone.`;
+	});
+
+	async function deleteBook() {
+		if (!selectedBook) return;
+		bookDeleteOpen = false;
+		await lorebookStore.deleteBook(selectedBook.id);
+		selectedId = null;
+	}
+
+	// ===== entry actions =====
+
+	async function revealEntry(entryId: string) {
+		expandedIds = new Set([...expandedIds, entryId]);
+		await tick();
+		requestAnimationFrame(() =>
+			document
+				.getElementById('lb-row-' + entryId)
+				?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
+		);
+	}
+
+	function addEntry() {
+		if (!selectedBook) return;
+		const entry = lorebookStore.addEntry(selectedBook.id);
+		if (!entry) return;
+		selectMode = false;
+		void revealEntry(entry.id);
+	}
+
+	let entryDeleteId = $state<string | null>(null);
+	let entryToDelete = $derived(
+		entryDeleteId ? (selectedBook?.entries.find((e) => e.id === entryDeleteId) ?? null) : null
+	);
+
+	function deleteEntry() {
+		if (selectedBook && entryDeleteId) lorebookStore.removeEntry(selectedBook.id, entryDeleteId);
+		entryDeleteId = null;
+	}
+
+	function duplicateEntry(entryId: string) {
+		if (!selectedBook) return;
+		const copy = lorebookStore.duplicateEntry(selectedBook.id, entryId);
+		if (copy) void revealEntry(copy.id);
+	}
+
+	async function openInBook(bookId: string, entryId: string) {
+		selectedId = bookId;
+		await revealEntry(entryId);
+	}
+
+	// ===== keyboard =====
+
+	function handleKeydown(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+			e.preventDefault();
+			void lorebookStore.flush();
+			return;
+		}
+		// A modal dialog owns the keyboard: Dialog closes itself on the same window
+		// Escape event without stopping propagation, so stand down while one is open.
+		if (document.querySelector('.dialog-portal')) return;
+		// Ctrl+F, not Ctrl+K: the workspace owns Ctrl+K (Chats) and this view
+		// must not shadow it.
+		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+			e.preventDefault();
+			searchEl?.focus();
+			return;
+		}
+		if (e.key === 'Escape') {
+			// Open popovers consume Escape themselves (stopPropagation) before this
+			// handler sees it, so no popover guard is needed here.
+			if (selectMode) selectMode = false;
+			else if (expandedIds.size > 0) expandedIds = new Set();
+			else return; // falls through to the workspace's global Escape, which closes the overlay
+			e.preventDefault();
+			return;
+		}
+		if (e.key === '/' && !isTyping(e.target)) {
+			e.preventDefault();
+			searchEl?.focus();
+		}
+	}
+
+	function isTyping(target: EventTarget | null): boolean {
+		const el = target as HTMLElement | null;
+		return (
+			!!el &&
+			(el.tagName === 'INPUT' ||
+				el.tagName === 'TEXTAREA' ||
+				el.tagName === 'SELECT' ||
+				el.isContentEditable)
+		);
+	}
+</script>
+
+<svelte:window onkeydown={handleKeydown} />
+<input
+	bind:this={fileInput}
+	type="file"
+	accept=".json,application/json"
+	multiple
+	class="hidden"
+	onchange={onFiles}
+/>
+
+<div class="brw">
+	<header class="overlay-header overlay-header--stacked">
+		<h2 class="overlay-title">Lorebooks</h2>
+		<!-- The switcher names a book and the menu acts on the book it names, so the two ride
+		     the subject line together. -->
+		<div class="overlay-crumb">
+			{#if selectedBook}
+				<LorebookBookSwitcher book={selectedBook} {books} onSelect={(id) => (selectedId = id)} />
+				<div class="lb-acts">
+					<BrowsePopover bind:open={actionsOpen} variant="menu">
+						{#snippet trigger({ toggle, open })}
+							<button
+								type="button"
+								class="overlay-action-btn"
+								onclick={toggle}
+								aria-haspopup="menu"
+								aria-expanded={open}
+								aria-label="Lorebook actions"
+								title="Lorebook actions"
+							>
+								<Icon name="dotsVertical" class="w-4 h-4" strokeWidth={1.5} />
+							</button>
+						{/snippet}
+						<button
+							type="button"
+							role="menuitem"
+							class="brw-menu-item"
+							onclick={() => closeActionsAnd(() => void newBook())}
+						>
+							<Icon name="plus" class="w-4 h-4" strokeWidth={1.5} />
+							<span>New lorebook</span>
+						</button>
+						<button
+							type="button"
+							role="menuitem"
+							class="brw-menu-item"
+							onclick={() => closeActionsAnd(() => fileInput?.click())}
+						>
+							<Icon name="upload" class="w-4 h-4" strokeWidth={1.5} />
+							<span>Import World Info</span>
+						</button>
+						<div class="lb-acts-rule"></div>
+						<button
+							type="button"
+							role="menuitem"
+							class="brw-menu-item"
+							onclick={() => closeActionsAnd(exportBook)}
+						>
+							<Icon name="download" class="w-4 h-4" strokeWidth={1.5} />
+							<span>Export World Info</span>
+						</button>
+						<button
+							type="button"
+							role="menuitem"
+							class="brw-menu-item lb-acts-danger"
+							onclick={() => closeActionsAnd(() => (bookDeleteOpen = true))}
+						>
+							<Icon name="trash" class="w-4 h-4" strokeWidth={1.5} />
+							<span>Delete lorebook</span>
+						</button>
+					</BrowsePopover>
+				</div>
+			{/if}
+			<!-- No book, nothing to say: the empty state below is the whole panel. -->
+		</div>
+	</header>
+	{#if books.length === 0}
+		<div class="flex-1 grid place-items-center">
+			<EmptyState icon="bookOpen" title="No lorebooks yet">
+				A lorebook holds world facts that are woven into the story when their
+				keywords come up.
+				{#snippet actions()}
+					<Button variant="primary" size="sm" onclick={newBook}>
+						<Icon name="plus" class="w-4 h-4" />
+						New lorebook
+					</Button>
+					<Button variant="ghost" size="sm" onclick={() => fileInput?.click()}>
+						<Icon name="upload" class="w-4 h-4" />
+						Import
+					</Button>
+				{/snippet}
+			</EmptyState>
+		</div>
+	{:else if selectedBook}
+		<!-- Everything below lives in ONE scroll: the settings strip, controls, entries. -->
+		<div class="lb-page panel-scroll">
+			<div class="lb-page-inner">
+				<!-- The book's identity: named here, then what it is made of and who carries it. -->
+				<div class="lb-title">
+					<input
+						bind:this={nameEl}
+						class="lb-title-name"
+						value={selectedBook.name}
+						oninput={(e) =>
+							lorebookStore.updateBookMeta(selectedBook.id, {
+								name: (e.target as HTMLInputElement).value
+							})}
+						placeholder="Name this book…"
+						aria-label="Lorebook name"
+					/>
+					<!-- An empty book says so in the empty state below; twice would be noise. -->
+					{#if composition.length > 0}
+						<p class="lb-title-meta">
+							{#each composition as part (part.kind)}
+								<span class="lb-title-stat">
+									<span class="lb-dot lb-dot-{part.kind}"></span>{part.count}
+									{part.kind}
+								</span>
+							{/each}
+							<span class="lb-title-tokens">~{tokens} tokens</span>
+						</p>
+					{/if}
+					<div class="lb-bound">
+						<span class="lb-bound-cap section-label">Bound to</span>
+						{#if linked.length === 0}
+							<span class="lb-bound-none">Link it from a character or persona</span>
+						{:else}
+							<div class="lb-chips">
+								{#each linked as en (en.id)}
+									<button
+										type="button"
+										class="lb-chip"
+										onclick={() =>
+											uiStore.openLibraryEntry(en.id, en.type, () => lorebookStore.flush())}
+										title="Open {en.type} editor"
+									>
+										<Icon
+											name={en.type === 'persona' ? 'user' : 'users'}
+											class="w-3 h-3 flex-shrink-0"
+										/>
+										{en.identity.name || 'Unnamed'}
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+
+				<section class="lb-strip">
+					<button
+						type="button"
+						class="lb-strip-head"
+						onclick={() => (stripOpen = !stripOpen)}
+						aria-expanded={stripOpen}
+					>
+						<Icon name="settings" class="w-4 h-4 text-text-muted flex-shrink-0" />
+						<span class="lb-strip-title">Activation</span>
+						<span class="lb-strip-sum">
+							{#each summary as part (part.text)}
+								<span class="lb-sum-part" class:is-set={part.set}>{part.text}</span>
+							{/each}
+						</span>
+						<span class="lb-strip-chev" class:is-open={stripOpen}>
+							<Icon name="chevronDown" class="w-4 h-4" />
+						</span>
+					</button>
+					{#if stripOpen}
+						<LorebookActivationPanel book={selectedBook} />
+					{/if}
+				</section>
+
+				<!-- Same shape as Activation, and deliberately under it: that strip states the
+				     rules this one lets you try. Collapsed until asked for, since a book is read
+				     far more often than it is debugged. -->
+				<section class="lb-strip">
+					<button
+						type="button"
+						class="lb-strip-head"
+						onclick={() => (testerOpen = !testerOpen)}
+						aria-expanded={testerOpen}
+					>
+						<Icon name="search" class="w-4 h-4 text-text-muted flex-shrink-0" />
+						<span class="lb-strip-title">Test scan</span>
+						<span class="lb-strip-sum">
+							<span class="lb-sum-part">see what this book fires on</span>
+						</span>
+						<span class="lb-strip-chev" class:is-open={testerOpen}>
+							<Icon name="chevronDown" class="w-4 h-4" />
+						</span>
+					</button>
+					{#if testerOpen}
+						<LorebookScanTester book={selectedBook} />
+					{/if}
+				</section>
+
+				{#if total === 0}
+					<div class="py-14">
+						<EmptyState icon="feather" size="sm" title="No entries yet">
+							Entries are facts injected into the story when their keywords come up, or on
+							every turn.
+							{#snippet actions()}
+								<Button variant="ghost" size="sm" onclick={addEntry}>
+									<Icon name="plus" class="w-3.5 h-3.5" />
+									Add the first entry
+								</Button>
+							{/snippet}
+						</EmptyState>
+					</div>
+				{:else}
+					<!-- List controls -->
+					<div class="lb-controls">
+						<div class="brw-search">
+							<Icon name="search" class="brw-search-icon w-3.5 h-3.5" />
+							<input
+								bind:this={searchEl}
+								bind:value={search}
+								type="text"
+								placeholder="Search {total} {total === 1 ? 'entry' : 'entries'}…"
+								aria-label="Search entries"
+								class="input-base"
+							/>
+						</div>
+
+						<div class="lb-controls-row">
+							<BrowsePopover bind:open={sortOpen}>
+								{#snippet trigger({ toggle, open })}
+									<button
+										type="button"
+										class="brw-btn"
+										class:is-active={open}
+										onclick={toggle}
+										aria-haspopup="true"
+										aria-expanded={open}
+										aria-label="Sort entries"
+										title="Sort"
+									>
+										<Icon name="arrowUpDown" class="w-4 h-4" />
+									</button>
+								{/snippet}
+								<div class="brw-sec">
+									<div class="brw-sec-head"><span class="brw-sec-title">Sort by</span></div>
+									<div class="brw-opts">
+										<button
+											type="button"
+											class="brw-opt"
+											class:is-active={sortField === 'order'}
+											onclick={() => (sortField = 'order')}
+										>
+											Order
+										</button>
+										<button
+											type="button"
+											class="brw-opt"
+											class:is-active={sortField === 'comment'}
+											onclick={() => (sortField = 'comment')}
+										>
+											Title
+										</button>
+									</div>
+								</div>
+								<div class="brw-sec">
+									<div class="brw-sec-head"><span class="brw-sec-title">Direction</span></div>
+									<div class="brw-opts">
+										<button
+											type="button"
+											class="brw-opt"
+											class:is-active={sortDir === 'asc'}
+											onclick={() => (sortDir = 'asc')}
+										>
+											<Icon name="chevronUp" class="w-3.5 h-3.5" />Ascending
+										</button>
+										<button
+											type="button"
+											class="brw-opt"
+											class:is-active={sortDir === 'desc'}
+											onclick={() => (sortDir = 'desc')}
+										>
+											<Icon name="chevronDown" class="w-3.5 h-3.5" />Descending
+										</button>
+									</div>
+								</div>
+							</BrowsePopover>
+
+							<button
+								type="button"
+								class="brw-btn"
+								class:is-active={selectMode}
+								onclick={() => (selectMode = !selectMode)}
+								aria-pressed={selectMode}
+								aria-label="Select entries"
+								title="Select entries"
+							>
+								<Icon name="checkCircle" class="w-4 h-4" />
+							</button>
+
+							<span class="flex-1"></span>
+
+							<button type="button" class="brw-new" onclick={addEntry} title="New entry">
+								<Icon name="plus" class="w-4 h-4" />
+								<span class="brw-new-label">New</span>
+							</button>
+						</div>
+					</div>
+
+					{#if selectMode}
+						<div class="brw-bulk lb-bulk">
+							<button
+								type="button"
+								class="brw-bulk-x"
+								onclick={() => (selectMode = false)}
+								aria-label="Exit selection"
+							>
+								<Icon name="close" class="w-4 h-4" />
+							</button>
+							<span class="brw-bulk-count"><b>{selectedIds.size}</b> selected</span>
+							<button
+								type="button"
+								class="brw-bulk-link"
+								onclick={() => (selectedIds = new Set(entries.map((e) => e.id)))}
+							>
+								Select all
+							</button>
+							<span class="brw-bulk-spacer"></span>
+							<button
+								type="button"
+								class="brw-bulk-btn"
+								disabled={selectedIds.size === 0}
+								onclick={() => bulkSet({ disable: false })}
+							>
+								Enable
+							</button>
+							<button
+								type="button"
+								class="brw-bulk-btn"
+								disabled={selectedIds.size === 0}
+								onclick={() => bulkSet({ disable: true })}
+							>
+								Disable
+							</button>
+							<button
+								type="button"
+								class="brw-bulk-btn brw-bulk-btn--danger"
+								disabled={selectedIds.size === 0}
+								onclick={() => (bulkDeleteOpen = true)}
+							>
+								<Icon name="trash" class="w-3.5 h-3.5" />
+								<span class="brw-bulk-label">Delete</span>
+							</button>
+						</div>
+					{/if}
+
+					{#if q && entries.length === 0 && elsewhere.length === 0}
+						<div class="text-center py-12 px-6">
+							<p class="text-sm font-ui text-text-secondary">Nothing matches “{search}”.</p>
+							<button
+								type="button"
+								onclick={() => (search = '')}
+								class="mt-2 text-xs font-ui text-accent hover:underline"
+							>
+								Clear search
+							</button>
+						</div>
+					{:else}
+						<!-- Entries, unfolding in place -->
+						<ul class="lb-rows">
+							{#each entries as entry (entry.id)}
+								<li>
+									<LorebookEntryRow
+										lorebookId={selectedBook.id}
+										entryId={entry.id}
+										expanded={expandedIds.has(entry.id)}
+										onToggle={() => toggleExpand(entry.id)}
+										onDelete={() => (entryDeleteId = entry.id)}
+										onDuplicate={() => duplicateEntry(entry.id)}
+										{selectMode}
+										selected={selectedIds.has(entry.id)}
+										onSelectToggle={() => toggleSelect(entry.id)}
+									/>
+								</li>
+							{/each}
+						</ul>
+
+						{#if elsewhere.length > 0}
+							<section class="mt-3">
+								<div class="lb-part">
+									<Icon name="globe" class="w-3.5 h-3.5 text-text-muted" />
+									<span class="lb-part-label section-label">Elsewhere in the archive</span>
+									<span class="lb-part-rule"></span>
+								</div>
+								<ul>
+									{#each elsewhere as hit (hit.bookId + hit.entry.id)}
+										<li>
+											<button
+												type="button"
+												class="lb-else"
+												onclick={() => openInBook(hit.bookId, hit.entry.id)}
+											>
+												<span class="lb-else-title" class:is-untitled={!hit.entry.comment}>
+													{hit.entry.comment || 'Untitled entry'}
+												</span>
+												<span class="lb-else-book">{hit.bookName}</span>
+											</button>
+										</li>
+									{/each}
+								</ul>
+							</section>
+						{/if}
+					{/if}
+				{/if}
+			</div>
+		</div>
+	{/if}
+</div>
+
+<ConfirmDialog
+	open={bookDeleteOpen}
+	title="Delete lorebook"
+	message={bookDeleteMessage}
+	confirmLabel="Delete"
+	variant="danger"
+	destructive
+	holdMs={holdMsForBlast(selectedBook?.entries.length ?? 0)}
+	onConfirm={deleteBook}
+	onCancel={() => (bookDeleteOpen = false)}
+/>
+
+<ConfirmDialog
+	open={bulkDeleteOpen}
+	title="Delete entries"
+	message={`Delete ${selectedIds.size} ${selectedIds.size === 1 ? 'entry' : 'entries'} from "${selectedBook?.name || 'Untitled lorebook'}"? This cannot be undone.`}
+	confirmLabel="Delete"
+	variant="danger"
+	destructive
+	holdMs={holdMsForBlast(selectedIds.size)}
+	onConfirm={bulkDelete}
+	onCancel={() => (bulkDeleteOpen = false)}
+/>
+
+<ConfirmDialog
+	open={entryDeleteId !== null}
+	title="Delete entry"
+	message={`Delete "${entryToDelete?.comment || 'Untitled entry'}"? This cannot be undone.`}
+	confirmLabel="Delete"
+	variant="danger"
+	destructive
+	onConfirm={deleteEntry}
+	onCancel={() => (entryDeleteId = null)}
+/>
+
+<style>
+	/* ===== the single scroll column ===== */
+
+	.lb-page {
+		flex: 1;
+		min-height: 0;
+		overscroll-behavior: contain;
+	}
+
+	/* One measured column: the page reads as a document, not a stretched sheet. */
+	.lb-page-inner {
+		width: 100%;
+		max-width: 52rem;
+		margin-inline: auto;
+		padding: 0.75rem 0.75rem 3rem;
+	}
+
+	/* ===== the actions menu beside the subject ===== */
+
+	/* The panel anchors here, so it drops under the button and not off the panel's edge. */
+	.lb-acts {
+		position: relative;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+	}
+
+	/* Above it the two doors to any book, below it what happens to this one. */
+	.lb-acts-rule {
+		height: 1px;
+		margin: 0.3rem 0.2rem;
+		background: var(--color-border-subtle);
+	}
+
+	/* Compounded onto the base class so the red survives whatever order the two
+	   stylesheets land in: .brw-menu-item's own hover is otherwise a tie. */
+	.brw-menu-item.lb-acts-danger {
+		color: var(--color-error);
+	}
+
+	.brw-menu-item.lb-acts-danger:hover {
+		background: color-mix(in srgb, var(--color-error) 14%, transparent);
+		color: var(--color-error);
+	}
+
+	/* ===== the book's own title ===== */
+
+	.lb-title {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.3rem;
+		margin-bottom: 0.9rem;
+	}
+
+	/* The page's heading, editable in place: it reads as the book's name first and a
+	   field second. The surface reaches out of the column so the text stays on its edge. */
+	.lb-title-name {
+		width: calc(100% + 1rem);
+		margin-inline: -0.5rem;
+		padding: 0.15rem 0.5rem;
+		border: 0;
+		border-radius: var(--radius-md);
+		background: transparent;
+		font-family: var(--font-ui);
+		font-size: 1.15rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--color-text-primary);
+		outline: none;
+		transition: background-color 140ms ease, box-shadow 140ms ease;
+	}
+
+	.lb-title-name::placeholder {
+		font-style: italic;
+		font-weight: 400;
+		color: var(--color-text-muted);
+	}
+
+	.lb-title-name:hover {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 60%, transparent);
+	}
+
+	.lb-title-name:focus {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 45%, transparent);
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
+	}
+
+	.lb-title-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		flex-wrap: wrap;
+		margin: 0;
+		font-family: var(--font-ui);
+		font-size: 0.6875rem;
+		color: var(--color-text-muted);
+	}
+
+	.lb-title-stat {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	/* The three natures, in the entry rows' own colours. */
+	.lb-dot {
+		width: 0.4rem;
+		height: 0.4rem;
+		border-radius: var(--radius-full);
+		flex-shrink: 0;
+	}
+
+	.lb-dot-always {
+		background: var(--color-accent);
+	}
+
+	.lb-dot-keyword {
+		background: var(--color-success);
+	}
+
+	.lb-dot-off {
+		background: var(--color-border);
+	}
+
+	.lb-title-tokens {
+		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Label and value on one line: who carries this book is a fact, not a paragraph. */
+	.lb-bound {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin-top: 0.15rem;
+	}
+
+	/* Typography comes from the global .section-label. */
+	.lb-bound-cap {
+		flex-shrink: 0;
+	}
+
+	.lb-bound-none {
+		font-family: var(--font-ui);
+		font-size: 0.6875rem;
+		font-style: italic;
+		color: var(--color-text-muted);
+	}
+
+	.lb-chips {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		flex-wrap: wrap;
+	}
+
+	.lb-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		max-width: 100%;
+		padding: 0.2rem 0.55rem;
+		border-radius: var(--radius-full);
+		border: 1px solid var(--color-border-subtle);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 70%, transparent);
+		font-family: var(--font-ui);
+		font-size: 0.6875rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: border-color 140ms ease, color 140ms ease;
+	}
+
+	.lb-chip:hover {
+		color: var(--color-text-primary);
+		border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+	}
+
+	/* ===== the settings strip ===== */
+
+	.lb-strip {
+		margin-bottom: 1rem;
+		border: 1px solid var(--color-border-subtle);
+		border-radius: var(--radius-lg);
+		background: var(--color-card-bg);
+	}
+
+	.lb-strip-head {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		width: 100%;
+		padding: 0.6rem 0.85rem;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.lb-strip-head:hover .lb-strip-title {
+		color: var(--color-accent);
+	}
+
+	.lb-strip-title {
+		flex-shrink: 0;
+		font-family: var(--font-ui);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		transition: color 140ms ease;
+	}
+
+	.lb-strip-sum {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		color: var(--color-text-muted);
+		text-align: right;
+	}
+
+	/* The parts this book set for itself, lit inside the resolved line. The separator is
+	   drawn by the part that follows it so it keeps the muted colour either way. */
+	.lb-sum-part.is-set {
+		color: var(--color-accent);
+	}
+
+	.lb-sum-part + .lb-sum-part::before {
+		content: '· ';
+		color: var(--color-text-muted);
+		opacity: 0.75;
+	}
+
+	.lb-strip-chev {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		color: var(--color-text-muted);
+	}
+
+	.lb-strip-chev :global(svg) {
+		transition: transform 160ms ease;
+	}
+
+	.lb-strip-chev.is-open :global(svg) {
+		transform: rotate(180deg);
+	}
+
+	/* ===== in-list controls (search on its own row, actions below) ===== */
+
+	.lb-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		padding: 0 0 0.5rem;
+	}
+
+	.lb-controls-row {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+	}
+
+	/* Inside the column the bulk bar reads as a banner, not a full-bleed strip. */
+	.lb-bulk {
+		margin: 0 0 0.5rem;
+		border: 1px solid color-mix(in srgb, var(--color-accent) 26%, transparent);
+		border-radius: var(--radius-md);
+	}
+
+	/* ===== entry rows ===== */
+
+	.lb-rows {
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* Hairline between collapsed rows so a long list scans as lines, not a floating
+	   cloud of titles. Open rows carve themselves out with their own border+margin. */
+	.lb-rows > li + li {
+		border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 55%, transparent);
+	}
+
+	/* ===== cross-book section ===== */
+
+	.lb-part {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.5rem;
+	}
+
+	/* Typography comes from the global .section-label; only the wrap rule is local. */
+	.lb-part-label {
+		white-space: nowrap;
+	}
+
+	.lb-part-rule {
+		flex: 1;
+		height: 1px;
+		background: color-mix(in srgb, var(--color-border-subtle) 80%, transparent);
+	}
+
+	.lb-else {
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
+		width: 100%;
+		padding: 0.4rem 0.65rem;
+		border-radius: var(--radius-md);
+		text-align: left;
+		cursor: pointer;
+		transition: background-color 130ms ease;
+	}
+
+	.lb-else:hover {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 55%, transparent);
+	}
+
+	.lb-else-title {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-ui);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-text-primary);
+	}
+
+	.lb-else-title.is-untitled {
+		font-style: italic;
+		font-weight: 400;
+		color: var(--color-text-muted);
+	}
+
+	.lb-else-book {
+		flex-shrink: 0;
+		max-width: 9rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-ui);
+		font-size: 0.6875rem;
+		font-style: italic;
+		color: var(--color-text-muted);
+	}
+</style>
