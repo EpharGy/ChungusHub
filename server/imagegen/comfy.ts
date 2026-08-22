@@ -242,7 +242,7 @@ async function waitForImage(
 	origin: string,
 	promptId: string,
 	timeoutSeconds: number
-): Promise<{ filename: string; subfolder: string }> {
+): Promise<{ filename: string; subfolder: string; type: string }> {
 	const attempts = Math.max(1, Math.round((timeoutSeconds * 1000) / POLL_INTERVAL_MS));
 
 	for (let attempt = 0; attempt < attempts; attempt++) {
@@ -267,7 +267,13 @@ async function waitForImage(
 
 		for (const output of Object.values(entry.outputs ?? {})) {
 			const image = output.images?.[0];
-			if (image?.filename) return { filename: image.filename, subfolder: image.subfolder ?? '' };
+			// The folder ComfyUI filed it under travels with the filename rather than being
+			// assumed to be `output`. A workflow ending in PreviewImage writes to `temp`,
+			// which ComfyUI clears on its own restart — the way to run this without ComfyUI
+			// keeping a permanent second copy of every picture (we store our own).
+			if (image?.filename) {
+				return { filename: image.filename, subfolder: image.subfolder ?? '', type: image.type || 'output' };
+			}
 		}
 	}
 
@@ -300,9 +306,9 @@ export async function generateImage(req: ComfyGenerateRequest): Promise<ComfyGen
 	const workflow = fillWorkflow(readWorkflow(req.workflow), placeholderValues(req));
 
 	const promptId = await submitPrompt(origin, workflow);
-	const { filename, subfolder } = await waitForImage(origin, promptId, req.timeoutSeconds);
+	const { filename, subfolder, type } = await waitForImage(origin, promptId, req.timeoutSeconds);
 
-	const params = new URLSearchParams({ filename, type: 'output' });
+	const params = new URLSearchParams({ filename, type });
 	if (subfolder) params.set('subfolder', subfolder);
 
 	const viewResponse = await fetch(`${origin}/view?${params.toString()}`, {
