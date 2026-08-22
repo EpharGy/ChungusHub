@@ -43,6 +43,24 @@ The app's only sanitize call (`utils/markdown.ts`) allows neither `img` nor a re
 
 A turn with no marker renders as **one** element with one `use:renderedHtml`, exactly as before this existed. Every ordinary turn in the app would otherwise pay an element per run for a feature it does not use.
 
+## Cleanup: nothing here is a folder anyone has to weed
+
+A generated picture is an ordinary `images/chat/` file, so it inherits the whole lifecycle that column already has (`server/db.ts`, "Chat image attachments"), and inherits it **for free**: `imagePathsIn` reads `item.path` off the blob, and a generated attachment is an item with a path.
+
+| What the reader does | What reaps the file |
+|---|---|
+| Deletes the chat | `deleteChat` → `dropOrphanedChatImages` |
+| Deletes one turn | `deleteMessageOnly` → same |
+| Deletes a branch or a subtree ("start this part over") | `deleteMessageAndDescendants` / `deleteDescendants` → same |
+| Retries a picture, or removes one from its marker | `updateMessageAttachments` sweeps what the row stopped pointing at |
+| Anything else that ends up referenced by nothing | `sweepAbandonedChatImages` at boot, one-hour grace |
+
+Every one of those is **reference counted, after the write**. A branch or fork copies the attachment list, so several rows can point at one file and it dies only when the last of them lets go — which is why the retry sweep asks the rows again rather than deleting what it just replaced.
+
+**`updateMessageAttachments` must keep sweeping.** Without it a retried picture is unreferenced but undeleted until the next server start, and a reader tuning a look through a dozen retries is the exact case that makes that visible.
+
+**ComfyUI's own output folder is not ours and is not needed.** The bytes are copied into `images/chat/` at generation time, so ComfyUI's `output/` can be emptied whenever the reader likes with no effect on any chat — the difference from hotlinking, where clearing it breaks every picture ever posted. A workflow ending in `PreviewImage` rather than `SaveImage` writes to ComfyUI's `temp/` (cleared on its restart) and works here, because the folder comes back with the filename from `/history` rather than being assumed.
+
 ## Seeds and the tree
 
 `LOCK` means "the seed the last picture used", which only a path can answer. `imagegenStore.resolveSeed` walks back from the turn through its own **ancestors**, so a swipe reuses the look of the reply it replaced rather than the look of a branch the reader has left. With nothing to lock onto (the first picture in a story), it is a random seed rather than an error.
