@@ -1989,8 +1989,20 @@ class ServerDatabase {
 	 *  both read this column, and a partial write would strand a file or free a live one. An
 	 *  empty list is stored as NULL, the same shape a turn that never had one wears. */
 	updateMessageAttachments(messageId: string, attachments: unknown[] | null): void {
+		// What this row pointed at BEFORE the write. A retry replaces a picture and a remove
+		// drops one, and in both cases the old file is left referenced by nothing: without
+		// this it would sit on disk until the next boot sweep, which is a restart away and
+		// carries an hour's grace on top. The reference count is what decides, exactly as it
+		// does for a deleted message, so a file still held by a fork or a branch survives.
+		const before = this.imagePathsOfMessages([messageId]);
+
 		const json = Array.isArray(attachments) && attachments.length ? JSON.stringify(attachments) : null;
 		this.execute('UPDATE messages SET attachments_json = ? WHERE id = ?', [json, messageId]);
+
+		// AFTER the write, like every other caller: the sweep asks the rows themselves, so
+		// running it first would find this row still holding the file it is about to release.
+		const after = new Set(this.imagePathsOfMessages([messageId]));
+		this.dropOrphanedChatImages(before.filter((path) => !after.has(path)));
 	}
 
 	/** Bind every user turn in a chat to a persona at once (or clear with null). Powers the
