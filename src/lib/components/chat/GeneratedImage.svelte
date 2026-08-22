@@ -106,7 +106,7 @@
 			<button
 				type="button"
 				class="generated-chip"
-				onclick={() => imagegenStore.ensureForMessage(message.id, { manual: true })}
+				onclick={() => imagegenStore.generateOne(message.id, marker.index)}
 			>
 				{status === 'error' ? 'Try again' : 'Generate'}
 			</button>
