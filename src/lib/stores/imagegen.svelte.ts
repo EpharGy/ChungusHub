@@ -135,6 +135,25 @@ class ImagegenStore {
 	}
 
 	/**
+	 * Make one marker's picture, honouring its own seed rule.
+	 *
+	 * What the button on a marker does, as against {@link ensureForMessage}, which is the
+	 * whole turn. A reader looking at one placeholder among several asked for that one.
+	 */
+	async generateOne(messageId: string, markerIndex: number): Promise<void> {
+		if (!this.active) return;
+		const message = this.messageById(messageId);
+		if (!message) return;
+
+		const marker = findMarkers(message.content).find((m) => m.index === markerIndex);
+		if (!marker || marker.result.status !== 'ok') return;
+		if (this.working.has(slotKey(messageId, markerIndex))) return;
+
+		this.failures.delete(slotKey(messageId, markerIndex));
+		await this.generate(messageId, markerIndex, marker.result);
+	}
+
+	/**
 	 * Make this marker's picture again with a fresh seed.
 	 *
 	 * Always a new random seed and always past the seed lock: the reader clicked retry
