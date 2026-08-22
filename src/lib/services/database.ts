@@ -5,7 +5,15 @@
  * SQL (and the single source of truth) lives on the server; this is a thin, typed proxy,
  * so nothing above it knows where the data comes from.
  */
-import type { Chat, ChatListStats, ChatMemoryFootprint, Message, MessagesDelta, BranchLabel } from '$lib/types/chat';
+import type {
+	Chat,
+	ChatListStats,
+	ChatMemoryFootprint,
+	Message,
+	MessageAttachment,
+	MessagesDelta,
+	BranchLabel
+} from '$lib/types/chat';
 import type { CharacterVersion, LibraryEntry } from '$lib/types/library';
 import type { Lorebook } from '$lib/lorebook/types';
 import type { SteeringNote } from '$lib/types/steering';
@@ -118,6 +126,9 @@ class DatabaseService {
 	}
 	updateMessageSpriteLabel(messageId: string, label: string | null): Promise<void> {
 		return this.call('updateMessageSpriteLabel', messageId, label);
+	}
+	updateMessageAttachments(messageId: string, attachments: MessageAttachment[] | null): Promise<void> {
+		return this.call('updateMessageAttachments', messageId, attachments);
 	}
 	deleteMessageOnly(messageId: string): Promise<void> { return this.call('deleteMessageOnly', messageId); }
 	deleteMessageAndDescendants(messageId: string): Promise<void> { return this.call('deleteMessageAndDescendants', messageId); }

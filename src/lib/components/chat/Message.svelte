@@ -30,6 +30,7 @@
 	import { countTokens } from '$lib/tokenizer';
 	import { imageService } from '$lib/services/imageService';
 	import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+	import MessageBody from './MessageBody.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import LorebookTraceList from '$lib/components/lorebook/LorebookTraceList.svelte';
 
@@ -75,8 +76,12 @@
 	}: Props = $props();
 
 	/** The set the viewer pages: this turn's own pictures, and nothing wider. A chat is a
-	 *  tree, so "every image in this chat" would have to pick a branch to mean anything. */
-	let imageAttachments = $derived((message.attachments ?? []).filter((a) => a.kind === 'image').map((a) => a.path));
+	 *  tree, so "every image in this chat" would have to pick a branch to mean anything.
+	 *  Generated pictures are excluded because they are drawn at their marker inside the
+	 *  body (MessageBody); the strip is for what the reader attached themselves. */
+	let imageAttachments = $derived(
+		(message.attachments ?? []).filter((a) => a.kind === 'image' && !a.generated).map((a) => a.path)
+	);
 
 	// One editor, two intents, chosen by which button opened it: Edit rewrites this turn,
 	// Branch writes the text as a new sibling and leaves this one alone. Nothing is created
@@ -473,18 +478,10 @@
 	// The emptiness check lives here, not in MessageReasoning: the box is a pure
 	// renderer, so a whitespace-only reasoning string never mounts an empty shell.
 	const hasReasoning = $derived(Boolean(liveThinking?.trim()));
-	// The story text as it reaches the page: display-scope regex rules (measured against this
-	// turn's depth), then live {{char}}/{{user}}, then markdown. Derived rather than inlined
-	// so the action below re-runs on exactly these inputs and nothing else.
-	const bodyHtml = $derived(
-		renderMarkdown(
-			expandSelfRefs(
-				regexRulesStore.forDisplay(displayedContent, message.role, depth, displayPreset),
-				selfRefChar,
-				selfRefUser
-			)
-		)
-	);
+	// The story text as it reaches the page (display-scope regex rules measured against this
+	// turn's depth, then live {{char}}/{{user}}, then markdown) lives in MessageBody, which
+	// also draws any image marker as the picture it asked for. A turn with no marker renders
+	// there exactly as it did when this component held the pipeline itself.
 	// Portraits style renders the portrait INSIDE the card (floated top-left),
 	// so the outer avatar column has to come off the DOM, not just hide.
 	const isPortraitStyle = $derived(themeStore.appearance.chatStyle === 'portrait');
@@ -659,7 +656,16 @@
 									     use:renderedHtml rather than {@html}: it patches this subtree
 									     instead of rebuilding it, which is what lets a folding panel
 									     take a click while the reply is still arriving. -->
-									<div class="prose message-prose" data-search-text use:renderedHtml={bodyHtml}></div>
+									<div class="prose message-prose" data-search-text>
+									<MessageBody
+										{message}
+										content={displayedContent}
+										{depth}
+										{selfRefChar}
+										{selfRefUser}
+										{displayPreset}
+									/>
+								</div>
 								</div>
 							{/if}
 							</div>

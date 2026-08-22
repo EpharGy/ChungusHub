@@ -1982,6 +1982,17 @@ class ServerDatabase {
 		});
 	}
 
+	/** Rewrite a turn's attachment list: how a picture the image engine generated is hung on
+	 *  the turn whose marker asked for it. Metadata like the two above, so it never touches
+	 *  content or edited_at and no summary is invalidated by a picture arriving. The list is
+	 *  written whole because it IS the record: the refcount sweep and the branch-copy path
+	 *  both read this column, and a partial write would strand a file or free a live one. An
+	 *  empty list is stored as NULL, the same shape a turn that never had one wears. */
+	updateMessageAttachments(messageId: string, attachments: unknown[] | null): void {
+		const json = Array.isArray(attachments) && attachments.length ? JSON.stringify(attachments) : null;
+		this.execute('UPDATE messages SET attachments_json = ? WHERE id = ?', [json, messageId]);
+	}
+
 	/** Bind every user turn in a chat to a persona at once (or clear with null). Powers the
 	 *  composer's "set persona for this chat" action: imported/legacy chats whose user
 	 *  messages have no persona show a plain "You" until re-attributed. Only user rows are
@@ -3497,6 +3508,7 @@ export const MUTATION_SCOPES: Record<string, SyncScope> = {
 	applyMessageContinuation: 'messages',
 	updateMessagePersona: 'messages',
 	updateMessageSpriteLabel: 'messages',
+	updateMessageAttachments: 'messages',
 	setChatUserPersona: 'messages',
 	updateMessageBranchLabel: 'messages',
 	deleteMessageOnly: 'messages',
