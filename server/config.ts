@@ -317,6 +317,15 @@ export const DEFAULT_CHARACTERS_DIR = resolve(join(BASE_DIR, 'defaults', 'charac
 // into the data dir; dropping a file in this folder is all it takes to ship one).
 export const DEFAULT_BACKGROUNDS_DIR = resolve(join(BASE_DIR, 'defaults', 'backgrounds'));
 
+// Bundled ComfyUI workflows for the image-generation engine, read straight from the repo
+// like the backgrounds above. Never copied into the data dir, so an update can improve a
+// shipped workflow without overwriting anything the reader wrote.
+export const DEFAULT_IMAGEGEN_WORKFLOWS_DIR = resolve(join(BASE_DIR, 'defaults', 'imagegen-workflows'));
+
+// The reader's own ComfyUI workflows, dropped in by hand. A name here wins over the bundled
+// file of the same name, which is what makes "edit the default" a copy rather than a fork.
+export const IMAGEGEN_WORKFLOWS_DIR = join(DATA_DIR, 'imagegen-workflows');
+
 // Plain HTTP, and only that: a device on the network connects with no certificate
 // to install and no warning to click through. Browsers count localhost as a secure
 // context, so the host machine still gets the full PWA (installable, clipboard);
