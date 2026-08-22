@@ -37,5 +37,12 @@ you saved them, so LoRAs, upscalers, face detailers and ControlNets all work.
 
 ## Requirements
 
-The workflow must end in a node that saves an image (`SaveImage`, or anything that reports
-images in ComfyUI's history). The engine takes the first image the finished job reports.
+The workflow must end in a node that reports an image in ComfyUI's history. The engine takes
+the first image the finished job reports.
+
+`SaveImage` (what the bundled workflow uses) writes into ComfyUI's `output/` folder.
+`PreviewImage` writes into its `temp/` folder instead, which ComfyUI clears on restart — use
+that if you would rather ComfyUI not keep a second permanent copy of every picture. Either
+works: ChungusHub copies the bytes into its own `images/chat/` store as soon as the job
+finishes, so **ComfyUI's folders can be emptied at any time without affecting your chats**,
+and the pictures in a chat are deleted with the messages that reference them.
