@@ -22,6 +22,7 @@ import { resolveMacroValues, substitute } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
 import { memoryStore } from '$lib/memory/store.svelte';
 import { spriteStore } from './sprites.svelte';
+import { imagegenStore } from './imagegen.svelte';
 import { steeringStore } from './steering.svelte';
 import { steeringTargetForChat } from '$lib/types/steering';
 import type { LorebookTrigger } from '$lib/lorebook/types';
@@ -210,6 +211,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(chatId);
+			this.triggerImageGeneration();
 			return result.committedMessageId;
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
@@ -850,6 +852,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
+			this.triggerImageGeneration();
 		} catch (error) {
 			// A stop the server never answered: nothing streamed back, so the stored turn
 			// stays untouched (the kept-tail case resolves normally above).
@@ -985,6 +988,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
+			this.triggerImageGeneration();
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
@@ -1057,6 +1061,26 @@ class MessageStore {
 			lorebookIds: chatLorebookClaim(state.chat),
 			mutedLorebookIds: chatMutedLorebookClaim(state.chat)
 		});
+	}
+
+	/**
+	 * Fire-and-forget image generation for the reply that just landed: every `[[IMG: … ]]`
+	 * marker in it that has no picture yet, in order. Sits beside the memory sidecar above
+	 * and follows the same rules — never blocks generation, never rolled back, no-op when the
+	 * engine or its auto-generate switch is off.
+	 *
+	 * Takes no message id on purpose. All three callers have just refreshed the chat and
+	 * differ in what they hold (a new reply, a continued turn, an opening scene), while the
+	 * turn to read is the same thing in each case: the newest assistant turn on the path.
+	 */
+	private triggerImageGeneration(): void {
+		const path = chatStore.currentChatState?.activePath ?? [];
+		for (let i = path.length - 1; i >= 0; i--) {
+			if (path[i].role === 'assistant') {
+				void imagegenStore.ensureForMessage(path[i].id);
+				return;
+			}
+		}
 	}
 
 	private async createMessage(
