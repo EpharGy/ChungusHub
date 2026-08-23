@@ -30,10 +30,26 @@ import {
 	type ShotToken
 } from './types';
 
-/** Matches one marker, capturing its body. Dot-all: a model may wrap a long prompt. */
-const MARKER_RE = /\[\[IMG:\s*(.*?)\s*\]\]/s;
+/**
+ * Matches one marker, capturing its body.
+ *
+ * Deliberately slack about everything except the brackets and the word, because the ways a
+ * model gets the opener slightly wrong are not interesting and each one costs a picture:
+ * `[[ IMG:`, `[[IMG :`, `[[img:` and a forgotten colon are all the marker its author meant.
+ * Whitespace before `]]` is optional for the same reason (`… RANDOM]]` is fine).
+ *
+ * What it will NOT do is match a single bracket. `[IMG: …]` is one keystroke away from
+ * ordinary prose and from a markdown link, and a false positive here does not misparse
+ * quietly, it spends a minute of GPU time on a sentence somebody wrote.
+ *
+ * Dot-all: a model may wrap a long prompt over several lines. Case-insensitive on the word
+ * only — the control tokens inside stay case-sensitive, since those have to be told apart
+ * from prose (see `classify`).
+ */
+const MARKER_PATTERN = String.raw`\[\[\s*IMG\b\s*:?\s*(.*?)\s*\]\]`;
+const MARKER_RE = new RegExp(MARKER_PATTERN, 'is');
 /** The same pattern, global, for walking every marker in a message. */
-const MARKER_RE_GLOBAL = /\[\[IMG:\s*(.*?)\s*\]\]/gs;
+const MARKER_RE_GLOBAL = new RegExp(MARKER_PATTERN, 'gis');
 
 const AR_SET: ReadonlySet<string> = new Set(AR_TOKENS);
 const SHOT_SET: ReadonlySet<string> = new Set(SHOT_TOKENS);
