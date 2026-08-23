@@ -148,6 +148,34 @@ describe('findMarkers / splitOnMarkers', () => {
 		}
 	});
 
+	test('forgives the ways a model gets the opener slightly wrong', () => {
+		// Each of these used to cost a picture and render as raw text in the transcript.
+		for (const text of [
+			'[[IMG: 1girl | SQUARE ]]',
+			'[[ IMG: 1girl | SQUARE ]]',
+			'[[IMG : 1girl | SQUARE ]]',
+			'[[img: 1girl | SQUARE ]]',
+			'[[IMG 1girl | SQUARE ]]',
+			'[[IMG:1girl|SQUARE]]',
+			'[[IMG: 1girl | SQUARE]]'
+		]) {
+			const markers = findMarkers(text);
+			expect(markers).toHaveLength(1);
+			expect(markers[0].result.status).toBe('ok');
+		}
+	});
+
+	test('a single bracket is prose, not a marker', () => {
+		// One keystroke from a markdown link, and a false positive spends GPU time on a
+		// sentence somebody wrote.
+		expect(findMarkers('[IMG: 1girl]')).toEqual([]);
+		expect(hasImageMarker('see [IMG: figure 4] below')).toBe(false);
+	});
+
+	test('the word must be IMG, not merely start with it', () => {
+		expect(findMarkers('[[IMGUR: 1girl ]]')).toEqual([]);
+	});
+
 	test('a multi-line prompt is one marker', () => {
 		const markers = findMarkers('[[IMG: 1girl,\nred hair | PORTRAIT ]]');
 		expect(markers).toHaveLength(1);
