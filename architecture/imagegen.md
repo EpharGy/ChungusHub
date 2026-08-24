@@ -31,7 +31,7 @@ The flag decides one thing only: **where the picture is drawn**. `generated` set
 1. **No `--enable-cors-header`.** A page talking to ComfyUI directly needs it started with that flag, which is the single most common reason the feature looks broken. The server has no such rule.
 2. **The picture is kept.** A `/view` URL is only good while ComfyUI is running, so a chat read with the GPU box asleep would be a column of broken images. The bytes land in `images/chat/` and are refcounted, swept and backed up like any other picture.
 
-**What this path does NOT do is `toStoredFormat`** (the client-side gate in `imageService.ts`): that gate is a browser canvas and there is no canvas on the server. Format and resolution are covered anyway — ComfyUI emits png, and dimensions come from settings already clamped to 4096 and a multiple of 8 — so what is left unenforced is the ~3.5 MB budget. Worth knowing before pointing this at a workflow that upscales to 4K.
+**What this path does NOT do is `toStoredFormat`** (the client-side gate in `imageService.ts`): that gate is a browser canvas and there is no canvas on the server. Format and resolution are covered anyway - ComfyUI emits png, and dimensions come from settings already clamped to 4096 and a multiple of 8 - so what is left unenforced is the ~3.5 MB budget. Worth knowing before pointing this at a workflow that upscales to 4K.
 
 A **failed job is reported, not waited out**: ComfyUI keeps the failure in the same history entry, so `describeFailure` digs the exception out of it rather than letting the reader watch a spinner until the timeout. The error text travels all the way to the marker, because "checkpoint not found: sdxl.safetensors" is actionable and "image generation failed" is not.
 
@@ -55,11 +55,11 @@ A generated picture is an ordinary `images/chat/` file, so it inherits the whole
 | Retries a picture, or removes one from its marker | `updateMessageAttachments` sweeps what the row stopped pointing at |
 | Anything else that ends up referenced by nothing | `sweepAbandonedChatImages` at boot, one-hour grace |
 
-Every one of those is **reference counted, after the write**. A branch or fork copies the attachment list, so several rows can point at one file and it dies only when the last of them lets go — which is why the retry sweep asks the rows again rather than deleting what it just replaced.
+Every one of those is **reference counted, after the write**. A branch or fork copies the attachment list, so several rows can point at one file and it dies only when the last of them lets go - which is why the retry sweep asks the rows again rather than deleting what it just replaced.
 
 **`updateMessageAttachments` must keep sweeping.** Without it a retried picture is unreferenced but undeleted until the next server start, and a reader tuning a look through a dozen retries is the exact case that makes that visible.
 
-**ComfyUI's own output folder is not ours and is not needed.** The bytes are copied into `images/chat/` at generation time, so ComfyUI's `output/` can be emptied whenever the reader likes with no effect on any chat — the difference from hotlinking, where clearing it breaks every picture ever posted. A workflow ending in `PreviewImage` rather than `SaveImage` writes to ComfyUI's `temp/` (cleared on its restart) and works here, because the folder comes back with the filename from `/history` rather than being assumed.
+**ComfyUI's own output folder is not ours and is not needed.** The bytes are copied into `images/chat/` at generation time, so ComfyUI's `output/` can be emptied whenever the reader likes with no effect on any chat - the difference from hotlinking, where clearing it breaks every picture ever posted. A workflow ending in `PreviewImage` rather than `SaveImage` writes to ComfyUI's `temp/` (cleared on its restart) and works here, because the folder comes back with the filename from `/history` rather than being assumed.
 
 ## Seeds and the tree
 
@@ -69,8 +69,8 @@ Every one of those is **reference counted, after the write**. A branch or fork c
 
 ## Where it plugs in
 
-- `messageStore.triggerImageGeneration()` — fire-and-forget after a reply, a continuation and an opening scene, beside `triggerMemoryMaintenance`. It takes no message id: all three callers have just refreshed the chat and the turn to read is the same thing in each case, the newest assistant turn on the path.
-- `imagegenStore.ensureForMessage` — every marker with no picture yet, **sequentially**. ComfyUI runs one job at a time through one GPU, so parallel requests only make the first picture arrive last.
+- `messageStore.triggerImageGeneration()` - fire-and-forget after a reply, a continuation and an opening scene, beside `triggerMemoryMaintenance`. It takes no message id: all three callers have just refreshed the chat and the turn to read is the same thing in each case, the newest assistant turn on the path.
+- `imagegenStore.ensureForMessage` - every marker with no picture yet, **sequentially**. ComfyUI runs one job at a time through one GPU, so parallel requests only make the first picture arrive last.
 - A marker that **failed** is not retried automatically. A broken host would otherwise be re-asked by every subsequent reply, one slow timeout at a time. The failure lives in the store (not the row) with a button beside it, because a picture that failed is a marker with no picture, which the text already describes.
 - Settings ride the `settings` spine under `imagegen`, and the page is Settings → App → Image Generation. It is deliberately **not** an entry in the Engines registry: every engine there is a routing point for an LLM connection, and this one answers to a diffusion server (architecture/engines.md).
 
