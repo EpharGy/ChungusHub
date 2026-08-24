@@ -5,8 +5,8 @@
  * prompt is assembled. Both are pure, so what was actually asked for can be asserted in a
  * test rather than read out of a running server's logs.
  *
- * The locks are the reader overruling the model. The model still writes its tokens — the
- * marker is unchanged and the gallery-facing record keeps both — but a reader who has
+ * The locks are the reader overruling the model. The model still writes its tokens - the
+ * marker is unchanged and the gallery-facing record keeps both - but a reader who has
  * decided every picture in this story is a 832x1216 portrait should not have to talk the
  * model into agreeing every single turn.
  */
@@ -33,7 +33,7 @@ export interface EffectiveSettings {
 	ar: ArToken;
 	shot: ShotToken;
 	resolution: Resolution;
-	/** Prepend, shot tags, the model's prompt, append — in that order, comma-joined. */
+	/** Prepend, shot tags, the model's prompt, append - in that order, comma-joined. */
 	positivePrompt: string;
 	/** Still a token: `LOCK` needs the story tree, which is not this module's business. */
 	seedToken: SeedToken;

@@ -14,8 +14,8 @@
  *
  * The generated file deliberately does NOT go through `toStoredFormat` (the client-side
  * gate in imageService.ts): that gate is a browser canvas and there is no canvas here. What
- * it protects against is mostly absent anyway — ComfyUI emits png, and the dimensions come
- * from settings that are already clamped to 4096 — so the one thing left unenforced is the
+ * it protects against is mostly absent anyway - ComfyUI emits png, and the dimensions come
+ * from settings that are already clamped to 4096 - so the one thing left unenforced is the
  * ~3.5 MB budget a very large picture could exceed. See architecture/server-core.md.
  */
 
@@ -269,7 +269,7 @@ async function waitForImage(
 			const image = output.images?.[0];
 			// The folder ComfyUI filed it under travels with the filename rather than being
 			// assumed to be `output`. A workflow ending in PreviewImage writes to `temp`,
-			// which ComfyUI clears on its own restart — the way to run this without ComfyUI
+			// which ComfyUI clears on its own restart - the way to run this without ComfyUI
 			// keeping a permanent second copy of every picture (we store our own).
 			if (image?.filename) {
 				return { filename: image.filename, subfolder: image.subfolder ?? '', type: image.type || 'output' };

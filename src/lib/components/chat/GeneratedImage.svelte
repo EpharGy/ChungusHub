@@ -93,7 +93,7 @@
 	</div>
 {:else}
 	<!-- No picture yet: either the engine is off, auto-generate is off, or the last attempt
-	     failed. All three end in the same place — a marker the reader can act on. -->
+	     failed. All three end in the same place - a marker the reader can act on. -->
 	<div class="generated-placeholder" class:generated-broken={status === 'error'}>
 		<span class="generated-prompt" title={promptText}>{promptText}</span>
 		{#if status === 'error' && error}
