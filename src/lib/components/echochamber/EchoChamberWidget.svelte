@@ -168,6 +168,20 @@
 	function regenerate() {
 		if (messageId) void echoChamberStore.regenerate(messageId);
 	}
+
+	/**
+	 * Throw the current feed away.
+	 *
+	 * Deliberately does NOT regenerate afterwards. This exists for a feed that came out
+	 * wrong, and a reader who wants a different one presses refresh; spending a call on
+	 * their behalf here would make delete impossible to use as "stop showing me this".
+	 *
+	 * Nothing confirms it either: the feed is decoration, regenerating costs one call, and a
+	 * dialog in front of a one-click undo is friction with nothing behind it.
+	 */
+	function forget() {
+		if (messageId) void echoChamberStore.forget(messageId);
+	}
 </script>
 
 {#if enabled}
@@ -212,6 +226,17 @@
 						<Icon name="refresh" />
 					</button>
 				{/if}
+
+				<button
+					class="echo-btn"
+					onclick={forget}
+					disabled={!feed || busy}
+					title={feed
+						? 'Delete these reactions. They stop being sent as history too.'
+						: 'Nothing to delete'}
+				>
+					<Icon name="trash" />
+				</button>
 
 				<button
 					class="echo-btn"
