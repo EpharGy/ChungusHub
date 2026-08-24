@@ -47,8 +47,8 @@ export function resolveStyleMacros(prompt: string, castNames: string[]): string 
 	// as a chatter puts the book's title in the feed as a person.
 	const storyCharactersBlock =
 		names.length > 1
-			? `<characters>\nThe ONLY chatters in this feed are the characters listed below. You MUST use each name EXACTLY as written — full surname included. Do NOT change, shorten, alter, or invent any part of any name. Do NOT add new characters not on this list:\n${characterList}\n</characters>`
-			: `<characters>\nIdentify the speaking characters from the story content itself — do NOT use "${names[0] ?? 'Character'}" as a username, as that is the story or world name, not a character. Use the names of characters who actually appear and speak within the narrative. Each character should speak with the voice and personality they demonstrate in the story.\n</characters>`;
+			? `<characters>\nThe ONLY chatters in this feed are the characters listed below. You MUST use each name EXACTLY as written - full surname included. Do NOT change, shorten, alter, or invent any part of any name. Do NOT add new characters not on this list:\n${characterList}\n</characters>`
+			: `<characters>\nIdentify the speaking characters from the story content itself - do NOT use "${names[0] ?? 'Character'}" as a username, as that is the story or world name, not a character. Use the names of characters who actually appear and speak within the narrative. Each character should speak with the voice and personality they demonstrate in the story.\n</characters>`;
 
 	return prompt
 		.replace(/\{\{characters\}\}/gi, characterList)
@@ -88,7 +88,7 @@ function buildLore(context: StoryContext, settings: EchoChamberSettings): string
  *
  * A narrator style is one persona, so the count is a message count and the voice never
  * varies; a crowd style asks for one message each. The instruction is repeated in both the
- * instructions block and the task block on purpose — models drop the count when it is
+ * instructions block and the task block on purpose - models drop the count when it is
  * stated once, and an over-long feed costs the reader tokens on every turn.
  */
 function countInstruction(style: ChatStyle, count: number): string {
@@ -121,7 +121,7 @@ export function buildPrompt(
 
 	const role = style.usesStoryCast
 		? `<role>
-You voice the actual characters from this roleplay as they react to the unfolding story in a live chat feed. Each character speaks authentically in their own established voice and personality — they are not random internet users, they are the story's cast.
+You voice the actual characters from this roleplay as they react to the unfolding story in a live chat feed. Each character speaks authentically in their own established voice and personality - they are not random internet users, they are the story's cast.
 </role>`
 		: `<role>
 You are an excellent creator of fake chat feeds that react dynamically to the user's conversation context.
