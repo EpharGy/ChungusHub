@@ -1,7 +1,7 @@
 /**
  * The image engine: markers in, pictures on the turn.
  *
- * Shaped after the Sprites engine, which solves the same problem — a background call per
+ * Shaped after the Sprites engine, which solves the same problem - a background call per
  * reply, whose result belongs to one message row and whose failure has to be visible
  * somewhere. What is different is that a picture takes a minute rather than a second, and
  * that a message can ask for several, so this store keeps per-marker state instead of

@@ -3,7 +3,7 @@
  *
  * Thin on purpose: every decision about what to ask for was already made (locks applied,
  * seed resolved), and everything about how to ask ComfyUI lives on the server. What is left
- * is four calls and one rule about failure — a generation that fails answers with the
+ * is four calls and one rule about failure - a generation that fails answers with the
  * message the machine gave, because "image generation failed" is not something a reader can
  * act on and "checkpoint not found: sdxl.safetensors" is.
  */
