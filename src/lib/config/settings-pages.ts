@@ -18,6 +18,7 @@ import { llmService } from '$lib/services/llm/provider';
 import { connectionStore } from '$lib/stores/connections.svelte';
 import { ENGINES } from '$lib/engines/registry';
 import { backupStore } from '$lib/stores/backups.svelte';
+import { imagegenStore } from '$lib/stores/imagegen.svelte';
 import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 import { APP_VERSION } from '$lib/version';
 
@@ -47,6 +48,7 @@ export type SettingsPage =
 	// App
 	| 'general'
 	| 'engines'
+	| 'imagegen'
 	| 'security'
 	| 'import'
 	| 'backups'
@@ -98,6 +100,12 @@ function connectionsSummary(): string {
 	return count > 1 ? `${model} · ${count} connections` : model;
 }
 
+/** Off, or the host it will ask. A reader glancing at the row wants to know which. */
+function imagegenSummary(): string {
+	if (!imagegenStore.settings.enabled) return 'Off';
+	return imagegenStore.settings.checkpoint || 'No checkpoint set';
+}
+
 function enginesSummary(): string {
 	const on = ENGINES.filter((e) => e.enabled.get()).length;
 	return `${on} of ${ENGINES.length} on`;
@@ -125,6 +133,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		rows: [
 			{ page: 'general', label: 'General', icon: 'settings' },
 			{ page: 'engines', label: 'Engines', icon: 'bolt', preview: enginesSummary },
+			{ page: 'imagegen', label: 'Image Generation', icon: 'image', preview: imagegenSummary },
 			{ page: 'security', label: 'Security', icon: 'shield' },
 			{ page: 'backups', label: 'Backups', icon: 'archive', preview: backupsSummary },
 			{ page: 'import', label: 'Import', icon: 'download' }
