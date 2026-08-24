@@ -112,6 +112,36 @@ unfamiliar name.
 Reaction text renders through the app's own `renderMarkdown`, which sanitizes with DOMPurify,
 so the feed is safe by the same construction as the transcript.
 
+## What the crowd knows about the world
+
+**EchoChamber runs no lorebook scan of its own, ever.** The turn it reacts to already
+recorded one: `Message.lorebook` is the trace of what the scan decided for the generation
+that produced that turn, and `lorebook-context.ts` filters it with the app's own
+`lorebookWasInjected` predicate and resolves the surviving ids to their text.
+
+Reusing it rather than re-scanning is the whole point, and it buys three things:
+
+- **The crowd cannot know more than the story did.** A second scan runs against different
+  text at a different moment and activates a different set, so the feed could reference a
+  secret the reply itself was never told. Reusing the trace makes that structurally
+  impossible rather than unlikely.
+- **It is branch-correct for free.** The trace is a column on the message, so walking to
+  another branch reads that branch's scan with nothing to recompute or invalidate.
+- **It costs nothing.** A scan is real work across every book and every key; this is a
+  filter over a list already in memory.
+
+Using `lorebookWasInjected` rather than a hand-rolled status list is what keeps it honest:
+an entry that matched but was trimmed by the token budget, or that lost its inclusion group,
+never reached the model, so it must not reach the crowd. An entry deleted since the scan
+drops out rather than leaving a placeholder - it is gone, and a placeholder would put a hole
+in the world description rather than admit one.
+
+Memory is `memoryStore.recall`, the same derived recall the story gets. It describes the
+story as of the current path tip, so regenerating a feed on an OLDER turn shows the crowd
+slightly more than that turn's model had. That is accepted rather than fixed: the ordinary
+case is the newest reply, where the two agree exactly, and the alternative is re-deriving
+coverage per message for a decoration.
+
 ## The engine, and why it floats
 
 EchoChamber is a registry engine (`engines/registry.ts`), which is what earns it a
@@ -141,11 +171,6 @@ it, deliberately. If upstream ever extracts such a shell itself, adopt it then.
 
 ## What it deliberately does not do yet
 
-- **No lorebook or memory in the prompt.** `includeLorebook` and `includeMemory` exist in the
-  settings type and the prompt builder handles both (with tests), but the store resolves them
-  to empty, because both need text the prompt pipeline assembles server-side. Neither toggle
-  is offered on the settings page until it resolves to something: a switch that silently does
-  nothing is worse than no switch.
 - **No Livestream.** The extension can drip a batch of reactions out over time as a running
   chatroom, with resume. Additive on top of this spine; it changes nothing here.
 - **No chat participation.** Talking back to the crowd, with @mentions, is a second
@@ -162,6 +187,8 @@ it, deliberately. If upstream ever extracts such a shell itself, adopt it then.
 | `src/lib/echochamber/config.ts` | Shipped defaults, bounds, and clamping of a stored blob |
 | `src/lib/echochamber/styles.ts` | The 14 shipped styles (generated from upstream markdown) |
 | `src/lib/echochamber/parse.ts` | Model output into reactions, and cast-name snapping |
+| `src/lib/echochamber/custom-styles.ts` | Reader-authored styles: ids, validation, duplication |
+| `src/lib/echochamber/lorebook-context.ts` | The story turn own lorebook trace into world text |
 | `src/lib/echochamber/prompt.ts` | Prompt assembly and the style macros |
 | `src/lib/echochamber/feed-state.ts` | Where a feed lives, and the pruning that bounds it |
 | `src/lib/echochamber/echochamber.test.ts` | `bun test` coverage of all of the above |

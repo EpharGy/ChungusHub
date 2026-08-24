@@ -19,6 +19,8 @@
 import { chatStore } from '$lib/stores/chat.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { personaStore } from '$lib/stores/persona.svelte';
+import { lorebookStore } from '$lib/lorebook/store.svelte';
+import { memoryStore } from '$lib/memory/store.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { llmService } from '$lib/services/llm/provider';
 import { readSetting, registerSettingsReload, writeSetting } from '$lib/services/syncedSetting';
@@ -36,6 +38,7 @@ import {
 	upsertStyle
 } from '$lib/echochamber/custom-styles';
 import { clearFeed, putFeed, type EchoChamberChatState } from '$lib/echochamber/feed-state';
+import { lorebookTextFromTrace } from '$lib/echochamber/lorebook-context';
 import { parseReactions } from '$lib/echochamber/parse';
 import { buildPrompt, castNamesForStyle } from '$lib/echochamber/prompt';
 import { BUILT_IN_STYLES } from '$lib/echochamber/styles';
@@ -331,10 +334,17 @@ class EchoChamberStore {
 			personaName: persona?.identity.name ?? 'User',
 			personaDescription: persona ? describe(persona.data.traits) : '',
 			characterDescriptions,
-			// Not wired yet: both need text the prompt pipeline assembles server-side, so the
-			// settings page does not offer either toggle until they resolve to something.
-			lorebook: '',
-			memory: '',
+			// What the STORY's own scan activated for this turn, not a second scan of our own:
+			// the crowd must never know something the reply it is reacting to was not told.
+			lorebook: this.settings.includeLorebook
+				? lorebookTextFromTrace(path[target].lorebook, lorebookStore.books)
+				: '',
+			// The engine's own recall for the open chat, already derived and branch-aware. It
+			// describes the story as of the current path tip, so regenerating a feed on an
+			// older turn shows the crowd a little more than that turn's model had. Harmless
+			// for the ordinary case (the newest reply), and the alternative is re-deriving
+			// coverage per message for a decoration.
+			memory: this.settings.includeMemory ? memoryStore.recall : '',
 			castNames: characterDescriptions.map((c) => c.name),
 			pastReactions
 		};
