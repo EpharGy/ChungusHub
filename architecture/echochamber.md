@@ -142,6 +142,24 @@ slightly more than that turn's model had. That is accepted rather than fixed: th
 case is the newest reply, where the two agree exactly, and the alternative is re-deriving
 coverage per message for a decoration.
 
+## Deleting a feed
+
+The panel's delete throws the current feed away and does **not** regenerate. It exists for a
+feed that came out wrong, and a reader who wants a different one presses refresh; spending a
+call on their behalf would make delete unusable as "stop showing me this". Nothing confirms
+it: a feed is decoration and regenerating costs one call, so a dialog in front of that is
+friction with nothing behind it.
+
+A deleted feed stops being sent as history on the next turn for free, because
+`pastReactionsFor` resolves feeds by id at prompt-build time rather than baking them into
+anything.
+
+**A feed is never shown its own predecessor** (`pastReactionsFor`). The turn being reacted to
+is the last entry in its own history window, so without that rule a regenerate is handed the
+very output it is replacing and asked to keep its voice, which is exactly what pressing
+regenerate is meant to escape, and doubly so after deleting one that came out corrupt. Only
+turns BEFORE the reacted-to one can be history.
+
 ## The engine, and why it floats
 
 EchoChamber is a registry engine (`engines/registry.ts`), which is what earns it a

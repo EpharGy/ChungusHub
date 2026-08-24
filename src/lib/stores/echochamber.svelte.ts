@@ -40,7 +40,7 @@ import {
 import { clearFeed, putFeed, type EchoChamberChatState } from '$lib/echochamber/feed-state';
 import { lorebookTextFromTrace } from '$lib/echochamber/lorebook-context';
 import { parseReactions } from '$lib/echochamber/parse';
-import { buildPrompt, castNamesForStyle } from '$lib/echochamber/prompt';
+import { buildPrompt, castNamesForStyle, pastReactionsFor } from '$lib/echochamber/prompt';
 import { BUILT_IN_STYLES } from '$lib/echochamber/styles';
 import type {
 	ChatStyle,
@@ -321,13 +321,9 @@ class EchoChamberStore {
 			? [{ name: character.identity.name, description: describe(character.data.traits) }]
 			: [];
 
-		const pastReactions: Record<number, Reaction[]> = {};
-		if (this.settings.includePastReactions) {
-			history.forEach((turn, index) => {
-				const feed = this.feedFor(turn.id);
-				if (feed) pastReactions[index] = feed.reactions;
-			});
-		}
+		const pastReactions = this.settings.includePastReactions
+			? pastReactionsFor(history, messageId, (id) => this.feedFor(id))
+			: {};
 
 		return {
 			history: history.map((m) => ({ role: m.role, content: m.content })),

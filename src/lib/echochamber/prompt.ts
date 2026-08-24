@@ -170,6 +170,29 @@ function formatPastReactions(reactions: Reaction[]): string {
 }
 
 /**
+ * The crowd's earlier lines, indexed against the history window that carries them.
+ *
+ * **The target's own feed is never included.** A feed is generated for the newest turn, and
+ * that turn is the last entry in its own history window, so a regenerate would otherwise be
+ * shown the very output it is replacing and asked to keep its voice - which is precisely
+ * what a reader pressing regenerate is trying to escape, and doubly so after deleting a feed
+ * that came out corrupt. Only turns BEFORE the one being reacted to can be history.
+ */
+export function pastReactionsFor(
+	history: readonly { id: string }[],
+	targetId: string,
+	feedFor: (messageId: string) => { reactions: Reaction[] } | null
+): Record<number, Reaction[]> {
+	const out: Record<number, Reaction[]> = {};
+	history.forEach((turn, index) => {
+		if (turn.id === targetId) return;
+		const feed = feedFor(turn.id);
+		if (feed?.reactions.length) out[index] = feed.reactions;
+	});
+	return out;
+}
+
+/**
  * The names a style's output should be snapped against, or none.
  *
  * Only a cast style snaps. A crowd style inventing `xX_ShadowReaper_Xx` is the feature, so
