@@ -15,6 +15,15 @@ import { describe, expect, test } from 'bun:test';
 
 import { DEFAULT_ECHOCHAMBER_SETTINGS, BOUNDS, resolveEchoChamberSettings } from './config';
 import {
+	MAX_CUSTOM_STYLES,
+	MAX_PROMPT_LENGTH,
+	duplicateStyle,
+	normalizeCustomStyles,
+	removeStyle,
+	styleIdFor,
+	upsertStyle
+} from './custom-styles';
+import {
 	MAX_STORED_FEEDS,
 	clearFeed,
 	defaultEchoChamberChatState,
@@ -444,6 +453,84 @@ describe('feed state', () => {
 		const state = { feeds: { a: feed(1), b: feed(2) } };
 		expect(clearFeed(state, 'a')).toEqual({ feeds: { b: feed(2) } });
 		expect(clearFeed(state, 'missing')).toBe(state);
+	});
+});
+
+describe('custom styles', () => {
+	function custom(name: string, prompt = 'Be a crowd. username: message'): unknown {
+		return { name, prompt };
+	}
+
+	test('a stored entry becomes a usable style, marked as the reader own', () => {
+		const [style] = normalizeCustomStyles([custom('My Style')]);
+		expect(style.name).toBe('My Style');
+		expect(style.custom).toBe(true);
+		expect(style.narrator).toBe(false);
+		expect(style.usesStoryCast).toBe(false);
+	});
+
+	test('drops an entry with no name or no prompt, since neither can be used', () => {
+		expect(normalizeCustomStyles([{ name: '', prompt: 'x' }])).toEqual([]);
+		expect(normalizeCustomStyles([{ name: 'x', prompt: '   ' }])).toEqual([]);
+		expect(normalizeCustomStyles('nonsense')).toEqual([]);
+	});
+
+	test('ids are derived from the name and made unique', () => {
+		const styles = normalizeCustomStyles([custom('My Style'), custom('My Style')]);
+		expect(styles.map((s) => s.id)).toEqual(['my-style', 'my-style-2']);
+	});
+
+	// A custom entry carrying a shipped id would shadow it, so the shipped text could never
+	// be got back and an upstream revision to it could never reach this reader.
+	test('an id colliding with a built-in is re-derived, keeping the prompt', () => {
+		const [style] = normalizeCustomStyles([{ id: 'twitch', name: 'Mine', prompt: 'hello' }]);
+		expect(style.id).not.toBe('twitch');
+		expect(builtInStyle('twitch')?.custom).toBe(false);
+		expect(style.prompt).toBe('hello');
+	});
+
+	test('styleIdFor never returns an id a shipped style already answers to', () => {
+		for (const shipped of BUILT_IN_STYLES) {
+			expect(styleIdFor(shipped.name, [])).not.toBe(shipped.id);
+		}
+	});
+
+	test('caps how many are kept, so one synced blob cannot grow without bound', () => {
+		const many = Array.from({ length: MAX_CUSTOM_STYLES + 10 }, (_, i) => custom(`S${i}`));
+		expect(normalizeCustomStyles(many)).toHaveLength(MAX_CUSTOM_STYLES);
+	});
+
+	test('truncates a prompt past the cap rather than dropping the style', () => {
+		const [style] = normalizeCustomStyles([custom('Long', 'x'.repeat(MAX_PROMPT_LENGTH + 500))]);
+		expect(style.prompt).toHaveLength(MAX_PROMPT_LENGTH);
+	});
+
+	test('upsert adds, then replaces by id', () => {
+		const [a] = normalizeCustomStyles([custom('A')]);
+		const list = upsertStyle([], a);
+		expect(list).toHaveLength(1);
+		expect(upsertStyle(list, { ...a, name: 'B' })).toEqual([{ ...a, name: 'B' }]);
+	});
+
+	test('remove takes only the named style', () => {
+		const styles = normalizeCustomStyles([custom('A'), custom('B')]);
+		expect(removeStyle(styles, styles[0].id).map((s) => s.name)).toEqual(['B']);
+	});
+
+	test('duplicating a built-in copies its text under a fresh, unreserved id', () => {
+		const copy = duplicateStyle(builtInStyle('twitch')!, ['twitch']);
+		expect(copy.custom).toBe(true);
+		expect(copy.id).not.toBe('twitch');
+		expect(copy.prompt).toBe(builtInStyle('twitch')!.prompt);
+		expect(copy.name).toContain('copy');
+	});
+
+	// The format IS the extension's: a name and a raw prompt, nothing else. Its export is a
+	// plain .md of the prompt, so a style moves between the two by copy and paste.
+	test('a style needs nothing beyond a name and a prompt', () => {
+		const [style] = normalizeCustomStyles([{ name: 'Pasted', prompt: 'anything at all' }]);
+		expect(style).toBeDefined();
+		expect(style.prompt).toBe('anything at all');
 	});
 });
 
