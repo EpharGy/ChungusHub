@@ -32,7 +32,7 @@ and did not there.
 to build:
 
 - **No migration.** Nothing is appended to `MIGRATIONS`, so the port can never collide with
-  an upstream schema version. Same rule the imagegen port holds.
+  an upstream schema version.
 - **Deletion cannot be forgotten.** `feature_state` is a column on the chats row and
   `deleteChat` is a `DELETE FROM chats`, so a deleted chat takes its feeds with it,
   atomically, with no cleanup code at all. Compare `steering_notes` in that same function: a
