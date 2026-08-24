@@ -507,7 +507,7 @@
 			></div>
 		{/if}
 		<section
-			class="echo-panel"
+			class="echo-panel surface-float"
 			class:echo-panel--mobile={isMobile}
 			class:echo-panel--snapped={isSnapped && !isMobile}
 			class:echo-panel--dragging={dragging}
@@ -627,15 +627,16 @@
 {/if}
 
 <style>
+	/* Background, border and blur come from the shared `surface-float` class in the markup,
+	   the same one the Assistant's panel wears. Hand-rolling an approximation of it (which
+	   this did) means a hardcoded blur and the wrong tokens, so the two panels drift apart
+	   the moment a theme changes any of them. */
 	.echo-panel {
 		position: fixed;
 		z-index: 200;
 		display: flex;
 		flex-direction: column;
-		border: 1px solid var(--color-border-subtle);
 		border-radius: 0.75rem;
-		background: color-mix(in srgb, var(--color-bg-secondary) 94%, transparent);
-		backdrop-filter: blur(10px);
 		box-shadow: var(--shadow-lg);
 		overflow: hidden;
 	}
