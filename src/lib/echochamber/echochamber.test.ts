@@ -31,9 +31,11 @@ import {
 	pruneFeeds,
 	putFeed
 } from './feed-state';
+import { lorebookTextFromTrace } from './lorebook-context';
 import { parseReactions, snapToCast } from './parse';
 import { buildPrompt, castNamesForStyle, resolveStyleMacros } from './prompt';
 import { BUILT_IN_STYLES, builtInStyle } from './styles';
+import type { Lorebook, LorebookStatus, LorebookTrace } from '$lib/lorebook/types';
 import type { ChatStyle, EchoChamberFeed, StoryContext } from './types';
 
 const CROWD = builtInStyle('twitch')!;
@@ -531,6 +533,82 @@ describe('custom styles', () => {
 		const [style] = normalizeCustomStyles([{ name: 'Pasted', prompt: 'anything at all' }]);
 		expect(style).toBeDefined();
 		expect(style.prompt).toBe('anything at all');
+	});
+});
+
+describe('lorebook context', () => {
+	function book(entries: { id: string; content: string }[]): Lorebook {
+		return {
+			id: 'b1',
+			name: 'Book',
+			entries: entries.map((e) => ({ id: e.id, content: e.content }))
+		} as unknown as Lorebook;
+	}
+
+	function trace(records: { entryId: string; status: LorebookStatus }[]): LorebookTrace {
+		return {
+			silent: 0,
+			records: records.map((r) => ({
+				bookId: 'b1',
+				bookName: 'Book',
+				entryId: r.entryId,
+				title: r.entryId,
+				status: r.status,
+				matches: []
+			}))
+		} as unknown as LorebookTrace;
+	}
+
+	const books = [book([
+		{ id: 'e1', content: 'The tower is sealed.' },
+		{ id: 'e2', content: 'Mai hates mornings.' },
+		{ id: 'e3', content: 'A secret nobody was told.' }
+	])];
+
+	test('takes the entries the story actually injected', () => {
+		const text = lorebookTextFromTrace(
+			trace([
+				{ entryId: 'e1', status: 'constant' },
+				{ entryId: 'e2', status: 'keyword' }
+			]),
+			books
+		);
+		expect(text).toBe('The tower is sealed.\n\nMai hates mornings.');
+	});
+
+	test('a sticky entry still counts, since its text did reach the prompt', () => {
+		expect(lorebookTextFromTrace(trace([{ entryId: 'e1', status: 'sticky' }]), books)).toBe(
+			'The tower is sealed.'
+		);
+	});
+
+	// The point of reusing the turn's own trace: an entry that was matched but never made it
+	// into the story's prompt must not reach the crowd either.
+	test('an entry that matched but never reached the model is left out', () => {
+		for (const status of ['trimmed', 'groupLost', 'rolledOut', 'filtered', 'cooldown'] as const) {
+			expect(lorebookTextFromTrace(trace([{ entryId: 'e3', status }]), books)).toBe('');
+		}
+	});
+
+	test('a deleted entry drops out rather than leaving a placeholder', () => {
+		expect(lorebookTextFromTrace(trace([{ entryId: 'gone', status: 'constant' }]), books)).toBe('');
+	});
+
+	test('an entry recorded twice by a recursive scan is sent once', () => {
+		const text = lorebookTextFromTrace(
+			trace([
+				{ entryId: 'e1', status: 'constant' },
+				{ entryId: 'e1', status: 'keyword' }
+			]),
+			books
+		);
+		expect(text).toBe('The tower is sealed.');
+	});
+
+	test('no trace and no records both mean nothing to say', () => {
+		expect(lorebookTextFromTrace(null, books)).toBe('');
+		expect(lorebookTextFromTrace(undefined, books)).toBe('');
+		expect(lorebookTextFromTrace(trace([]), books)).toBe('');
 	});
 });
 
