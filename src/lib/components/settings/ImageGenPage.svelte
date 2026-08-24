@@ -560,7 +560,7 @@
 	}
 
 	.status-ok {
-		color: var(--color-success, #3a8);
+		color: var(--color-success);
 	}
 
 	.status-bad {

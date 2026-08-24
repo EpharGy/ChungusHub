@@ -167,8 +167,8 @@
 			await ambientStore.initialize();
 			await backgroundStore.initialize();
 			await featurePromptsStore.initialize();
-			// Beside the engine switches above. The image engine keeps its own settings blob —
-			// a ComfyUI host and a sampler are not prompt templates — and the transcript asks
+			// Beside the engine switches above. The image engine keeps its own settings blob -
+			// a ComfyUI host and a sampler are not prompt templates - and the transcript asks
 			// it whether it is on while drawing the very first turn.
 			await imagegenStore.initialize();
 			await libraryViewPrefs.initialize();

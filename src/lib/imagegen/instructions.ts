@@ -20,16 +20,16 @@ When a moment is worth seeing, write an image marker on its own line at that poi
 PROMPT
 Comma-separated tags describing only what a camera would see, in this order:
 1. Subject (1girl, 1boy, 2girls)
-2. Features: hair, eyes, clothing, expression, body — using only details the story or the character card has established. Do not invent a look.
+2. Features: hair, eyes, clothing, expression, body - using only details the story or the character card has established. Do not invent a look.
 3. Environment: place, lighting, weather, time of day
 4. Modifiers: style, extra visible detail
 No metaphors, no emotions, no plot. Only what is visible.
 
-AR — one of: PORTRAIT, SQUARE, LANDSCAPE, CINEMA
+AR - one of: PORTRAIT, SQUARE, LANDSCAPE, CINEMA
 
-SHOT — one of: CLOSE, MEDIUM, WIDE, DUTCH, OVERHEAD, LOWANGLE, HIGHANGLE, PROFILE, BACKVIEW, POV
+SHOT - one of: CLOSE, MEDIUM, WIDE, DUTCH, OVERHEAD, LOWANGLE, HIGHANGLE, PROFILE, BACKVIEW, POV
 
-SEED — one of:
+SEED - one of:
 - RANDOM for a new character, a new scene, or a new look
 - LOCK to keep the previous picture's look
 - a number to match one specific earlier picture
