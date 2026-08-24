@@ -172,6 +172,125 @@
 		window.addEventListener('pointerup', up);
 	}
 
+	// ---- Launcher drag ----
+	// Mirrors the Assistant's launcher exactly: the closed button docks to the LEFT or RIGHT
+	// edge (horizontal snaps to a side, never top or bottom) but slides freely up and down
+	// that edge and stays where it is dropped. Side and vertical offset persist. A press that
+	// never crosses the threshold is a plain click that opens the panel.
+	const POS_KEY = 'echochamber-launcher-pos';
+	const DRAG_THRESHOLD = 6;
+	let launcherSide = $state<'left' | 'right'>('right');
+	let launcherY = $state<number | null>(null); // persisted top px; null = default bottom anchor
+	let launcherEl = $state<HTMLButtonElement | null>(null);
+	let launcherDragX = $state<number | null>(null);
+	let launcherDragY = $state<number | null>(null);
+	let launcherDragging = $state(false);
+	let launcherPointerDown = false;
+	let suppressClick = false;
+	let launcherGrab = { offsetX: 0, offsetY: 0, startX: 0, startY: 0 };
+
+	let launcherStyle = $derived(
+		launcherDragX !== null
+			? `left:${launcherDragX}px; right:auto; top:${launcherDragY}px; bottom:auto;`
+			: launcherY !== null
+				? `top:${launcherY}px; bottom:auto;`
+				: ''
+	);
+
+	function clampLauncherY(y: number): number {
+		const h = launcherEl?.offsetHeight ?? 56;
+		return Math.min(Math.max(y, MARGIN), window.innerHeight - h - MARGIN);
+	}
+
+	onMount(() => {
+		try {
+			const raw = localStorage.getItem(POS_KEY);
+			if (raw) {
+				const p = JSON.parse(raw) as { side?: string; y?: number };
+				if (p.side === 'left' || p.side === 'right') launcherSide = p.side;
+				if (typeof p.y === 'number') launcherY = clampLauncherY(p.y);
+			}
+		} catch {
+			/* storage unavailable or malformed, so keep the default right dock */
+		}
+	});
+
+	// Keep a dropped launcher on screen when the viewport shrinks.
+	$effect(() => {
+		const onResize = () => {
+			if (launcherY !== null) launcherY = clampLauncherY(launcherY);
+		};
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
+	});
+
+	function onLauncherPointerDown(e: PointerEvent) {
+		if (e.button && e.button !== 0) return; // primary button / touch only
+		launcherPointerDown = true;
+		launcherDragging = false;
+		const r = launcherEl?.getBoundingClientRect();
+		launcherGrab = {
+			offsetX: r ? e.clientX - r.left : 0,
+			offsetY: r ? e.clientY - r.top : 0,
+			startX: e.clientX,
+			startY: e.clientY
+		};
+		launcherEl?.setPointerCapture(e.pointerId);
+	}
+
+	function onLauncherPointerMove(e: PointerEvent) {
+		if (!launcherPointerDown) return;
+		if (
+			!launcherDragging &&
+			Math.abs(e.clientX - launcherGrab.startX) < DRAG_THRESHOLD &&
+			Math.abs(e.clientY - launcherGrab.startY) < DRAG_THRESHOLD
+		)
+			return;
+		launcherDragging = true;
+		const w = launcherEl?.offsetWidth ?? 56;
+		const h = launcherEl?.offsetHeight ?? 56;
+		launcherDragX = Math.min(
+			Math.max(e.clientX - launcherGrab.offsetX, MARGIN),
+			window.innerWidth - w - MARGIN
+		);
+		launcherDragY = Math.min(
+			Math.max(e.clientY - launcherGrab.offsetY, MARGIN),
+			window.innerHeight - h - MARGIN
+		);
+	}
+
+	function onLauncherPointerUp(e: PointerEvent) {
+		if (!launcherPointerDown) return;
+		launcherPointerDown = false;
+		launcherEl?.releasePointerCapture(e.pointerId);
+		if (launcherDragging) {
+			const w = launcherEl?.offsetWidth ?? 56;
+			const center = (launcherDragX ?? 0) + w / 2;
+			launcherSide = center < window.innerWidth / 2 ? 'left' : 'right';
+			launcherY = launcherDragY;
+			try {
+				localStorage.setItem(POS_KEY, JSON.stringify({ side: launcherSide, y: launcherY }));
+			} catch {
+				/* position just will not persist */
+			}
+			suppressClick = true; // swallow the click the browser fires after a drag
+			// Touch drags usually fire NO trailing click, so without this reset the armed flag
+			// would eat the NEXT genuine tap instead.
+			setTimeout(() => (suppressClick = false), 350);
+		}
+		launcherDragX = null;
+		launcherDragY = null;
+		launcherDragging = false;
+	}
+
+	function onLauncherClick() {
+		if (suppressClick) {
+			suppressClick = false;
+			return;
+		}
+		uiStore.echoChamberOpen = true;
+	}
+
 	function regenerate() {
 		if (messageId) void echoChamberStore.regenerate(messageId);
 	}
@@ -252,7 +371,7 @@
 					onclick={() => (uiStore.echoChamberOpen = false)}
 					title="Minimize"
 				>
-					<Icon name="close" />
+					<Icon name="minimize" />
 				</button>
 			</header>
 
@@ -289,11 +408,19 @@
 		</section>
 	{:else}
 		<button
+			type="button"
+			bind:this={launcherEl}
 			class="echo-launcher"
-			onclick={() => (uiStore.echoChamberOpen = true)}
-			title="EchoChamber"
+			class:launcher-left={launcherSide === 'left'}
+			class:is-dragging={launcherDragging}
+			style={launcherStyle}
+			title={busy ? 'EchoChamber · listening…' : 'EchoChamber'}
 			aria-label="Open EchoChamber"
-			transition:scale={{ duration: 120 }}
+			onpointerdown={onLauncherPointerDown}
+			onpointermove={onLauncherPointerMove}
+			onpointerup={onLauncherPointerUp}
+			onclick={onLauncherClick}
+			transition:scale={{ duration: 160, start: 0.6, opacity: 0 }}
 		>
 			<Icon name="users" />
 			{#if busy}<span class="echo-launcher-pulse" aria-hidden="true"></span>{/if}
@@ -480,15 +607,18 @@
 		cursor: nesw-resize;
 	}
 
-	/* ---- Launcher ---- */
+	/* ---- Launcher ----
+	   Sized and behaved to match the Assistant's launcher exactly, because two floating
+	   buttons of different sizes on one screen read as one being less important than the
+	   other. The default anchor is stacked ABOVE the Assistant's corner so a fresh install
+	   does not open with the two overlapping; from there it is dragged wherever. */
 	.echo-launcher {
 		position: fixed;
-		/* Stacked above the Assistant's launcher, which owns the bottom-right corner. */
 		right: 1.25rem;
 		bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 		z-index: 200;
-		width: 2.75rem;
-		height: 2.75rem;
+		width: 3.5rem;
+		height: 3.5rem;
 		padding: 0;
 		display: flex;
 		align-items: center;
@@ -499,13 +629,52 @@
 		color: var(--color-text-secondary);
 		box-shadow: var(--shadow-lg);
 		cursor: pointer;
+		overflow: visible;
+		/* Horizontal drag must not scroll the page under the finger on touch. */
+		touch-action: none;
+		transition:
+			transform 140ms ease,
+			box-shadow 140ms ease;
 	}
+
+	/* Docked to the left corner instead of the default right. */
+	.echo-launcher.launcher-left {
+		left: 1.25rem;
+		right: auto;
+	}
+
 	.echo-launcher:hover {
 		color: var(--color-text-primary);
+		transform: translateY(-2px) scale(1.04);
+		box-shadow: var(--shadow-glow);
 	}
+
+	/* While dragging, freeze the hover lift and animation so it tracks the pointer 1:1. */
+	.echo-launcher.is-dragging,
+	.echo-launcher.is-dragging:hover {
+		transform: none;
+		cursor: grabbing;
+		transition: none;
+	}
+
 	.echo-launcher :global(svg) {
-		width: 1.15rem;
-		height: 1.15rem;
+		width: 1.4rem;
+		height: 1.4rem;
+	}
+
+	/* Phone (the same 640px break as viewport.isMobile): clear of the full-width composer,
+	   and clear of the Assistant's own raised position down there. */
+	@media (max-width: 640px) {
+		.echo-launcher {
+			right: 0.75rem;
+			bottom: calc(13.5rem + env(safe-area-inset-bottom, 0px));
+			width: 3rem;
+			height: 3rem;
+		}
+		.echo-launcher.launcher-left {
+			left: 0.75rem;
+			right: auto;
+		}
 	}
 
 	.echo-launcher-pulse {
