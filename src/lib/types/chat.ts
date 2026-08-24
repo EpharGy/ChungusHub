@@ -5,6 +5,11 @@ import type { AmbientConfig } from '$lib/types/ambient';
 import { normalizeAmbientConfig } from '$lib/types/ambient';
 import type { BackgroundConfig } from '$lib/types/background';
 import { normalizeBackgroundConfig } from '$lib/types/background';
+import {
+	defaultEchoChamberChatState,
+	normalizeEchoChamberChatState,
+	type EchoChamberChatState
+} from '$lib/echochamber/feed-state';
 
 export interface Chat {
 	id: string;
@@ -142,6 +147,10 @@ export interface ChatFeatureState {
 	 *  id sits in this list. Nothing else can exempt one story from a book the wider setup
 	 *  brings. Applied last, so it outranks every layer including the list above it. */
 	mutedLorebooks: string[];
+	/** EchoChamber's generated reaction feeds, by the id of the message each reacted to.
+	 *  Here rather than in a table of its own so that deleting the chat deletes them with
+	 *  it, and so the port adds no schema migration (src/lib/echochamber/feed-state.ts). */
+	echoChamber: EchoChamberChatState;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
@@ -153,7 +162,8 @@ function defaultChatFeatureState(): ChatFeatureState {
 		persona: null,
 		preset: null,
 		lorebooks: [],
-		mutedLorebooks: []
+		mutedLorebooks: [],
+		echoChamber: defaultEchoChamberChatState()
 	};
 }
 
@@ -221,7 +231,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		persona: normalizeClaimedId(obj.persona),
 		preset: normalizeClaimedId(obj.preset),
 		lorebooks: normalizeClaimedIds(obj.lorebooks),
-		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks)
+		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks),
+		echoChamber: normalizeEchoChamberChatState(obj.echoChamber)
 	};
 }
 
