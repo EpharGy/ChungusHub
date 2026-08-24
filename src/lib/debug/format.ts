@@ -23,7 +23,8 @@ const SOURCE_COLORS: Record<EngineId | 'chat' | 'assistant' | 'continue', string
 	steering: '#6366f1',
 	spellcheck: '#06b6d4',
 	impersonate: '#f43f5e',
-	sprites: '#eab308'
+	sprites: '#eab308',
+	echochamber: '#ec4899'
 };
 
 /** Unlabeled callers render gray as "completion". Deliberate, see architecture/engines.md. */
