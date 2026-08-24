@@ -23,6 +23,7 @@ import { resolveMacroValues, substitute } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
 import { memoryStore } from '$lib/memory/store.svelte';
 import { spriteStore } from './sprites.svelte';
+import { echoChamberStore } from './echochamber.svelte';
 import { steeringStore } from './steering.svelte';
 import { steeringTargetForChat } from '$lib/types/steering';
 import type { LorebookTrigger } from '$lib/lorebook/types';
@@ -216,6 +217,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(chatId);
+			this.triggerEchoChamber();
 			return result.committedMessageId;
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
@@ -862,6 +864,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
+			this.triggerEchoChamber();
 		} catch (error) {
 			// A stop the server never answered: nothing streamed back, so the stored turn
 			// stays untouched (the kept-tail case resolves normally above).
@@ -1000,6 +1003,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
+			this.triggerEchoChamber();
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
@@ -1073,6 +1077,22 @@ class MessageStore {
 			lorebookIds: chatLorebookClaim(state.chat),
 			mutedLorebookIds: chatMutedLorebookClaim(state.chat)
 		});
+	}
+
+	/**
+	 * Fire-and-forget audience reactions for the reply that just landed. A sidecar beside
+	 * memory, on the same terms: never blocks generation, never rolled back, and a no-op
+	 * when the engine or its auto-generate switch is off. It reads the newest assistant
+	 * turn on the path.
+	 */
+	private triggerEchoChamber(): void {
+		const path = chatStore.currentChatState?.activePath ?? [];
+		for (let i = path.length - 1; i >= 0; i--) {
+			if (path[i].role === 'assistant') {
+				void echoChamberStore.ensureForMessage(path[i].id);
+				return;
+			}
+		}
 	}
 
 	private async createMessage(
