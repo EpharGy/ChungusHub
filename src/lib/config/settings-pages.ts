@@ -20,6 +20,7 @@ import { llmService } from '$lib/services/llm/provider';
 import { connectionStore } from '$lib/stores/connections.svelte';
 import { ENGINES } from '$lib/engines/registry';
 import { backupStore } from '$lib/stores/backups.svelte';
+import { echoChamberStore } from '$lib/stores/echochamber.svelte';
 import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 import { audioSettingsStore } from '$lib/stores/audio-settings.svelte';
 import { soundscapeStore } from '$lib/stores/soundscape.svelte';
@@ -57,6 +58,7 @@ export type SettingsPage =
 	// App
 	| 'general'
 	| 'engines'
+	| 'echochamber'
 	| 'security'
 	| 'import'
 	| 'backups'
@@ -85,7 +87,8 @@ export type SettingsRowIcon =
 	| 'info'
 	| 'bell'
 	| 'music'
-	| 'sliders';
+	| 'sliders'
+	| 'users';
 
 export interface SettingsRow {
 	page: SettingsPage;
@@ -108,6 +111,12 @@ function connectionsSummary(): string {
 	const model = id ? (id.split('/').pop() ?? id) : 'No model';
 	const count = connectionStore.list().length;
 	return count > 1 ? `${model} · ${count} connections` : model;
+}
+
+/** Off, or the style the crowd is currently wearing. */
+function echoChamberSummary(): string {
+	if (!echoChamberStore.settings.enabled) return 'Off';
+	return echoChamberStore.activeStyle.name;
 }
 
 function enginesSummary(): string {
@@ -154,6 +163,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		rows: [
 			{ page: 'general', label: 'General', icon: 'settings' },
 			{ page: 'engines', label: 'Engines', icon: 'bolt', preview: enginesSummary },
+			{ page: 'echochamber', label: 'EchoChamber', icon: 'users', preview: echoChamberSummary },
 			{ page: 'security', label: 'Security', icon: 'shield' },
 			{ page: 'backups', label: 'Backups', icon: 'archive', preview: backupsSummary },
 			{ page: 'import', label: 'Import', icon: 'download' }
