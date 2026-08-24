@@ -302,6 +302,33 @@
 			</div>
 
 			<div class="toggle-row" use:toggleRow>
+				<span class="slider-label">Lorebook entries the story used</span>
+				<Toggle
+					checked={settings.includeLorebook}
+					onchange={(v) => echoChamberStore.update({ includeLorebook: v })}
+					label="Lorebook entries the story used"
+				/>
+			</div>
+			<p class="hint">
+				Exactly the entries that fired for the reply being reacted to, taken from that
+				turn's own scan rather than a second one. The crowd never learns something the
+				reply itself was not told.
+			</p>
+
+			<div class="toggle-row" use:toggleRow>
+				<span class="slider-label">The chat's memory</span>
+				<Toggle
+					checked={settings.includeMemory}
+					onchange={(v) => echoChamberStore.update({ includeMemory: v })}
+					label="The chat's memory"
+				/>
+			</div>
+			<p class="hint">
+				Sends the same recall the story gets, so a long chat's crowd still knows the plot.
+				Does nothing while the Memory engine is off or has nothing summarised yet.
+			</p>
+
+			<div class="toggle-row" use:toggleRow>
 				<span class="slider-label">What the crowd said last time</span>
 				<Toggle
 					checked={settings.includePastReactions}
