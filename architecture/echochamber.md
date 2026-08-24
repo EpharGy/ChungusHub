@@ -198,6 +198,26 @@ choreography about a panel that never closes - the single highest-risk edit avai
 area, in the file most likely to move upstream. The Chungus Assistant already carved the
 exemption for a free-floating widget, so EchoChamber rides it for one added `$state` flag.
 
+It snaps like the Assistant too: drag the header to an edge or a corner and it docks (left,
+right, the four quarter-corners, or the centred chat column from the top edge), with a ghost
+preview during the drag, a tear-off that restores the free size, and the dock persisted
+across reopens. Resizing a docked panel frees it, since a dock is a slot with a size of its
+own.
+
+**The dock geometry is read from the app's real layout, not recomputed.**
+`[data-assistant-snap-workspace]` and `[data-assistant-snap-column]` are already in the DOM
+for the Assistant's own snapping, so querying them keeps the docks aligned with the chat
+column through zoom, width changes and breakpoint flips with no responsive maths duplicated,
+and it cost this feature no upstream edit whatsoever.
+
+That is a DOM contract this port does not own, so it **fails soft**: `snapRegion` returns
+null when an anchor is missing and the panel stays free-floating. The Assistant throws in the
+same place, which is correct for the feature the contract belongs to; a reaction feed is
+decoration and must degrade instead. What EchoChamber deliberately does NOT do is set
+`uiStore.assistantSnapSide`, the flag Workspace reads to draw its animated tint behind a
+side-docked panel: teaching Workspace about a second widget is an edit to the file this port
+exists to leave alone, for a visual flourish.
+
 Its drag/resize logic is a **sibling** of the Assistant's rather than a shared shell
 extracted from it. Extracting would mean rewriting `AssistantFloatingWidget.svelte`, 900
 lines of upstream file this port has no other reason to touch, and merge surface on upstream
