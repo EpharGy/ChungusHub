@@ -175,7 +175,15 @@ function formatPastReactions(reactions: Reaction[]): string {
  * Only a cast style snaps. A crowd style inventing `xX_ShadowReaper_Xx` is the feature, so
  * handing the parser a cast there would discard every line it generated. Kept here rather
  * than in the parser so that the builder and the parse of its reply read the same flag.
+ *
+ * **A cast of one does not snap either**, which is the extension's own rule and worth
+ * keeping: one card usually names the story or the world rather than somebody who speaks,
+ * so its cast list is not the set of people in the scene. Snapping against it would discard
+ * every character the model correctly drew out of the narrative and leave an empty panel -
+ * a far worse failure than an occasional name nobody recognises.
  */
 export function castNamesForStyle(style: ChatStyle, context: StoryContext): string[] {
-	return style.usesStoryCast ? context.castNames.filter((n) => n.trim()) : [];
+	if (!style.usesStoryCast) return [];
+	const names = context.castNames.filter((n) => n.trim());
+	return names.length > 1 ? names : [];
 }
