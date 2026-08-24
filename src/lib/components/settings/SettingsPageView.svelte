@@ -6,6 +6,7 @@
 	import AdvancedPage from './AdvancedPage.svelte';
 	import SecurityPage from './SecurityPage.svelte';
 	import EnginesPage from './EnginesPage.svelte';
+	import EchoChamberPage from './EchoChamberPage.svelte';
 	import ImportPage from './ImportPage.svelte';
 	import BackupsPage from './BackupsPage.svelte';
 	import RegexPage from './RegexPage.svelte';
@@ -33,6 +34,8 @@
 	<GeneralPage />
 {:else if page === 'engines'}
 	<EnginesPage />
+{:else if page === 'echochamber'}
+	<EchoChamberPage />
 {:else if page === 'security'}
 	<SecurityPage />
 {:else if page === 'import'}
