@@ -254,7 +254,16 @@ describe('castNamesForStyle', () => {
 	});
 
 	test('a cast style snaps against the real cast', () => {
-		expect(castNamesForStyle(CAST, context({ castNames: ['Mai', ' '] }))).toEqual(['Mai']);
+		expect(castNamesForStyle(CAST, context({ castNames: ['Mai', 'Polka', ' '] }))).toEqual([
+			'Mai',
+			'Polka'
+		]);
+	});
+
+	// One card usually names the story, not a speaker, so its name is not the cast list.
+	// Snapping to it would discard every character the model drew out of the narrative.
+	test('a cast of one does not snap, so a one-card story still gets a feed', () => {
+		expect(castNamesForStyle(CAST, context({ castNames: ['The Long Dark'] }))).toEqual([]);
 	});
 });
 
