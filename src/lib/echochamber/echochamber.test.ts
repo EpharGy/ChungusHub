@@ -27,6 +27,7 @@ import {
 	MAX_STORED_FEEDS,
 	clearFeed,
 	defaultEchoChamberChatState,
+	newestFeedOnPath,
 	normalizeEchoChamberChatState,
 	pruneFeeds,
 	putFeed
@@ -449,6 +450,60 @@ describe('feed state', () => {
 		const next = putFeed(state, 'm1', feed(2, 'new'), ['m1']);
 		expect(Object.keys(next.feeds)).toEqual(['m1']);
 		expect(next.feeds.m1.reactions[0].text).toBe('new');
+	});
+
+	// The reported flaw: the panel read "the feed of the newest turn", so the instant a reply
+	// landed it looked up a turn with no feed and blanked until the call returned.
+	test('a reply with no feed yet keeps the previous one on screen', () => {
+		const path = [
+			{ id: 'm1', role: 'user' },
+			{ id: 'm2', role: 'assistant' },
+			{ id: 'm3', role: 'user' },
+			{ id: 'm4', role: 'assistant' } // just landed, nothing generated for it yet
+		];
+		const feeds: Record<string, EchoChamberFeed> = { m2: feed(1, 'the old crowd') };
+		const shown = newestFeedOnPath(path, (id) => feeds[id] ?? null);
+
+		expect(shown?.messageId).toBe('m2');
+		expect(shown?.feed.reactions[0].text).toBe('the old crowd');
+	});
+
+	test('and swaps to the new one the moment it exists', () => {
+		const path = [
+			{ id: 'm2', role: 'assistant' },
+			{ id: 'm4', role: 'assistant' }
+		];
+		const feeds: Record<string, EchoChamberFeed> = {
+			m2: feed(1, 'the old crowd'),
+			m4: feed(2, 'the new crowd')
+		};
+		const shown = newestFeedOnPath(path, (id) => feeds[id] ?? null);
+
+		expect(shown?.messageId).toBe('m4');
+		expect(shown?.feed.reactions[0].text).toBe('the new crowd');
+	});
+
+	test('deleting the newest feed falls back to the last surviving one', () => {
+		const path = [
+			{ id: 'm2', role: 'assistant' },
+			{ id: 'm4', role: 'assistant' }
+		];
+		const feeds: Record<string, EchoChamberFeed> = { m2: feed(1) };
+		expect(newestFeedOnPath(path, (id) => feeds[id] ?? null)?.messageId).toBe('m2');
+	});
+
+	test('skips user and system turns, which are never reacted to', () => {
+		const path = [
+			{ id: 'u1', role: 'user' },
+			{ id: 's1', role: 'system' }
+		];
+		const feeds: Record<string, EchoChamberFeed> = { u1: feed(1), s1: feed(2) };
+		expect(newestFeedOnPath(path, (id) => feeds[id] ?? null)).toBeNull();
+	});
+
+	test('a chat with no feeds at all shows nothing', () => {
+		expect(newestFeedOnPath([{ id: 'm1', role: 'assistant' }], () => null)).toBeNull();
+		expect(newestFeedOnPath([], () => null)).toBeNull();
 	});
 
 	test('clearFeed forgets one message, leaving the rest', () => {
