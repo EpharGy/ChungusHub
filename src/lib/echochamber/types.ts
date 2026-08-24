@@ -28,7 +28,7 @@ export interface Reaction {
  * A generated feed, filed against the message it reacted to.
  *
  * **Keyed by message id, not by position.** The extension keyed its saved commentary by
- * `chat.indexOf(msg)` — an index into a flat array. This app's chat is a tree, so an
+ * `chat.indexOf(msg)` - an index into a flat array. This app's chat is a tree, so an
  * index names a different turn on every branch, and a swipe silently re-points every
  * stored reaction at a message nobody wrote. A message id is stable across every branch
  * change, which is the whole reason the feed survives a swipe here and did not there.
@@ -54,8 +54,8 @@ export interface ChatStyle {
 	prompt: string;
 	/**
 	 * A style voiced by ONE persona (a narrator, a hype-bot) rather than a crowd. The
-	 * user-count setting is meaningless for these — the count is a message count, and the
-	 * speaker never varies — so the prompt builder collapses it to a single voice.
+	 * user-count setting is meaningless for these - the count is a message count, and the
+	 * speaker never varies - so the prompt builder collapses it to a single voice.
 	 */
 	narrator: boolean;
 	/**

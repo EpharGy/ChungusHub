@@ -85,7 +85,7 @@ export interface ParseOptions {
 	 * which also turns on the last-resort salvage below.
 	 */
 	castNames?: string[];
-	/** Display order. Applied AFTER the cap — see `parseReactions`. */
+	/** Display order. Applied AFTER the cap - see `parseReactions`. */
 	order?: MessageOrder;
 }
 
@@ -94,7 +94,7 @@ export interface ParseOptions {
  *
  * **The cap is applied before the ordering, not after.** The extension ordered first and
  * then took the first N, so `newest-first` kept the LAST n reactions the model wrote and
- * `oldest-first` kept the first n — the display toggle silently changed WHICH reactions
+ * `oldest-first` kept the first n - the display toggle silently changed WHICH reactions
  * existed, and half of every batch was discarded depending on a preference about layout.
  * Here the first `limit` the model produced always win, and order only decides how they
  * are shown.
@@ -150,7 +150,7 @@ export function parseReactions(raw: string, options: ParseOptions): Reaction[] {
 		}
 
 		// No colon: either the tail of the reaction above, or (when handles are invented)
-		// a bare line worth salvaging under a generic name. A cast style never salvages —
+		// a bare line worth salvaging under a generic name. A cast style never salvages  - 
 		// a line with no speaker has no one in the cast to attribute it to.
 		if (current) {
 			// A continuation is joined with a space, except straight after a paragraph break,
