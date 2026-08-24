@@ -25,13 +25,25 @@ import type { EchoChamberFeed, Reaction } from './types';
 /**
  * How many feeds one chat keeps.
  *
- * The blob is rewritten on every generation, so this is a size ceiling rather than a
- * history: at the default six reactions a feed is well under a kilobyte, and twenty-five of
- * them is a blob small enough to write per turn without thinking about it. Scrolling far
- * enough back shows turns whose feed has aged out, which is the intended trade - a feed is
- * decoration, and regenerating one is a button.
+ * Sized from what actually gets read, not from what would be nice to have:
+ *
+ * - one for the turn on screen, which is the whole reason any of this is persisted rather
+ *   than held in memory: without it every app reload costs a model call to see the feed
+ *   that was already there;
+ * - up to `contextDepth` more when `includePastReactions` is on, since that setting feeds
+ *   prior reactions back into the prompt so a running joke survives the turn (default 4);
+ * - a couple for the current turn's siblings, so swiping between alternatives and back does
+ *   not re-bill the reader for a feed they have already seen.
+ *
+ * Past that the reader's own argument wins: walking far enough back and playing forward
+ * generates fresh reactions anyway, so older feeds are paying rent to be regenerated.
+ *
+ * The ceiling is set against the WORST case rather than the typical one, which is what an
+ * earlier cap of 25 got wrong: `reactionCount` clamps at 30, not at its default of 6, so 25
+ * feeds is a ~90KB blob rewritten on the chats row every turn and resynced to every other
+ * device. Eight holds that under ~30KB fully loaded, and nearer 5KB in ordinary use.
  */
-export const MAX_STORED_FEEDS = 25;
+export const MAX_STORED_FEEDS = 8;
 
 /** Per-chat EchoChamber state, as it sits inside `ChatFeatureState`. */
 export interface EchoChamberChatState {
