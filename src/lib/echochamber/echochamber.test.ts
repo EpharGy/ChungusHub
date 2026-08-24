@@ -33,10 +33,10 @@ import {
 } from './feed-state';
 import { lorebookTextFromTrace } from './lorebook-context';
 import { parseReactions, snapToCast } from './parse';
-import { buildPrompt, castNamesForStyle, resolveStyleMacros } from './prompt';
+import { buildPrompt, castNamesForStyle, pastReactionsFor, resolveStyleMacros } from './prompt';
 import { BUILT_IN_STYLES, builtInStyle } from './styles';
 import type { Lorebook, LorebookStatus, LorebookTrace } from '$lib/lorebook/types';
-import type { ChatStyle, EchoChamberFeed, StoryContext } from './types';
+import type { ChatStyle, EchoChamberFeed, Reaction, StoryContext } from './types';
 
 const CROWD = builtInStyle('twitch')!;
 const CAST = builtInStyle('sillytavern')!;
@@ -533,6 +533,43 @@ describe('custom styles', () => {
 		const [style] = normalizeCustomStyles([{ name: 'Pasted', prompt: 'anything at all' }]);
 		expect(style).toBeDefined();
 		expect(style.prompt).toBe('anything at all');
+	});
+});
+
+describe('pastReactionsFor', () => {
+	const history = [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }];
+	const feeds: Record<string, { reactions: Reaction[] }> = {
+		m1: { reactions: [{ username: 'a', text: 'first' }] },
+		m2: { reactions: [{ username: 'b', text: 'second' }] },
+		m3: { reactions: [{ username: 'c', text: 'the corrupt one' }] }
+	};
+	const lookup = (id: string) => feeds[id] ?? null;
+
+	// The turn being reacted to is the last entry in its own history window, so without
+	// this a regenerate is shown the very output it is replacing and asked to keep its
+	// voice - exactly what pressing regenerate is meant to escape.
+	test('never includes the feed of the turn being reacted to', () => {
+		const out = pastReactionsFor(history, 'm3', lookup);
+		expect(out[2]).toBeUndefined();
+		expect(out[0]).toEqual(feeds.m1.reactions);
+		expect(out[1]).toEqual(feeds.m2.reactions);
+	});
+
+	test('a deleted feed stops being sent as history', () => {
+		const afterDelete = (id: string) => (id === 'm2' ? null : (feeds[id] ?? null));
+		const out = pastReactionsFor(history, 'm3', afterDelete);
+		expect(out[1]).toBeUndefined();
+		expect(out[0]).toEqual(feeds.m1.reactions);
+	});
+
+	test('indexes against the history window, so the prompt hangs each on its own turn', () => {
+		const out = pastReactionsFor(history, 'm3', lookup);
+		expect(Object.keys(out)).toEqual(['0', '1']);
+	});
+
+	test('an empty feed contributes nothing rather than an empty line', () => {
+		const empty = (id: string) => (id === 'm1' ? { reactions: [] } : null);
+		expect(pastReactionsFor(history, 'm3', empty)).toEqual({});
 	});
 });
 
