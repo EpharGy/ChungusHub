@@ -60,7 +60,7 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 /**
  * Merge stored settings onto the defaults, clamping every field.
  *
- * Written as a whitelist rather than a spread, for the same reason imagegen's is: the
+ * Written as a whitelist rather than a spread, because the
  * stored blob is JSON an older build wrote or a reader hand-edited, so any field can be
  * missing, the wrong type, or a key nothing reads any more.
  *
