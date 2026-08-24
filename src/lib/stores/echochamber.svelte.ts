@@ -25,11 +25,20 @@ import { readSetting, registerSettingsReload, writeSetting } from '$lib/services
 import type { LLMMessage } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
 
+import { expandMacros } from '$lib/macros';
+import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
+
 import { DEFAULT_ECHOCHAMBER_SETTINGS, resolveEchoChamberSettings } from '$lib/echochamber/config';
+import {
+	duplicateStyle,
+	normalizeCustomStyles,
+	removeStyle,
+	upsertStyle
+} from '$lib/echochamber/custom-styles';
 import { clearFeed, putFeed, type EchoChamberChatState } from '$lib/echochamber/feed-state';
 import { parseReactions } from '$lib/echochamber/parse';
 import { buildPrompt, castNamesForStyle } from '$lib/echochamber/prompt';
-import { BUILT_IN_STYLES, builtInStyle } from '$lib/echochamber/styles';
+import { BUILT_IN_STYLES } from '$lib/echochamber/styles';
 import type {
 	ChatStyle,
 	EchoChamberFeed,
@@ -39,6 +48,8 @@ import type {
 } from '$lib/echochamber/types';
 
 const SETTINGS_KEY = 'echochamber';
+/** Reader-authored styles, apart from the settings blob: they are the part that grows. */
+const STYLES_KEY = 'echochamber-styles';
 
 /** A turn the crowd can react to. System turns are scaffolding, not story. */
 function isStoryTurn(message: Message): message is Message & { role: 'user' | 'assistant' } {
@@ -56,16 +67,19 @@ class EchoChamberStore {
 
 	private controller: AbortController | null = null;
 
-	/** Built-ins only for now. Reader-authored styles land here beside them, which is why
-	 *  `ChatStyle.custom` exists already and why nothing indexes this list by position. */
+	/** Reader-authored styles, loaded from their own setting. */
+	customStyles = $state<ChatStyle[]>([]);
+
+	/** Everything pickable: the shipped styles, then the reader's own. */
 	get styles(): ChatStyle[] {
-		return BUILT_IN_STYLES;
+		return [...BUILT_IN_STYLES, ...this.customStyles];
 	}
 
-	/** The live style, falling back rather than failing: a stored id can name a style this
-	 *  build no longer ships, and a feed is not worth a broken panel. */
+	/** The live style, falling back rather than failing: a stored id can name a custom style
+	 *  that was deleted or a built-in this build no longer ships, and neither is worth a
+	 *  broken panel. */
 	get activeStyle(): ChatStyle {
-		return builtInStyle(this.settings.styleId) ?? BUILT_IN_STYLES[0];
+		return this.styles.find((s) => s.id === this.settings.styleId) ?? BUILT_IN_STYLES[0];
 	}
 
 	async initialize(): Promise<void> {
@@ -77,6 +91,37 @@ class EchoChamberStore {
 	private async reload(): Promise<void> {
 		const stored = await readSetting<Partial<EchoChamberSettings> | null>(SETTINGS_KEY, null);
 		this.settings = resolveEchoChamberSettings(stored);
+		this.customStyles = normalizeCustomStyles(await readSetting<unknown>(STYLES_KEY, []));
+	}
+
+	// ===== Authoring styles =====
+
+	private writeStyles(next: ChatStyle[]): void {
+		this.customStyles = next;
+		writeSetting(STYLES_KEY, next);
+	}
+
+	/** A new style, seeded from an existing one so the editor never opens on a blank page:
+	 *  a style is a long instruction with a required output contract at the end, and writing
+	 *  one from nothing is a far worse first experience than editing one that works. */
+	createStyle(source?: ChatStyle): ChatStyle {
+		const from = source ?? this.activeStyle;
+		const style = duplicateStyle(from, this.styles.map((s) => s.id));
+		this.writeStyles(upsertStyle(this.customStyles, style));
+		return style;
+	}
+
+	/** Save an edit. Built-ins are not editable in place (duplicateStyle is how they are
+	 *  changed), so this only ever writes a custom entry. */
+	saveStyle(style: ChatStyle): void {
+		if (!style.custom) return;
+		this.writeStyles(upsertStyle(this.customStyles, style));
+	}
+
+	/** Delete a custom style, moving off it first if it is the one in use. */
+	deleteStyle(id: string): void {
+		this.writeStyles(removeStyle(this.customStyles, id));
+		if (this.settings.styleId === id) this.update({ styleId: BUILT_IN_STYLES[0].id });
 	}
 
 	/** Patch settings, clamped on the way in so the panel can never store a bad value. */
@@ -157,7 +202,7 @@ class EchoChamberStore {
 		this.lastError = null;
 
 		try {
-			const style = this.activeStyle;
+			const style = this.resolveStyleText(this.activeStyle);
 			const context = this.buildContext(messageId);
 			if (!context) return;
 
@@ -232,6 +277,25 @@ class EchoChamberStore {
 	}
 
 	// ===== Context =====
+
+	/**
+	 * Expand the app's ordinary macros in a style's prompt.
+	 *
+	 * `{{user}}` and `{{char}}` are the two the extension's own editor advertises, and a
+	 * reader-authored style is where they actually get used, since no shipped style needs
+	 * one. Running the whole app macro set rather than those two by hand means a style can
+	 * also reach {{persona}}, the clock macros, and anything added later, for free.
+	 *
+	 * Deliberately BEFORE `resolveStyleMacros` and separate from it: `substitute` leaves a
+	 * name it does not know untouched, so `{{characters}}` and `{{story_characters_block}}`
+	 * pass through here intact and are resolved by the prompt builder, which is the only
+	 * place that has the cast.
+	 */
+	private resolveStyleText(style: ChatStyle): ChatStyle {
+		if (!style.prompt.includes('{{')) return style;
+		const expanded = expandMacros(style.prompt, buildLiveMacroContext());
+		return expanded === style.prompt ? style : { ...style, prompt: expanded };
+	}
 
 	/** Everything the prompt builder needs, resolved from the stores that hold it. */
 	private buildContext(messageId: string): StoryContext | null {

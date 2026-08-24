@@ -11,16 +11,67 @@
 	 * reader adds to, not a fixed set of templates, and the Engines page's inline editor is
 	 * built for the latter. The engine's on/off switch appears in both places on purpose:
 	 * both read the same setting, so neither can drift from the other.
+	 *
+	 * The editor is upstream's Advanced mode and nothing more: a name and a raw prompt. That
+	 * is not a cut-down version of it, it is the whole of it, and it is what makes a style
+	 * portable - upstream exports a plain .md of the prompt text, so a style moves between
+	 * the two by copy and paste with no conversion.
 	 */
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
 	import { toggleRow } from '$lib/actions/toggleRow';
 	import { echoChamberStore } from '$lib/stores/echochamber.svelte';
 	import { BOUNDS } from '$lib/echochamber/config';
+	import { MAX_CUSTOM_STYLES } from '$lib/echochamber/custom-styles';
 
 	const settings = $derived(echoChamberStore.settings);
 	const style = $derived(echoChamberStore.activeStyle);
+	const builtIns = $derived(echoChamberStore.styles.filter((s) => !s.custom));
+	const mine = $derived(echoChamberStore.styles.filter((s) => s.custom));
+
+	// The editor holds a draft rather than writing through on every keystroke: a prompt is
+	// hundreds of characters typed one at a time, and every write here is a settings
+	// broadcast every other device re-reads.
+	let draftFor = $state<string | null>(null);
+	let draftName = $state('');
+	let draftPrompt = $state('');
+
+	// Re-seed the draft whenever the selected style changes. Keyed on the id rather than on
+	// the object so saving (which replaces the object) does not wipe the field being typed in.
+	$effect(() => {
+		if (draftFor !== style.id) {
+			draftFor = style.id;
+			draftName = style.name;
+			draftPrompt = style.prompt;
+		}
+	});
+
+	const dirty = $derived(
+		style.custom && (draftName !== style.name || draftPrompt !== style.prompt)
+	);
+	const atLimit = $derived(mine.length >= MAX_CUSTOM_STYLES);
+
+	function save() {
+		if (!style.custom || !draftName.trim() || !draftPrompt.trim()) return;
+		echoChamberStore.saveStyle({ ...style, name: draftName.trim(), prompt: draftPrompt });
+	}
+
+	function revert() {
+		draftName = style.name;
+		draftPrompt = style.prompt;
+	}
+
+	/** Copy the selected style into a new editable one and switch to it. */
+	function duplicate() {
+		const created = echoChamberStore.createStyle(style);
+		echoChamberStore.update({ styleId: created.id });
+	}
+
+	function remove() {
+		echoChamberStore.deleteStyle(style.id);
+	}
 </script>
 
 <div class="echo-page">
@@ -61,22 +112,31 @@
 		<div class="card-head">
 			<span class="card-title">Style</span>
 			<InfoTip
-				text="The style is the crowd's personality: who they are, how they write, and what they care about. It is the whole character of the feed, so it is worth trying a few."
+				text="The style is the crowd's personality: who they are, how they write, and what they care about. It is the whole character of the feed, so it is worth trying a few. Your own styles are plain text and nothing else, so one written for the SillyTavern extension pastes straight in."
 			/>
 		</div>
 
 		<div class="card-body">
-			<div class="field">
+			<label class="field">
 				<span class="field-label">Chat style</span>
 				<Select
 					value={settings.styleId}
 					onchange={(e) => echoChamberStore.update({ styleId: e.currentTarget.value })}
 				>
-					{#each echoChamberStore.styles as option (option.id)}
-						<option value={option.id}>{option.name}</option>
-					{/each}
+					<optgroup label="Built in">
+						{#each builtIns as option (option.id)}
+							<option value={option.id}>{option.name}</option>
+						{/each}
+					</optgroup>
+					{#if mine.length}
+						<optgroup label="Yours">
+							{#each mine as option (option.id)}
+								<option value={option.id}>{option.name}</option>
+							{/each}
+						</optgroup>
+					{/if}
 				</Select>
-			</div>
+			</label>
 
 			{#if style.usesStoryCast}
 				<p class="hint">
@@ -91,10 +151,60 @@
 				</p>
 			{/if}
 
-			<details class="preview">
-				<summary>Show this style's prompt</summary>
-				<pre class="preview-text">{style.prompt}</pre>
-			</details>
+			{#if style.custom}
+				<label class="field">
+					<span class="field-label">Name</span>
+					<input class="input-base" type="text" maxlength="60" bind:value={draftName} />
+				</label>
+			{/if}
+
+			<label class="field">
+				<span class="field-label">
+					{style.custom ? 'Prompt' : 'Prompt (built in, read only)'}
+				</span>
+				<textarea
+					class="input-base prompt-area"
+					rows="14"
+					readonly={!style.custom}
+					bind:value={draftPrompt}
+				></textarea>
+			</label>
+
+			<p class="hint">
+				Macros: <code>{'{{user}}'}</code> and <code>{'{{char}}'}</code> resolve like they do
+				anywhere else, <code>{'{{characters}}'}</code> becomes your cast as a list. End the prompt
+				by telling the model to answer as <code>username: message</code> lines, one per line,
+				or nothing can be read back out of the reply.
+			</p>
+
+			<div class="row">
+				{#if style.custom}
+					<Button variant="primary" size="sm" onclick={save} disabled={!dirty}>
+						{dirty ? 'Save changes' : 'Saved'}
+					</Button>
+					<Button variant="secondary" size="sm" onclick={revert} disabled={!dirty}>
+						Revert
+					</Button>
+					<Button variant="secondary" size="sm" onclick={duplicate} disabled={atLimit}>
+						Duplicate
+					</Button>
+					<Button variant="danger" size="sm" onclick={remove}>Delete</Button>
+				{:else}
+					<Button variant="secondary" size="sm" onclick={duplicate} disabled={atLimit}>
+						Duplicate to edit
+					</Button>
+					<span class="hint">
+						A shipped style is never edited in place, so an update to it can still reach
+						you. Duplicating gives you a copy that is yours.
+					</span>
+				{/if}
+			</div>
+
+			{#if atLimit}
+				<p class="hint">
+					You have {MAX_CUSTOM_STYLES} styles, which is the limit. Delete one to add another.
+				</p>
+			{/if}
 		</div>
 	</section>
 
@@ -105,10 +215,10 @@
 
 		<div class="card-body">
 			<div class="grid">
-				<div class="field">
+				<label class="field">
 					<span class="field-label">Reactions per reply</span>
 					<input
-						class="input"
+						class="input-base"
 						type="number"
 						min={BOUNDS.reactionCount.min}
 						max={BOUNDS.reactionCount.max}
@@ -116,23 +226,22 @@
 						onchange={(e) =>
 							echoChamberStore.update({ reactionCount: Number(e.currentTarget.value) })}
 					/>
-				</div>
+				</label>
 
-				<div class="field">
+				<label class="field">
 					<span class="field-label">Newest reaction</span>
 					<Select
 						value={settings.messageOrder}
 						onchange={(e) =>
 							echoChamberStore.update({
-								messageOrder: e.currentTarget.value === 'newest-first'
-									? 'newest-first'
-									: 'oldest-first'
+								messageOrder:
+									e.currentTarget.value === 'newest-first' ? 'newest-first' : 'oldest-first'
 							})}
 					>
 						<option value="oldest-first">At the bottom</option>
 						<option value="newest-first">At the top</option>
 					</Select>
-				</div>
+				</label>
 			</div>
 			<p class="hint">
 				Each reaction is its own line of generated prose, so the count is what the feed
@@ -160,10 +269,10 @@
 			</div>
 
 			{#if settings.includeUserInput}
-				<div class="field pair-inset">
+				<label class="field pair-inset">
 					<span class="field-label">Turns of history to send</span>
 					<input
-						class="input"
+						class="input-base"
 						type="number"
 						min={BOUNDS.contextDepth.min}
 						max={BOUNDS.contextDepth.max}
@@ -171,7 +280,7 @@
 						onchange={(e) =>
 							echoChamberStore.update({ contextDepth: Number(e.currentTarget.value) })}
 					/>
-				</div>
+				</label>
 			{/if}
 
 			<div class="toggle-row" use:toggleRow>
@@ -234,6 +343,13 @@
 		gap: 0.7rem;
 	}
 
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+	}
+
 	/* Indented under the switch that reveals it, so it reads as that switch's detail
 	   rather than as another row in the card. */
 	.pair-inset {
@@ -241,26 +357,18 @@
 		max-width: 14rem;
 	}
 
-	.preview > summary {
-		font-family: var(--font-ui);
-		font-size: 0.78rem;
-		color: var(--color-text-secondary);
-		cursor: pointer;
+	/* A style is a long instruction, so the field is sized to read one rather than to
+	   peek at it, and monospaced because its last lines are an output contract. */
+	.prompt-area {
+		font-family: var(--font-mono);
+		font-size: 0.74rem;
+		line-height: 1.5;
+		resize: vertical;
+		white-space: pre-wrap;
 	}
 
-	/* The prompt is long and pre-wrapped: readable, scrollable, and clearly not a field
-	   anyone is meant to type into here. */
-	.preview-text {
-		margin: 0.4rem 0 0;
-		max-height: 16rem;
-		overflow: auto;
-		padding: 0.6rem;
-		border: 1px solid var(--color-border-subtle);
-		border-radius: 0.4rem;
-		background: var(--color-bg-primary);
-		font-size: 0.72rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		color: var(--color-text-secondary);
+	.prompt-area[readonly] {
+		opacity: 0.75;
+		cursor: default;
 	}
 </style>
