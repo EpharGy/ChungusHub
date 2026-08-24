@@ -43,7 +43,7 @@ import {
  * quietly, it spends a minute of GPU time on a sentence somebody wrote.
  *
  * Dot-all: a model may wrap a long prompt over several lines. Case-insensitive on the word
- * only — the control tokens inside stay case-sensitive, since those have to be told apart
+ * only - the control tokens inside stay case-sensitive, since those have to be told apart
  * from prose (see `classify`).
  */
 const MARKER_PATTERN = String.raw`\[\[\s*IMG\b\s*:?\s*(.*?)\s*\]\]`;
@@ -68,7 +68,7 @@ function isSeedWord(value: string): boolean {
 	return value === 'RANDOM' || value === 'LOCK' || /^\d+$/.test(value);
 }
 
-/** AR, SHOT or SEED — matched exactly and case-sensitively, so prose can never be mistaken
+/** AR, SHOT or SEED - matched exactly and case-sensitively, so prose can never be mistaken
  *  for a control token. A model that writes `close` meant the word, not the framing. */
 function classify(value: string): 'AR' | 'SHOT' | 'SEED' | null {
 	if (AR_SET.has(value)) return 'AR';
@@ -244,7 +244,7 @@ export type BodySegment =
  * Split a message into the runs of text between its markers and the markers themselves.
  *
  * This is what lets a picture render where the model put it while the marker stays in the
- * stored text — which is the whole trick: the turn's own words are never rewritten, so no
+ * stored text - which is the whole trick: the turn's own words are never rewritten, so no
  * summary is invalidated, no edit stamp is spent, and the model sees its own marker again
  * next turn and can hold a character's look across pictures for free.
  *

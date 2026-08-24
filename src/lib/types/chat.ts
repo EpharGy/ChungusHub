@@ -286,7 +286,7 @@ export interface MessageAttachment {
 	 *  the user attached the file themselves. The two are stored in one list on purpose: the
 	 *  refcount sweep, the branch copy and the backup inventory all read this column, and a
 	 *  second home for generated pictures would need each of them taught about it. What the
-	 *  flag decides is only where a picture is drawn — at its marker, or in the attachment
+	 *  flag decides is only where a picture is drawn - at its marker, or in the attachment
 	 *  strip (architecture/imagegen.md). */
 	generated?: GeneratedImageMeta;
 }

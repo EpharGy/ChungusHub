@@ -10,13 +10,13 @@
 	 * a character looking like themselves across pictures.
 	 *
 	 * **A turn with no marker renders exactly as it did before this existed**: one prose
-	 * element, one `use:renderedHtml`, no wrapper. That is deliberate rather than tidy — the
+	 * element, one `use:renderedHtml`, no wrapper. That is deliberate rather than tidy - the
 	 * split path adds an element per run, and every ordinary turn in the app would otherwise
 	 * pay for a feature it does not use.
 	 *
 	 * Why not put an `<img>` in the HTML instead: the app's sanitizer (utils/markdown.ts)
 	 * allows neither `img` nor a relative URL, and widening it would let any model-authored
-	 * tag fetch from anywhere — a beacon in a reply. Rendering pictures as components keeps
+	 * tag fetch from anywhere - a beacon in a reply. Rendering pictures as components keeps
 	 * the sanitizer exactly as narrow as it is.
 	 */
 	import { renderMarkdown } from '$lib/utils/markdown';

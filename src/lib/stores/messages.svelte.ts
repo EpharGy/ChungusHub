@@ -1066,7 +1066,7 @@ class MessageStore {
 	/**
 	 * Fire-and-forget image generation for the reply that just landed: every `[[IMG: … ]]`
 	 * marker in it that has no picture yet, in order. Sits beside the memory sidecar above
-	 * and follows the same rules — never blocks generation, never rolled back, no-op when the
+	 * and follows the same rules - never blocks generation, never rolled back, no-op when the
 	 * engine or its auto-generate switch is off.
 	 *
 	 * Takes no message id on purpose. All three callers have just refreshed the chat and
