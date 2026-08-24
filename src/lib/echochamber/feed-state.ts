@@ -164,6 +164,32 @@ export function putFeed(
 	return next;
 }
 
+/**
+ * The newest turn on this path that actually has a feed, walking back from the tip.
+ *
+ * **Not "the feed of the newest turn".** Those differ for the whole time a reply is being
+ * reacted to: the moment a reply lands it becomes the newest turn and it has no feed yet, so
+ * looking up its feed blanks the panel until the call returns. The reactions from the turn
+ * before were never deleted, so the panel keeps showing them and swaps when the new ones
+ * arrive, which is also what happens after a delete - the last surviving feed is shown
+ * rather than an empty box.
+ *
+ * The caller is expected to mark the result when it belongs to an earlier turn, since a
+ * stale feed presented as current is the one way this can mislead.
+ */
+export function newestFeedOnPath(
+	path: readonly { id: string; role: string }[],
+	feedFor: (messageId: string) => EchoChamberFeed | null
+): { messageId: string; feed: EchoChamberFeed } | null {
+	for (let i = path.length - 1; i >= 0; i--) {
+		const turn = path[i];
+		if (turn.role !== 'assistant') continue;
+		const feed = feedFor(turn.id);
+		if (feed) return { messageId: turn.id, feed };
+	}
+	return null;
+}
+
 /** Forget one message's feed, for a reader who wants it regenerated from nothing. */
 export function clearFeed(state: EchoChamberChatState, messageId: string): EchoChamberChatState {
 	if (!(messageId in state.feeds)) return state;

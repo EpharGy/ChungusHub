@@ -32,10 +32,17 @@
 	let isMobile = $derived(viewport.isMobile);
 	let enabled = $derived(echoChamberStore.settings.enabled);
 
-	let feed = $derived(echoChamberStore.currentFeed);
+	let displayed = $derived(echoChamberStore.displayed);
+	let feed = $derived(displayed?.feed ?? null);
 	let messageId = $derived(echoChamberStore.currentMessageId);
 	let busy = $derived(echoChamberStore.generatingFor !== null);
 	let error = $derived(echoChamberStore.lastError);
+
+	/** The feed on screen belongs to an earlier turn than the newest reply. True while a new
+	 *  one is being written, and after deleting the newest turn's feed. Said out loud rather
+	 *  than left to be inferred: stale reactions passed off as current is the one way keeping
+	 *  the previous feed on screen can mislead. */
+	let stale = $derived(displayed !== null && messageId !== null && displayed.messageId !== messageId);
 
 	type Rect = { x: number; y: number; w: number; h: number };
 	let rect = $state<Rect>({ x: 0, y: 0, w: 360, h: 520 });
@@ -180,7 +187,9 @@
 	 * dialog in front of a one-click undo is friction with nothing behind it.
 	 */
 	function forget() {
-		if (messageId) void echoChamberStore.forget(messageId);
+		// Deletes what is ON SCREEN, not the newest turn: those differ while a feed is being
+		// written, and a delete button that removes something you cannot see is a trap.
+		if (displayed) void echoChamberStore.forget(displayed.messageId);
 	}
 </script>
 
@@ -252,6 +261,12 @@
 					<p class="echo-status">Listening to the crowd…</p>
 				{:else if error}
 					<p class="echo-status echo-status--error">{error}</p>
+				{/if}
+
+				{#if stale && feed}
+					<p class="echo-status echo-status--stale">
+						{busy ? 'Reactions to the previous reply' : 'From an earlier reply'}
+					</p>
 				{/if}
 
 				<ReactionFeed
@@ -393,6 +408,14 @@
 	}
 	.echo-status--error {
 		color: var(--color-danger, #ef4444);
+	}
+
+	/* Quieter than the working line above it: this is a caption on the feed below, not an
+	   event. Italic so it never reads as one of the reactions. */
+	.echo-status--stale {
+		font-size: 0.72rem;
+		font-style: italic;
+		opacity: 0.75;
 	}
 
 	/* ---- Resize handles ---- */

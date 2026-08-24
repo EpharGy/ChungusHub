@@ -142,6 +142,23 @@ slightly more than that turn's model had. That is accepted rather than fixed: th
 case is the newest reply, where the two agree exactly, and the alternative is re-deriving
 coverage per message for a decoration.
 
+## What the panel shows
+
+**The newest feed that EXISTS on the path, not the feed of the newest turn**
+(`newestFeedOnPath`). Those two differ for the whole duration of a generation, and reading
+the second is a visible flaw: the instant a reply lands it becomes the newest turn with no
+feed of its own, so the panel empties, shows its placeholder for the length of the call, and
+repopulates. The previous reactions were never deleted; the panel had simply stopped looking
+at them. Walking back to the newest turn that has one keeps them on screen and swaps when the
+new ones arrive, and it makes a delete fall back to the last surviving feed instead of to an
+empty box.
+
+The cost is that the feed on screen can belong to an earlier turn than the reply being read,
+so the panel **says so** rather than leaving it to be inferred: stale reactions presented as
+current is the one way this can mislead. The delete button targets the feed being displayed
+rather than the newest turn, for the same reason - a delete that removes something you cannot
+see is a trap.
+
 ## Deleting a feed
 
 The panel's delete throws the current feed away and does **not** regenerate. It exists for a

@@ -37,7 +37,12 @@ import {
 	removeStyle,
 	upsertStyle
 } from '$lib/echochamber/custom-styles';
-import { clearFeed, putFeed, type EchoChamberChatState } from '$lib/echochamber/feed-state';
+import {
+	clearFeed,
+	newestFeedOnPath,
+	putFeed,
+	type EchoChamberChatState
+} from '$lib/echochamber/feed-state';
 import { lorebookTextFromTrace } from '$lib/echochamber/lorebook-context';
 import { parseReactions } from '$lib/echochamber/parse';
 import { buildPrompt, castNamesForStyle, pastReactionsFor } from '$lib/echochamber/prompt';
@@ -147,12 +152,24 @@ class EchoChamberStore {
 		return this.stateFor(chatId).feeds[messageId] ?? null;
 	}
 
-	/** The feed for the newest assistant turn on the path: what the panel shows. */
-	get currentFeed(): EchoChamberFeed | null {
-		const messageId = this.newestReactableId();
-		return messageId ? this.feedFor(messageId) : null;
+	/**
+	 * What the panel shows: the newest feed that EXISTS on this path, with the turn it
+	 * belongs to.
+	 *
+	 * Deliberately not "the feed of the newest turn". The instant a reply lands it becomes
+	 * the newest turn with no feed of its own, so that reading blanks the panel for the
+	 * length of the call and then repopulates - the previous reactions were never deleted,
+	 * we simply stopped looking at them. This keeps them on screen and swaps when the new
+	 * ones arrive, and it means a delete falls back to the last surviving feed rather than
+	 * to an empty box.
+	 */
+	get displayed(): { messageId: string; feed: EchoChamberFeed } | null {
+		const path = chatStore.currentChatState?.activePath ?? [];
+		return newestFeedOnPath(path, (id) => this.feedFor(id));
 	}
 
+	/** The turn a NEW feed would be generated for: always the newest reply, which is not
+	 *  necessarily the turn whose feed is currently on screen. */
 	get currentMessageId(): string | null {
 		return this.newestReactableId();
 	}
