@@ -58,13 +58,26 @@
 		return { x, y, w, h };
 	}
 
-	function loadRect(): Rect {
+	/** Persisted placement: the rect, the dock it sits in (null = free-floating), and the
+	 *  free size a tear-off restores. Old saves are plain Rects and still read. */
+	interface SavedPlacement extends Rect {
+		snappedZone?: SnapZone | null;
+		freeW?: number;
+		freeH?: number;
+	}
+
+	function readSavedRect(): SavedPlacement | null {
 		try {
 			const raw = localStorage.getItem(RECT_KEY);
-			if (raw) return clampRect(JSON.parse(raw) as Rect);
+			return raw ? (JSON.parse(raw) as SavedPlacement) : null;
 		} catch {
-			/* unreadable or malformed, so fall through to the default placement */
+			return null; // unreadable or malformed, so fall back to the default placement
 		}
+	}
+
+	function loadRect(): Rect {
+		const saved = readSavedRect();
+		if (saved) return clampRect(saved);
 		const w = 360;
 		const h = Math.min(520, window.innerHeight - MARGIN * 2);
 		// Default to the LEFT of the screen: the Assistant's launcher and panel both favour
@@ -74,15 +87,37 @@
 
 	function saveRect() {
 		try {
-			localStorage.setItem(RECT_KEY, JSON.stringify(rect));
+			localStorage.setItem(
+				RECT_KEY,
+				JSON.stringify({
+					...rect,
+					snappedZone: isSnapped ? snappedZone : null,
+					...(restoreSize ? { freeW: restoreSize.w, freeH: restoreSize.h } : {})
+				} satisfies SavedPlacement)
+			);
 		} catch {
 			/* storage unavailable, so the position just will not persist */
 		}
 	}
 
+	// Restore the placement the first time the panel opens on desktop, INCLUDING its dock:
+	// reopening must not demote a docked panel to a free window wearing the dock's size.
 	$effect(() => {
 		if (open && !isMobile && !rectReady) {
+			const saved = readSavedRect();
 			rect = loadRect();
+			if (saved && typeof saved.freeW === 'number' && typeof saved.freeH === 'number') {
+				restoreSize = { w: saved.freeW, h: saved.freeH };
+			}
+			const zone = saved?.snappedZone;
+			if (zone && (SNAP_ZONES as readonly string[]).includes(zone)) {
+				const region = snapRegion(zone);
+				if (region) {
+					snappedZone = zone;
+					isSnapped = true;
+					rect = region;
+				}
+			}
 			rectReady = true;
 		}
 		if (!open) rectReady = false;
@@ -90,42 +125,184 @@
 
 	onMount(() => {
 		const onResize = () => {
-			if (rectReady) rect = clampRect(rect);
+			if (!rectReady) return;
+			refitToLayout();
 		};
 		window.addEventListener('resize', onResize);
 		return () => window.removeEventListener('resize', onResize);
 	});
 
+	// ---- Snap (Windows-style: drag the header to an edge or a corner) ----
+	const SNAP_EDGE = 40; // px from a viewport edge that arms a snap zone
+	const SNAP_ZONES = ['left', 'right', 'center', 'tl', 'tr', 'bl', 'br'] as const;
+	type SnapZone = (typeof SNAP_ZONES)[number];
+
+	let snapTarget = $state<Rect | null>(null);
+	let pendingZone: SnapZone | null = null;
+	let isSnapped = $state(false);
+	let snappedZone = $state<SnapZone | null>(null);
+	/** The floating size a snapped panel returns to when torn off, so it follows the cursor
+	 *  at its old dimensions instead of dragging an entire dock around. */
+	let restoreSize: { w: number; h: number } | null = null;
+
+	function snapZoneFor(px: number, py: number, vw: number, vh: number): SnapZone | null {
+		const nearL = px <= SNAP_EDGE;
+		const nearR = px >= vw - SNAP_EDGE;
+		const nearT = py <= SNAP_EDGE;
+		const nearB = py >= vh - SNAP_EDGE;
+		if (nearL && nearT) return 'tl';
+		if (nearL && nearB) return 'bl';
+		if (nearL) return 'left';
+		if (nearR && nearT) return 'tr';
+		if (nearR && nearB) return 'br';
+		if (nearR) return 'right';
+		// Top edge away from the corners: cover the centred chat column, the same shape the
+		// full-cover overlays (Memory, Story Map) take.
+		if (nearT) return 'center';
+		return null;
+	}
+
+	/**
+	 * Snap against the app's real layout rather than against recomputed CSS.
+	 *
+	 * These two data attributes are placed by TitleBar and Workspace for the Assistant's own
+	 * snapping, and reading them is what keeps the docks aligned with the chat column through
+	 * zoom, width changes and breakpoint flips with no responsive maths duplicated here. It
+	 * also means this feature costs no upstream edit at all: the anchors already exist.
+	 *
+	 * It is a DOM contract this port does not own, so it **fails soft**. The Assistant throws
+	 * when an anchor is missing, which is right for the feature that contract belongs to; if
+	 * an upstream rename reaches us, a reaction feed must degrade to free-floating rather
+	 * than break.
+	 */
+	function snapRegion(zone: SnapZone): Rect | null {
+		const workspaceEl = document.querySelector<HTMLElement>('[data-assistant-snap-workspace]');
+		const columnEl = document.querySelector<HTMLElement>('[data-assistant-snap-column]');
+		if (!workspaceEl || !columnEl) return null;
+
+		const workspace = workspaceEl.getBoundingClientRect();
+		const column = columnEl.getBoundingClientRect();
+		const center = { x: column.left, y: workspace.top, w: column.width, h: workspace.height };
+
+		// Below the docking breakpoint there are no side columns to dock into, so every zone
+		// collapses onto the chat column.
+		const useSideDock = viewport.canDockSettings;
+		const left = useSideDock
+			? { x: workspace.left, y: workspace.top, w: column.left - workspace.left, h: workspace.height }
+			: center;
+		const right = useSideDock
+			? {
+					x: column.right,
+					y: workspace.top,
+					w: workspace.right - column.right,
+					h: workspace.height
+				}
+			: center;
+
+		if (zone === 'left') return left;
+		if (zone === 'right') return right;
+		if (zone === 'center') return center;
+
+		const base = zone === 'tl' || zone === 'bl' ? left : right;
+		const top = zone === 'tl' || zone === 'tr';
+		const topHeight = Math.floor(base.h / 2);
+		return top ? { ...base, h: topHeight } : { ...base, y: base.y + topHeight, h: base.h - topHeight };
+	}
+
+	/** Re-fit on any layout change. A snapped rect deliberately skips the viewport clamp, so
+	 *  the floating minimums can never push a dock off its own boundaries. */
+	function refitToLayout() {
+		if (isSnapped && snappedZone) {
+			const region = snapRegion(snappedZone);
+			if (region) rect = region;
+			else {
+				// The anchors went away. Fall back to floating rather than freeze in a dock
+				// whose geometry can no longer be recomputed.
+				isSnapped = false;
+				snappedZone = null;
+				rect = clampRect(rect);
+			}
+		} else {
+			rect = clampRect(rect);
+		}
+		if (snapTarget && pendingZone) snapTarget = snapRegion(pendingZone);
+	}
+
 	// ---- Drag ----
 	let dragging = $state(false);
+	let dragStart = { px: 0, py: 0, x: 0, y: 0 };
+	/** A header press only becomes a drag past the same threshold the launcher uses, so a
+	 *  plain click on a docked panel's header never tears it out of its dock. */
+	let headerMoved = false;
 
-	function startDrag(event: PointerEvent) {
+	function onHeaderPointerDown(e: PointerEvent) {
 		if (isMobile) return;
-		const target = event.target as HTMLElement;
-		// The header carries buttons; dragging from one of them would swallow its click.
-		if (target.closest('button, select')) return;
-
-		event.preventDefault();
+		// The header carries buttons and a select; dragging from one would swallow its click.
+		if ((e.target as HTMLElement).closest('button, select')) return;
 		dragging = true;
-		const startX = event.clientX;
-		const startY = event.clientY;
-		const origin = { ...rect };
+		headerMoved = false;
+		dragStart = { px: e.clientX, py: e.clientY, x: rect.x, y: rect.y };
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
 
-		const move = (e: PointerEvent) => {
-			rect = clampRect({
-				...origin,
-				x: origin.x + (e.clientX - startX),
-				y: origin.y + (e.clientY - startY)
-			});
+	function onHeaderPointerMove(e: PointerEvent) {
+		if (!dragging) return;
+		if (!headerMoved) {
+			if (
+				Math.abs(e.clientX - dragStart.px) < DRAG_THRESHOLD &&
+				Math.abs(e.clientY - dragStart.py) < DRAG_THRESHOLD
+			) {
+				return;
+			}
+			headerMoved = true;
+			// First real movement tears a docked panel off: it returns to its free size,
+			// dropped under the cursor with the grab point kept on the header.
+			if (isSnapped && restoreSize) {
+				const relX = rect.w > 0 ? (e.clientX - rect.x) / rect.w : 0.5;
+				const grabY = Math.min(Math.max(e.clientY - rect.y, 0), 32);
+				rect = clampRect({
+					w: restoreSize.w,
+					h: restoreSize.h,
+					x: e.clientX - relX * restoreSize.w,
+					y: e.clientY - grabY
+				});
+				isSnapped = false;
+				snappedZone = null;
+				dragStart = { px: e.clientX, py: e.clientY, x: rect.x, y: rect.y };
+			}
+		}
+		// Follow the cursor with NO clamp, so the header can actually reach an edge or a
+		// corner. The panel may hang off-screen mid-drag; release pulls it back or docks it.
+		rect = {
+			...rect,
+			x: dragStart.x + (e.clientX - dragStart.px),
+			y: dragStart.y + (e.clientY - dragStart.py)
 		};
-		const up = () => {
-			dragging = false;
-			saveRect();
-			window.removeEventListener('pointermove', move);
-			window.removeEventListener('pointerup', up);
-		};
-		window.addEventListener('pointermove', move);
-		window.addEventListener('pointerup', up);
+		const zone = snapZoneFor(e.clientX, e.clientY, window.innerWidth, window.innerHeight);
+		pendingZone = zone;
+		snapTarget = zone ? snapRegion(zone) : null;
+	}
+
+	function onHeaderPointerUp(e: PointerEvent) {
+		if (!dragging) return;
+		dragging = false;
+		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+		if (!headerMoved) return; // a plain click: nothing moved, nothing to re-place
+		if (snapTarget) {
+			// Remember the free size, but only on the free to docked transition, or a second
+			// dock would record the first dock's dimensions as "free".
+			if (!isSnapped) restoreSize = { w: rect.w, h: rect.h };
+			rect = snapTarget;
+			isSnapped = true;
+			snappedZone = pendingZone;
+		} else {
+			rect = clampRect(rect); // a free drop: pull it fully back on screen
+			isSnapped = false;
+			snappedZone = null;
+		}
+		snapTarget = null;
+		pendingZone = null;
+		saveRect();
 	}
 
 	// ---- Resize ----
@@ -144,6 +321,14 @@
 		const move = (e: PointerEvent) => {
 			const dx = e.clientX - startX;
 			const dy = e.clientY - startY;
+
+			// Resizing a docked panel frees it: a dock is a slot with a size of its own, so
+			// the moment the reader sets their own size it is no longer in that slot.
+			if (isSnapped && (dx !== 0 || dy !== 0)) {
+				isSnapped = false;
+				snappedZone = null;
+			}
+
 			let { x, y, w, h } = origin;
 
 			// A west/north drag moves the origin as well as the size, and both have to be
@@ -314,9 +499,17 @@
 
 {#if enabled}
 	{#if open}
+		{#if snapTarget}
+			<!-- The ghost region the panel will jump to on release. -->
+			<div
+				class="echo-snap-ghost"
+				style="left:{snapTarget.x}px; top:{snapTarget.y}px; width:{snapTarget.w}px; height:{snapTarget.h}px;"
+			></div>
+		{/if}
 		<section
 			class="echo-panel"
 			class:echo-panel--mobile={isMobile}
+			class:echo-panel--snapped={isSnapped && !isMobile}
 			class:echo-panel--dragging={dragging}
 			style={isMobile
 				? undefined
@@ -325,7 +518,12 @@
 			aria-label="EchoChamber"
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<header class="echo-header" onpointerdown={startDrag}>
+			<header
+				class="echo-header"
+				onpointerdown={onHeaderPointerDown}
+				onpointermove={onHeaderPointerMove}
+				onpointerup={onHeaderPointerUp}
+			>
 				<Icon name="users" class="echo-header-icon" />
 				<span class="echo-title">EchoChamber</span>
 
@@ -450,6 +648,34 @@
 		inset: 0;
 		border: none;
 		border-radius: 0;
+	}
+
+	/* A docked panel fills a native slot, so it drops the floating chrome: rounded corners
+	   and a drop shadow read as "floating above", which is exactly what it no longer is. */
+	.echo-panel--snapped {
+		border-radius: 0;
+		box-shadow: none;
+	}
+
+	/* The region the panel will take on release. Sits under the panel but over everything
+	   else, and never takes a pointer event. */
+	.echo-snap-ghost {
+		position: fixed;
+		z-index: 199;
+		border: 2px solid var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+		pointer-events: none;
+		transition:
+			left 90ms ease,
+			top 90ms ease,
+			width 90ms ease,
+			height 90ms ease;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.echo-snap-ghost {
+			transition: none;
+		}
 	}
 
 	.echo-header {
