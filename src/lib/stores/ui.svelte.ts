@@ -99,6 +99,12 @@ class UiStore {
 	// reads this transient layout state to drive the same animated tint overhang as
 	// Settings/Library; it is never persisted and does not join panel choreography.
 	assistantSnapSide = $state<AssistantSnapSide | null>(null);
+	// EchoChamber's reaction feed, a free-floating widget on the same terms as the
+	// Assistant: it is meant to be read WHILE the story is read, so it deliberately does
+	// not join the mutual exclusion above. Docking it instead would mean teaching the
+	// panel choreography a panel that never closes, which is the one edit in this area
+	// worth avoiding.
+	echoChamberOpen = $state(false);
 	// Prompt debug panel: a chat-area cover like the overlays, but opened from its own
 	// handle. Mutually exclusive with every other panel, no lock.
 	debugPanelOpen = $state(false);
