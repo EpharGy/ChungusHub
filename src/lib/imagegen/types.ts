@@ -167,7 +167,7 @@ export interface GenerateResult {
  *
  * `marker` is the index of the marker in the message text, and it is what binds picture to
  * position: the body is split on markers at render time and this is how each gap finds its
- * image. Everything else is provenance — what was actually sent to ComfyUI, which is not
+ * image. Everything else is provenance - what was actually sent to ComfyUI, which is not
  * always what the marker asked for once locks have had their say.
  */
 export interface GeneratedImageMeta {
