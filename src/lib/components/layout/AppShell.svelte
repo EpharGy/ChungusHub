@@ -2,6 +2,7 @@
 	import Workspace from '$lib/components/layout/Workspace.svelte';
 	import TitleBar from '$lib/components/layout/TitleBar.svelte';
 	import AssistantFloatingWidget from '$lib/components/assistant/AssistantFloatingWidget.svelte';
+	import EchoChamberWidget from '$lib/components/echochamber/EchoChamberWidget.svelte';
 	import WelcomeDialog, { openWelcomeDialog } from '$lib/components/layout/WelcomeDialog.svelte';
 	import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
 	import DataAheadBar, { setDataAhead } from '$lib/components/layout/DataAheadBar.svelte';
@@ -17,6 +18,7 @@
 	import { ambientStore } from '$lib/stores/ambient.svelte';
 	import { backgroundStore } from '$lib/stores/background.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
+	import { echoChamberStore } from '$lib/stores/echochamber.svelte';
 	import { libraryViewPrefs, personasViewPrefs } from '$lib/stores/browseViewPrefs.svelte';
 	import { spriteSortPref } from '$lib/stores/spriteSort.svelte';
 	import { lorebookViewPrefs } from '$lib/stores/lorebookViewPrefs.svelte';
@@ -166,6 +168,9 @@
 			await ambientStore.initialize();
 			await backgroundStore.initialize();
 			await featurePromptsStore.initialize();
+			// Its own settings blob rather than a prompt template, and the widget asks whether
+			// it is on before it paints anything at all.
+			await echoChamberStore.initialize();
 			await libraryViewPrefs.initialize();
 			await personasViewPrefs.initialize();
 			await spriteSortPref.initialize();
@@ -337,6 +342,10 @@
 		     floating widget/launcher paints above the title bar and the workspace's
 		     isolated stacking context. -->
 		<AssistantFloatingWidget />
+		<!-- EchoChamber's feed, floating on the same terms and mounted here for the same
+		     reason: it is fixed-positioned and has to paint above the workspace's isolated
+		     stacking context. It draws nothing at all while the engine is off. -->
+		<EchoChamberWidget />
 		<!-- Mounted with the workspace, not with the shell: it portals to body and owns
 		     its own open flag, and there is nothing to greet anyone about while a boot
 		     state card is still on screen. -->
