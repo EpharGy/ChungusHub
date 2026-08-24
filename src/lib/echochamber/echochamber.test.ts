@@ -14,10 +14,18 @@
 import { describe, expect, test } from 'bun:test';
 
 import { DEFAULT_ECHOCHAMBER_SETTINGS, BOUNDS, resolveEchoChamberSettings } from './config';
+import {
+	MAX_STORED_FEEDS,
+	clearFeed,
+	defaultEchoChamberChatState,
+	normalizeEchoChamberChatState,
+	pruneFeeds,
+	putFeed
+} from './feed-state';
 import { parseReactions, snapToCast } from './parse';
 import { buildPrompt, castNamesForStyle, resolveStyleMacros } from './prompt';
 import { BUILT_IN_STYLES, builtInStyle } from './styles';
-import type { ChatStyle, StoryContext } from './types';
+import type { ChatStyle, EchoChamberFeed, StoryContext } from './types';
 
 const CROWD = builtInStyle('twitch')!;
 const CAST = builtInStyle('sillytavern')!;
@@ -348,6 +356,85 @@ describe('buildPrompt', () => {
 		const last = messages[messages.length - 1].content;
 		expect(last).not.toContain('{{characters}}');
 		expect(last).toContain('- Mai Azabu');
+	});
+});
+
+describe('feed state', () => {
+	function feed(createdAt: number, text = 'nice'): EchoChamberFeed {
+		return { styleId: 'twitch', reactions: [{ username: 'dave_99', text }], createdAt };
+	}
+
+	test('a corrupt or absent blob degrades instead of failing the chat read', () => {
+		expect(normalizeEchoChamberChatState(null)).toEqual(defaultEchoChamberChatState());
+		expect(normalizeEchoChamberChatState('nonsense')).toEqual(defaultEchoChamberChatState());
+		expect(normalizeEchoChamberChatState({ feeds: 7 })).toEqual(defaultEchoChamberChatState());
+	});
+
+	test('drops a reaction missing its half, and a feed left with none', () => {
+		const state = normalizeEchoChamberChatState({
+			feeds: {
+				m1: { styleId: 'twitch', createdAt: 1, reactions: [{ username: 'a', text: 'hi' }, { username: 'b' }] },
+				m2: { styleId: 'twitch', createdAt: 1, reactions: [{ text: 'orphan' }] }
+			}
+		});
+		expect(state.feeds.m1.reactions).toEqual([{ username: 'a', text: 'hi' }]);
+		expect(state.feeds.m2).toBeUndefined();
+	});
+
+	// Deleting a CHAT takes its feeds with it for free: feature_state is a column on the
+	// chats row. Deleting a MESSAGE does not, and this is what closes that leak.
+	test('a feed whose message was deleted is pruned away', () => {
+		const state = { feeds: { alive: feed(2), deleted: feed(1) } };
+		expect(pruneFeeds(state, ['alive'])).toEqual({ feeds: { alive: feed(2) } });
+	});
+
+	test('prunes against every message in the chat, not just the active path', () => {
+		// A turn on another branch is not deleted, it is just not being looked at.
+		const state = { feeds: { onPath: feed(2), otherBranch: feed(1) } };
+		expect(pruneFeeds(state, ['onPath', 'otherBranch'])).toEqual(state);
+	});
+
+	test('returns the same object when nothing needed pruning', () => {
+		const state = { feeds: { a: feed(1) } };
+		expect(pruneFeeds(state, ['a'])).toBe(state);
+	});
+
+	test('caps the blob by dropping the oldest feeds', () => {
+		const feeds: Record<string, EchoChamberFeed> = {};
+		const live: string[] = [];
+		for (let i = 0; i < MAX_STORED_FEEDS + 5; i++) {
+			feeds[`m${i}`] = feed(i);
+			live.push(`m${i}`);
+		}
+		const pruned = pruneFeeds({ feeds }, live);
+		expect(Object.keys(pruned.feeds)).toHaveLength(MAX_STORED_FEEDS);
+		expect(pruned.feeds.m0).toBeUndefined();
+		expect(pruned.feeds[`m${MAX_STORED_FEEDS + 4}`]).toBeDefined();
+	});
+
+	test('putFeed files the new feed and prunes a dead one in the same write', () => {
+		const state = { feeds: { dead: feed(1) } };
+		const next = putFeed(state, 'fresh', feed(2, 'wow'), ['fresh']);
+		expect(next.feeds.fresh.reactions[0].text).toBe('wow');
+		expect(next.feeds.dead).toBeUndefined();
+	});
+
+	test('putFeed keeps its own message even when the caller hands a stale path', () => {
+		const next = putFeed(defaultEchoChamberChatState(), 'fresh', feed(1), []);
+		expect(next.feeds.fresh).toBeDefined();
+	});
+
+	test('putFeed replaces the feed on a message that already had one', () => {
+		const state = putFeed(defaultEchoChamberChatState(), 'm1', feed(1, 'old'), ['m1']);
+		const next = putFeed(state, 'm1', feed(2, 'new'), ['m1']);
+		expect(Object.keys(next.feeds)).toEqual(['m1']);
+		expect(next.feeds.m1.reactions[0].text).toBe('new');
+	});
+
+	test('clearFeed forgets one message, leaving the rest', () => {
+		const state = { feeds: { a: feed(1), b: feed(2) } };
+		expect(clearFeed(state, 'a')).toEqual({ feeds: { b: feed(2) } });
+		expect(clearFeed(state, 'missing')).toBe(state);
 	});
 });
 
