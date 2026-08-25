@@ -191,6 +191,15 @@ row, never blocking the reply that triggered it - with one rule Sprites does not
 faster than one returns, and the right answer to a second request is to abandon the first,
 not to queue it and bill for both.
 
+**The turn to react to is named, never searched for.** A scan of the open path answers
+"whatever turn is newest right now", which is the turn that just landed only while the reader
+stays put: walk to another branch or another chat mid-generation and the scan files this
+reply's reactions against a turn nobody generated. Each of the three trigger calls passes the
+row it just wrote, and `buildContext` walks that row's own parents (`findActivePath`) rather
+than slicing the open path. In the ordinary case the two are the same list; for a turn the
+reader has navigated away from the walk is the only one that answers at all. A row that is not
+in the open chat resolves to nothing.
+
 **The panel floats rather than docks, and that is the load-bearing UI decision.** The
 workspace's side panels are mutually exclusive (`uiStore.dropUnlockedSidePanels`), and a feed
 exists to be read WHILE the story is read. Docking it would have meant teaching that
