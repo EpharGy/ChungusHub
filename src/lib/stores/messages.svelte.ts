@@ -19,6 +19,22 @@ import { steeringTargetForChat } from '$lib/types/steering';
 import type { LorebookTrigger } from '$lib/lorebook/types';
 import { countMessages, tokenCalibration } from '$lib/tokenizer';
 
+/**
+ * The texts of the one-shot notes the commit REALLY spent, for the chat's reuse list.
+ *
+ * The request names what rode the prompt; the commit answers with what it actually deleted,
+ * and the two differ when a note was edited to permanent or deleted while the model was
+ * writing. Listing such a note as spent would show it under Recent while it is still armed
+ * and about to inject again.
+ */
+function spentSteeringTexts(
+	rode: { id: string; text: string }[],
+	result: { spentSteeringIds: string[] }
+): string[] {
+	const spent = new Set(result.spentSteeringIds);
+	return rode.filter((note) => spent.has(note.id)).map((note) => note.text);
+}
+
 class MessageStore {
 	abortController = $state<AbortController | null>(null);
 	private isProcessing = $state(false);
@@ -103,11 +119,17 @@ class MessageStore {
 			// Commit any steering-note edit still sitting in its debounce window: the
 			// prompt builder reads the note rows from the db, not the store's copy.
 			await steeringStore.flush();
-			const { messages, lorebook } = await this.buildMessageHistory(chatId, parentId, lorebookTrigger);
+			const { messages, lorebook, oneShotSteering } = await this.buildMessageHistory(
+				chatId,
+				parentId,
+				lorebookTrigger
+			);
 
-			// Clock the whole live generation (request start → stream complete), measured
-			// right around the LLM call so db awaits never pollute the number.
-			const startedAt = performance.now();
+			// The turn is written by the SERVER, from this placement, the moment the model
+			// stops: the generation outlives this page, and a phone whose tab is discarded
+			// mid-reply would otherwise have nowhere to put the answer it paid for. The leaf
+			// is named as it stands now, so a commit that lands after the reader walked to
+			// another branch leaves them where they are (architecture/chat-sessions.md).
 			const result = await llmService.complete('primary', {
 				messages,
 				source: 'chat',
@@ -117,59 +139,49 @@ class MessageStore {
 				onThinkingToken: (token) => {
 					chatStore.appendStreamingThinking(token);
 				},
-				signal: this.abortController.signal
+				signal: this.abortController.signal,
+				commit: {
+					chatId,
+					parentId,
+					expectedLeafId: parentId,
+					claimsRoot: false,
+					lorebook,
+					spendSteeringIds: oneShotSteering.map((note) => note.id)
+				}
 			});
-			const generationMs = Math.round(performance.now() - startedAt);
 
 			// A stop mid-stream comes back as a normal result carrying everything that
 			// streamed before it, and that text is persisted as the turn like any other
 			// reply. The user watched it arrive and stopped because they had enough.
-			// Only a stop before the first token has nothing to keep, and falls back to
-			// the abort contract: no row, the caller restores the view.
-			if (result.finishReason === 'cancelled' && !result.content.trim()) return null;
+			// Only a stop before the first token has nothing to keep, which the commit
+			// refuses on the same rule and reports back as no row at all.
+			if (!result.committedMessageId) return null;
 
 			// Teach the per-model token calibration from the provider's real prompt_tokens.
 			tokenCalibration.record(result.model, countMessages(messages, result.model), result.usage.promptTokens);
 
-			// Get correct sibling index for branching support
-			const siblingIndex = await db.getNextSiblingIndex(chatId, parentId);
-
-			const assistantMessage = await this.createMessage({
-				chatId,
-				parentId,
-				role: 'assistant',
-				content: result.content,
-				thinking: result.thinking,
-				model: result.model,
-				provider: result.provider,
-				tokensPrompt: result.usage.promptTokens,
-				tokensCompletion: result.usage.completionTokens,
-				finishReason: result.finishReason,
-				generationMs,
-				firstTokenMs: result.firstTokenMs,
-				reasoningMs: result.reasoningMs,
-				lorebook,
-				siblingIndex
-			});
-
-			await db.updateChatActiveLeaf(chatId, assistantMessage.id, { touchUpdatedAt: true });
 			await chatStore.refreshChat(chatId);
 
-			// One-shot notes rode this reply. Spend them now so they don't carry into the
-			// next turn (a no-op when every active note is pinned).
-			await this.spendOneShotSteering(chatId);
+			// The notes themselves were spent inside the commit, so nothing here can leave
+			// guidance armed to apply itself twice. What is left is the chat's own reuse
+			// list, which is per-chat state the server deliberately does not author.
+			await chatStore.pushSteeringHistory(chatId, spentSteeringTexts(oneShotSteering, result));
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(chatId);
-			return assistantMessage.id;
+			return result.committedMessageId;
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// A stop the server never answered (dead socket, or it aborted before the
 				// stream opened): nothing streamed, nothing to keep.
 				return null;
-			} else {
-				throw error;
 			}
+			// The turn is the server's to write, so a break on this side says nothing about
+			// whether one landed: a generation that finished before the connection was lost
+			// is already in the chat. Re-read before surfacing the failure, or the reply sits
+			// there unseen until something else happens to refresh.
+			await this.refreshAfterFailure(chatId);
+			throw error;
 		} finally {
 			chatStore.endStream();
 			this.abortController = null;
@@ -564,32 +576,33 @@ class MessageStore {
 				}
 				const prevLeafId = state.chat.activeLeafId;
 
-				if (action === 'replace') {
-					// Delete this response branch and regenerate from its parent user message
-					await db.deleteMessageAndDescendants(message.id);
-					await db.updateChatActiveLeaf(state.chat.id, parentId, { touchUpdatedAt: true });
-					await this.repairCanon(state.chat.id, state.allMessages);
-				} else {
-					// Keep current branch and generate a new assistant sibling
-					await db.updateChatActiveLeaf(state.chat.id, parentId, { touchUpdatedAt: false });
-				}
+				// Both actions generate a SIBLING first and differ only in what happens after.
+				// 'replace' deleting up front is what a generation that outlives its page made
+				// unsafe: the server refuses a second committing turn for a chat that already
+				// has one running, and a refusal arriving after the delete leaves the reader
+				// with neither the old reply nor a new one. Nothing is thrown away until there
+				// is something to throw it away for.
+				await db.updateChatActiveLeaf(state.chat.id, parentId, { touchUpdatedAt: action === 'replace' });
 
 				await chatStore.refreshCurrentChat();
 				let newId: string | null = null;
 				try {
 					newId = await this.generateResponse(state.chat.id, parentId, 'swipe');
+					if (newId && action === 'replace') {
+						const preDelete = await db.getMessagesByChat(state.chat.id);
+						await db.deleteMessageAndDescendants(message.id);
+						await this.repairCanon(state.chat.id, preDelete);
+					}
 				} finally {
 					// Aborted or failed: don't strand the view on the bare parent (the reply the
-					// user was reading would just vanish). 'branch' restores that exact reply;
-					// 'replace' (it's gone) lands on the nearest surviving swipe, else the parent.
+					// user was reading would just vanish). Either action restores that exact
+					// reply, since nothing has been deleted by this point.
 					if (!newId) {
 						const restoreId =
-							action === 'branch' && prevLeafId
-								? prevLeafId
-								: findDeepestLeafFromNode(await db.getMessagesByChat(state.chat.id), parentId);
+							prevLeafId ?? findDeepestLeafFromNode(await db.getMessagesByChat(state.chat.id), parentId);
 						await db.updateChatActiveLeaf(state.chat.id, restoreId, { touchUpdatedAt: false });
-						await chatStore.refreshCurrentChat();
 					}
+					await chatStore.refreshCurrentChat();
 				}
 				return;
 			}
@@ -599,24 +612,28 @@ class MessageStore {
 				// what the Branch action does). Mirrors the assistant path: replace nukes the replies
 				// below and regenerates one; alternate keeps them and adds a swipeable assistant sibling.
 				const prevLeafId = state.chat.activeLeafId;
-				if (action === 'replace') {
-					await db.deleteDescendants(message.id);
-					await db.updateChatActiveLeaf(state.chat.id, message.id, { touchUpdatedAt: true });
-					await this.repairCanon(state.chat.id, state.allMessages);
-				} else {
-					await db.updateChatActiveLeaf(state.chat.id, message.id, { touchUpdatedAt: false });
-				}
+				// Delete-after, exactly as above: a refused generation must not leave the reader
+				// holding neither the replies it deleted nor a new one.
+				await db.updateChatActiveLeaf(state.chat.id, message.id, { touchUpdatedAt: action === 'replace' });
 				await chatStore.refreshCurrentChat();
 				let newId: string | null = null;
 				try {
 					newId = await this.generateResponse(state.chat.id, message.id, 'swipe');
-				} finally {
-					// Same restore as above; after 'replace' the user turn itself is the right
-					// place to stand (its subtree is gone), so only 'branch' needs the old leaf.
-					if (!newId && action === 'branch' && prevLeafId && prevLeafId !== message.id) {
-						await db.updateChatActiveLeaf(state.chat.id, prevLeafId, { touchUpdatedAt: false });
-						await chatStore.refreshCurrentChat();
+					if (newId && action === 'replace') {
+						const preDelete = await db.getMessagesByChat(state.chat.id);
+						// Everything under the user turn EXCEPT the reply just written for it.
+						for (const child of preDelete.filter((m) => m.parentId === message.id && m.id !== newId)) {
+							await db.deleteMessageAndDescendants(child.id);
+						}
+						await this.repairCanon(state.chat.id, preDelete);
 					}
+				} finally {
+					// Nothing has been deleted when the generation produced no row, so the reply
+					// the user was reading is still there to go back to.
+					if (!newId && prevLeafId && prevLeafId !== message.id) {
+						await db.updateChatActiveLeaf(state.chat.id, prevLeafId, { touchUpdatedAt: false });
+					}
+					await chatStore.refreshCurrentChat();
 				}
 				return;
 			}
@@ -684,14 +701,15 @@ class MessageStore {
 			// The trace this build produces is deliberately dropped: the turn already carries the
 			// record of the scan that opened it, and a continuation is a second scan whose result
 			// never shaped the text already on screen.
-			const { messages, continuationSent } = await buildPromptMessages({
+			const { messages, continuationSent, oneShotSteering } = await buildPromptMessages({
 				chatId: state.chat.id,
 				chatMessages: path,
 				continuation: target,
 				lorebookTrigger: 'continue'
 			});
 
-			// Same clock as generateResponse: the LLM call alone, no db awaits.
+			// The LLM call alone, no db awaits. Continue is the one story path that still
+			// persists its own turn, so this clock is still its own to keep.
 			const startedAt = performance.now();
 			const result = await llmService.complete('primary', {
 				messages,
@@ -704,14 +722,18 @@ class MessageStore {
 				},
 				signal: this.abortController.signal
 			});
-			const generationMs = Math.round(performance.now() - startedAt);
+			// Null rather than a number when the request lived through a dropped socket: the
+			// call now outlives the connection, so the disconnection would be inside this
+			// span and would be added to a turn's stored total for good. The same reason the
+			// transport nulls its own two clocks (architecture/llm-providers.md).
+			const generationMs = result.reattached ? null : Math.round(performance.now() - startedAt);
 
 			// Teach the per-model token calibration from the provider's real prompt_tokens.
 			tokenCalibration.record(result.model, countMessages(messages, result.model), result.usage.promptTokens);
 
 			if (!result.content.trim()) {
 				// A stop before the first token is the user's own doing, not a model that
-				// answered with nothing: same fall-back-to-abort as generateResponse.
+				// answered with nothing, so it passes silently.
 				if (result.finishReason !== 'cancelled') toastStore.warning('The model returned no continuation text');
 				return;
 			}
@@ -733,7 +755,9 @@ class MessageStore {
 				tokensPrompt: result.usage.promptTokens,
 				tokensCompletion: (target.tokensCompletion ?? 0) + result.usage.completionTokens,
 				finishReason: result.finishReason,
-				generationMs: (target.generationMs ?? 0) + generationMs,
+				// Unmeasurable this run leaves the turn's stored total alone rather than
+				// writing a span that carries a disconnection inside it.
+				generationMs: generationMs === null ? target.generationMs : (target.generationMs ?? 0) + generationMs,
 				// Accumulated like generationMs, and for the same reason: a continuation is more
 				// of this turn's cost, not a second turn. Null only while neither run measured
 				// any, so a reasoning-free turn never claims a measured zero. `firstTokenMs` is
@@ -758,8 +782,10 @@ class MessageStore {
 
 			// Steering rode this continuation. It is spent only here, after the persisted write,
 			// never on the two soft no-op returns above: no steered output landed there, so
-			// the one-shots must survive for the retry.
-			await this.spendOneShotSteering(state.chat.id);
+			// the one-shots must survive for the retry. By id, exactly like the two paths the
+			// server commits: spending whatever happens to be active at this moment would burn
+			// a note the reader armed for the NEXT turn while this one was still running.
+			await this.spendOneShotSteering(state.chat.id, oneShotSteering);
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
@@ -849,14 +875,17 @@ class MessageStore {
 			// {{chatHistory}} injects the direction as the one user turn. Rides the engine
 			// target: Opening Scene resolves to its own assignment on the Connections page,
 			// and assembly must follow the serving connection.
-			const { messages, lorebook } = await buildPromptMessages({
+			const { messages, lorebook, oneShotSteering } = await buildPromptMessages({
 				chatId: chat.id,
 				chatMessages: [virtualUserMessage],
 				target: { engine: 'opening-scene' }
 			});
 
-			// Same clock as generateResponse: the LLM call alone, no db awaits.
-			const startedAt = performance.now();
+			// Written by the SERVER when the model stops, like any reply. A root sibling,
+			// appended after whatever roots are already there, with the sibling index and the
+			// root claim both resolved against fresh rows inside the commit's own transaction
+			// rather than read here and used a paragraph later. No user turn is saved: the
+			// direction was context, not something the reader said in the story.
 			const result = await llmService.complete({ engine: 'opening-scene' }, {
 				messages,
 				source: 'opening-scene',
@@ -866,61 +895,32 @@ class MessageStore {
 				onThinkingToken: (token) => {
 					chatStore.appendStreamingThinking(token);
 				},
-				signal: this.abortController.signal
+				signal: this.abortController.signal,
+				commit: {
+					chatId: state.chat.id,
+					parentId: null,
+					// The reader asked for this beginning, so it is the one they land on, unless
+					// they moved on while it was being written. Off the fresh row rather than the
+					// store's snapshot: this is a claim about where the chat stands right now.
+					expectedLeafId: chat.activeLeafId,
+					claimsRoot: true,
+					lorebook,
+					spendSteeringIds: oneShotSteering.map((note) => note.id)
+				}
 			});
-			const generationMs = Math.round(performance.now() - startedAt);
 
 			// Same stop contract as generateResponse: keep what streamed, and treat a stop
 			// before the first token as a plain abort (nothing to persist).
-			if (result.finishReason === 'cancelled' && !result.content.trim()) return;
+			if (!result.committedMessageId) return;
 
 			// Teach the per-model token calibration from the provider's real prompt_tokens.
 			tokenCalibration.record(result.model, countMessages(messages, result.model), result.usage.promptTokens);
 
-			// Both read fresh, never the snapshots taken before the call: the standing rule for
-			// long operations, and here they decide where the new root lands and whether it is
-			// the first one. A stale root pointer read before a remote delete would leave the
-			// chat naming a row that is gone, which renders as an empty transcript.
-			const rootIndex = await db.getNextSiblingIndex(state.chat.id, null);
-			const current = await db.getChat(state.chat.id);
-
-			// A root sibling, appended after whatever roots are already there. No user turn is
-			// saved: the direction was context, not something the reader said in the story.
-			const assistantMessage = await this.createMessage({
-				chatId: state.chat.id,
-				parentId: null,
-				role: 'assistant',
-				content: result.content,
-				thinking: result.thinking,
-				model: result.model,
-				provider: result.provider,
-				tokensPrompt: result.usage.promptTokens,
-				tokensCompletion: result.usage.completionTokens,
-				finishReason: result.finishReason,
-				generationMs,
-				firstTokenMs: result.firstTokenMs,
-				reasoningMs: result.reasoningMs,
-				lorebook,
-				siblingIndex: rootIndex
-			});
-
-			// The reader asked for this beginning, so it is the one they land on. `rootMessageId`
-			// names the chat's FIRST root and is claimed only when nothing held it: an opening
-			// written beside existing greetings must not renumber which of them is first.
-			await db.updateChat(
-				{
-					id: state.chat.id,
-					...(current?.rootMessageId ? {} : { rootMessageId: assistantMessage.id }),
-					activeLeafId: assistantMessage.id
-				},
-				{ touchUpdatedAt: true }
-			);
-
 			await chatStore.refreshChat(state.chat.id);
 
-			// Steering rode this opening scene too, so spend it the same way as any primary
-			// generation.
-			await this.spendOneShotSteering(state.chat.id);
+			// Steering rode this opening scene too: the notes were spent inside the commit,
+			// and this is the reuse list they leave behind.
+			await chatStore.pushSteeringHistory(state.chat.id, spentSteeringTexts(oneShotSteering, result));
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
@@ -928,6 +928,9 @@ class MessageStore {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
 			} else if (error instanceof Error) {
+				// Same re-read as generateResponse: the scene is the server's to write, so a
+				// break here does not mean none landed.
+				await this.refreshAfterFailure(state.chat.id);
 				toastStore.failed('generate the opening scene', error);
 			}
 		} finally {
@@ -1045,17 +1048,37 @@ class MessageStore {
 	}
 
 	/**
+	 * Re-read a chat on the way out of a failed generation, so a reply the server did land
+	 * before the break is on screen rather than waiting for the next thing that refreshes.
+	 *
+	 * It must not throw: `loadChatState` does when the chat is gone, which is exactly the
+	 * case a remote delete produces, and a refresh raising from inside a catch would replace
+	 * the failure it was meant to precede with "Chat <id> not found". The failure it hides is
+	 * already being surfaced by the caller, so this one only needs the console.
+	 */
+	private async refreshAfterFailure(chatId: string): Promise<void> {
+		try {
+			await chatStore.refreshChat(chatId);
+		} catch (refreshError) {
+			console.error('[chat] post-failure refresh failed:', refreshError);
+		}
+	}
+
+	/**
 	 * Spend the one-shot steering notes that rode a generation, and record their texts in
 	 * the chat's reuse history. Called ONLY after a persisted success, never on an abort,
 	 * an error, or continue's no-new-content soft return, so a failed steered turn keeps
 	 * its guidance armed for the retry.
+	 *
+	 * Continue is the only caller left: the two paths the server commits spend inside that
+	 * commit, because the page that asked for them may never come back. It takes the notes
+	 * the PROMPT resolved rather than whatever is active now, the same rule, so a note the
+	 * reader armed for the next turn while this one was running is not burned by it.
 	 */
-	private async spendOneShotSteering(chatId: string): Promise<void> {
-		if (!featurePromptsStore.steeringEnabled) return;
-		const chat = chatStore.chats.find((c) => c.id === chatId);
-		if (!chat) throw new Error(`spendOneShotSteering: chat ${chatId} is not loaded`);
-		const spent = await steeringStore.consumeOnce(steeringTargetForChat(chat));
-		await chatStore.pushSteeringHistory(chatId, spent);
+	private async spendOneShotSteering(chatId: string, rode: { id: string; text: string }[]): Promise<void> {
+		if (!featurePromptsStore.steeringEnabled || rode.length === 0) return;
+		const spent = await steeringStore.consumeById(rode.map((note) => note.id));
+		await chatStore.pushSteeringHistory(chatId, rode.filter((n) => spent.has(n.id)).map((n) => n.text));
 	}
 
 	private async buildMessageHistory(

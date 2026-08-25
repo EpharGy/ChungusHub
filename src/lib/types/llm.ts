@@ -420,6 +420,10 @@ export interface LLMCompletionOptions {
 	onToken?: (token: string) => void;
 	onThinkingToken?: (token: string) => void;
 	signal?: AbortSignal;
+	/** Where this reply belongs in the story, for the two calls whose turn the SERVER writes
+	 *  (a reply, an opening scene). Absent everywhere else, which is what keeps every other
+	 *  call's result the client's to persist. See architecture/chat-sessions.md. */
+	commit?: import('$shared/generation').GenerationCommit;
 }
 
 export interface LLMCompletionResult {
@@ -440,6 +444,15 @@ export interface LLMCompletionResult {
 	/** How long the reasoning stream ran, first thinking token to last, in ms. Null when the
 	 *  turn produced no reasoning. */
 	reasoningMs: number | null;
+	/** The row the server wrote this reply as, for a call that carried a `commit`. Null for
+	 *  every other call, and for a committing one that had nothing to land. */
+	committedMessageId: string | null;
+	/** The one-shot steering notes the commit really deleted. A subset of what the request
+	 *  asked it to spend, since a note edited to permanent meanwhile is left armed. */
+	spentSteeringIds: string[];
+	/** The request lived through a dropped socket. Nothing this side clocked around the call
+	 *  is usable: the disconnection is inside it. */
+	reattached: boolean;
 }
 
 export interface LLMProviderConfig {

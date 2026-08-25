@@ -23,6 +23,7 @@ import * as security from './security';
 import { installInfo, latestRelease } from './about';
 import { LATEST_SCHEMA_VERSION, MUTATION_SCOPES, callDbMethod, schemaVersionOnDisk, serverDb } from './db';
 import type { SyncScope } from '../shared/sync';
+import { isGenerationCommit, type GenerationCommit } from '../shared/generation';
 import { runBootSweeps } from './boot-sweeps';
 import { backupService } from './backup/service';
 import { JOB_ENV, runJobChild } from './backup/job';
@@ -90,8 +91,77 @@ interface SocketData {
 }
 
 const sockets = new Set<ServerWebSocket<SocketData>>();
-// Active LLM generations per socket, so a client can cancel mid-stream.
-const generations = new WeakMap<ServerWebSocket<SocketData>, Map<string, AbortController>>();
+
+/**
+ * Every LLM generation in flight or waiting to be claimed, keyed by request id.
+ *
+ * Deliberately NOT per-socket state, and that is the whole point of the map. A phone that
+ * backgrounds its browser has its socket torn down by the OS, and a generation bound to
+ * that socket died with it: the answer was gone, and so was every token the reader had
+ * already watched arrive, because the only copy of a streamed reply lives in the page that
+ * asked for it until the call resolves. So a generation outlives its socket, keeps running
+ * and keeps accumulating; `ws` is whoever is listening right now, null while nobody is, and
+ * a page that comes back claims what it missed with `llm-attach`.
+ *
+ * A settled generation stays here for `CLAIM_WINDOW_MS`, because the socket looking open at
+ * the moment the last frame was written proves nothing about a frozen tab having read it.
+ * The window is what a returning page claims inside; past it the answer is dropped with a
+ * line in the log rather than in silence.
+ */
+interface LiveGeneration {
+	controller: AbortController;
+	ws: ServerWebSocket<SocketData> | null;
+	/** What has streamed so far, so a re-attach can be answered with the remainder alone. */
+	content: string;
+	thinking: string;
+	/** Set once the call ended. For a call nobody commits, this is the only copy of the answer;
+	 *  for one that does, `committedMessageId` names the row it already landed as. */
+	settled:
+		| { result: LlmCompletionResult; committedMessageId: string | null; spentSteeringIds: string[] }
+		| { error: string }
+		| null;
+	/** Armed when the generation settles, cleared when the map entry goes. */
+	dropTimer: ReturnType<typeof setTimeout> | null;
+	/** Debug label ('chat', 'memory', …), for the line logged if the answer is dropped. */
+	source: string;
+	/** The chat this generation will write a turn into, for the single-flight rule below.
+	 *  Null for every call that writes nothing. */
+	commitChatId: string | null;
+}
+type LlmCompletionResult = Awaited<ReturnType<typeof complete>>;
+const generations = new Map<string, LiveGeneration>();
+/** How long an unclaimed answer is held. Long enough to cover a phone locked mid-reply,
+ *  short enough that nothing accumulates on a server nobody is using. */
+const CLAIM_WINDOW_MS = 10 * 60 * 1000;
+
+/** Hand one frame to whoever is currently watching this generation, if anyone is. */
+function emitGeneration(gen: LiveGeneration, frame: Record<string, unknown>): void {
+	gen.ws?.send(JSON.stringify(frame));
+}
+
+/** The generation has ended. Hold the answer for the claim window rather than assuming the
+ *  frame just written was read: the socket of a frozen tab looks open right up to the
+ *  moment the OS tears it down. */
+function settleGeneration(id: string, gen: LiveGeneration, settled: LiveGeneration['settled']): void {
+	gen.settled = settled;
+	// Dropped while it was still running (a restore claims the install and kills them all).
+	// Holding its answer, or arming a timer to forget it, would both be for nobody.
+	if (generations.get(id) !== gen) return;
+	gen.dropTimer = setTimeout(() => {
+		generations.delete(id);
+		console.error(
+			`[llm] dropped an unclaimed ${gen.source} answer after ${CLAIM_WINDOW_MS / 60000} minutes (request ${id}).`
+		);
+	}, CLAIM_WINDOW_MS);
+}
+
+/** Forget a generation and disarm whatever is still holding it. */
+function dropGeneration(id: string): void {
+	const gen = generations.get(id);
+	if (!gen) return;
+	if (gen.dropTimer) clearTimeout(gen.dropTimer);
+	generations.delete(id);
+}
 // Sockets whose device currently has the debug panel enabled. Capture + broadcast of
 // prompt logs only happens while at least one is listening, so an idle server pays nothing.
 const debugSockets = new Set<ServerWebSocket<SocketData>>();
@@ -174,6 +244,13 @@ let dataEpoch = 0;
  */
 function quiesceForRestore(): void {
 	kickAllSockets('Restoring a backup');
+	// Generations outlive their socket, so the kick above leaves them running and holding
+	// answers for a database that is about to be replaced. This is the one place they are
+	// deliberately killed rather than detached.
+	for (const [id, gen] of generations) {
+		gen.controller.abort();
+		dropGeneration(id);
+	}
 	// Aborting only breaks the loop; the turn still finalizes its own rows. That is fine
 	// here (those rows are about to be replaced), but it is why nothing waits on them.
 	for (const turn of assistantTurns.values()) turn.controller.abort();
@@ -975,6 +1052,65 @@ async function handleApi(req: Request, url: URL, clientIp: string | null): Promi
 
 // ===== WebSocket message handling (sync + LLM streaming) =====
 
+/**
+ * A reply and an opening scene are written HERE, because the page that asked for them may
+ * never come back: a phone whose browser is discarded loses the request id with the tab, and
+ * the reply it paid for would sit unclaimed until its window ran out. Every other call keeps
+ * its result client-side, and the difference is what the loss costs. Chat memory refires on
+ * the next turn, a sprite is re-read, a spellcheck is a button press, and a continue extends
+ * a turn that is already safe on disk and re-continues with one click. None of those is a
+ * story the reader cannot get back, and giving each of them a commit path would be machinery
+ * that only ever runs where nothing was at stake.
+ *
+ * The placement shape itself is in shared/generation.ts, since both ends speak it.
+ *
+ * This writes a finished generation's reply into the story and tells every device, in that
+ * order, so a page reading the `messages` hint finds committed state rather than racing it.
+ *
+ * Returns the new turn's id and the steering notes it really spent, for the `llm-done` frame,
+ * or null when there was nothing to land: a stop that kept no text (the reader asked for
+ * nothing to be kept), or a chat that was deleted while the model was writing.
+ *
+ * The broadcast deliberately carries no origin, unlike an ordinary mutation's: the page that
+ * started this may be gone, and the one that is still here needs the hint as much as the
+ * others. Its own copy defers safely behind `missedSyncWhileStreaming` while it is streaming
+ * (architecture/chat-sessions.md).
+ */
+function commitGeneration(
+	commit: GenerationCommit,
+	result: LlmCompletionResult,
+	timings: { generationMs: number; firstTokenMs: number | null; reasoningMs: number | null }
+): { messageId: string; spentSteeringIds: string[] } | null {
+	// The stop contract, and it is the client's rule moved rather than a new one: a stop
+	// mid-stream keeps everything that streamed, and only a stop that beat the first token
+	// has nothing worth a row.
+	if (result.finishReason === 'cancelled' && !result.content.trim()) return null;
+
+	const landed = serverDb.commitGeneratedTurn({
+		chatId: commit.chatId,
+		parentId: commit.parentId,
+		expectedLeafId: commit.expectedLeafId,
+		claimsRoot: commit.claimsRoot,
+		content: result.content,
+		thinking: result.thinking ?? null,
+		model: result.model,
+		provider: result.provider,
+		tokensPrompt: result.usage.promptTokens,
+		tokensCompletion: result.usage.completionTokens,
+		finishReason: result.finishReason,
+		generationMs: timings.generationMs,
+		firstTokenMs: timings.firstTokenMs,
+		reasoningMs: timings.reasoningMs,
+		lorebook: commit.lorebook ?? null,
+		spendSteeringIds: commit.spendSteeringIds
+	});
+	if (!landed) return null;
+
+	broadcastSync('messages', null);
+	if (landed.spentSteeringIds.length) broadcastSync('steering', null);
+	return landed;
+}
+
 async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	id: string;
 	connectionId: string;
@@ -991,6 +1127,11 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	stream?: boolean;
 	/** Debug-panel label for what kind of query this is ('chat', 'memory', …). */
 	source?: string;
+	/** Where this generation's reply belongs in the story, when it belongs in one at all.
+	 *  Present for the two paths that CREATE a turn (a reply, an opening scene) and absent
+	 *  for every other call, which is what decides who writes the answer down. See
+	 *  `commitGeneration`. */
+	commit?: GenerationCommit;
 }): Promise<void> {
 	if (!isProvider(msg.provider)) {
 		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: `Unknown provider: ${msg.provider}` }));
@@ -1002,19 +1143,51 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	}
 
 	if (typeof msg.id !== 'string' || !msg.id) return;
-	const controller = new AbortController();
-	let perSocket = generations.get(ws);
-	if (!perSocket) {
-		perSocket = new Map();
-		generations.set(ws, perSocket);
+	// A placement that does not typecheck would land a turn somewhere nobody asked for, so it
+	// is refused before a token is paid for rather than absorbed at commit time.
+	if (msg.commit !== undefined && !isGenerationCommit(msg.commit)) {
+		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: 'Malformed commit placement on the request.' }));
+		return;
 	}
-	// A reused id would orphan the first controller (uncancellable, invisible to the
-	// close sweep) and let the first `finally` delete the second's handle. Refuse.
-	if (perSocket.has(msg.id)) {
+	// A reused id would orphan the first controller (uncancellable, unclaimable) and let the
+	// first generation's ending overwrite the second's. The check is global because the map
+	// is: two sockets sharing an id collide in exactly the same way as one socket reusing it.
+	if (generations.has(msg.id)) {
 		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: 'Duplicate request id: this request is already running.' }));
 		return;
 	}
-	perSocket.set(msg.id, controller);
+	// One turn at a time per chat, and only for the calls that write one. A generation
+	// outlives the page that asked for it, so a reader whose tab was discarded can reopen the
+	// story, find it looking idle because the reply has not landed yet, and send again. Both
+	// would commit, and the chat would hold two replies to one message. The composer's own
+	// lock cannot see this: it belongs to a page that no longer exists. Engine calls stay
+	// unlocked, since memory folding a chat while a reply is written into it is ordinary.
+	if (msg.commit) {
+		for (const live of generations.values()) {
+			if (live.commitChatId === msg.commit.chatId && !live.settled) {
+				ws.send(
+					JSON.stringify({
+						t: 'llm-error',
+						id: msg.id,
+						message: 'A reply is already being written for this chat. Wait for it to land, or stop it first.'
+					})
+				);
+				return;
+			}
+		}
+	}
+	const controller = new AbortController();
+	const gen: LiveGeneration = {
+		controller,
+		ws,
+		content: '',
+		thinking: '',
+		settled: null,
+		dropTimer: null,
+		source: msg.source ?? 'completion',
+		commitChatId: msg.commit?.chatId ?? null
+	};
+	generations.set(msg.id, gen);
 
 	const stream = msg.stream !== false;
 
@@ -1042,6 +1215,16 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 		broadcastPromptLog({ type: 'request', entry });
 	}
 
+	// A committing generation stamps its own clocks, because it also writes the row they land
+	// on and it is the one side that is present for every frame. The client keeps measuring
+	// its own for everything it still persists itself; the two never write the same column.
+	// Monotonic rather than the wall clock: these three are durations, and an NTP step or a
+	// hand-set clock mid-generation would be written into the row as a negative one.
+	const startedAt = performance.now();
+	let firstTokenAt: number | null = null;
+	let thinkingFirstAt: number | null = null;
+	let thinkingLastAt: number | null = null;
+
 	try {
 		const result = await complete(msg.connectionId, msg.provider, {
 			model: msg.model,
@@ -1055,14 +1238,32 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 			// Only wire the callbacks when streaming: their presence is what makes the
 			// provider issue a streaming request, so stream:false now genuinely asks the
 			// API for a single non-streamed completion instead of just muting tokens.
+			// Each token is kept as well as sent, so a page that was not listening for it
+			// can still be handed it.
 			onToken: stream
-				? (token) => ws.send(JSON.stringify({ t: 'llm-token', id: msg.id, token }))
+				? (token) => {
+						firstTokenAt ??= performance.now();
+						gen.content += token;
+						emitGeneration(gen, { t: 'llm-token', id: msg.id, token });
+					}
 				: undefined,
 			onThinkingToken: stream
-				? (token) => ws.send(JSON.stringify({ t: 'llm-thinking', id: msg.id, token }))
+				? (token) => {
+						// Reasoning counts as the model speaking: on a model that thinks first, its
+						// first thinking token IS the moment the wait ended.
+						const at = performance.now();
+						firstTokenAt ??= at;
+						thinkingFirstAt ??= at;
+						thinkingLastAt = at;
+						gen.thinking += token;
+						emitGeneration(gen, { t: 'llm-thinking', id: msg.id, token });
+					}
 				: undefined
 		});
-		ws.send(JSON.stringify({ t: 'llm-done', id: msg.id, result }));
+		// The debug log records the GENERATION, and it is filed before the commit on purpose:
+		// the model answered and was paid whether or not the reply found a home, so a commit
+		// that throws (a parent deleted mid-write) must not turn this into an error row with
+		// no usage, no finish reason and none of the text it is the only place to read.
 		if (capture) {
 			const res: promptLog.PromptLogResult = {
 				// A stopped generation RESOLVES with everything it streamed (see
@@ -1079,19 +1280,87 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 			};
 			if (promptLog.patchResult(msg.id, res)) broadcastPromptLog({ type: 'result', id: msg.id, result: res });
 		}
+		// Before the frame that announces it, so a page told the turn is done can read it.
+		const landed = msg.commit
+			? commitGeneration(msg.commit, result, {
+					generationMs: Math.round(performance.now() - startedAt),
+					firstTokenMs: firstTokenAt === null ? null : Math.round(firstTokenAt - startedAt),
+					reasoningMs:
+						thinkingFirstAt === null || thinkingLastAt === null
+							? null
+							: Math.round(thinkingLastAt - thinkingFirstAt)
+				})
+			: null;
+		const committedMessageId = landed?.messageId ?? null;
+		const spentSteeringIds = landed?.spentSteeringIds ?? [];
+		emitGeneration(gen, { t: 'llm-done', id: msg.id, result, committedMessageId, spentSteeringIds });
+		settleGeneration(msg.id, gen, { result, committedMessageId, spentSteeringIds });
 	} catch (e) {
-		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: e instanceof Error ? e.message : String(e) }));
+		const message = e instanceof Error ? e.message : String(e);
+		emitGeneration(gen, { t: 'llm-error', id: msg.id, message });
+		settleGeneration(msg.id, gen, { error: message });
 		if (capture) {
 			const res: promptLog.PromptLogResult = {
 				status: controller.signal.aborted ? 'cancelled' : 'error',
 				endedAt: Date.now(),
-				error: e instanceof Error ? e.message : String(e)
+				error: message
 			};
 			if (promptLog.patchResult(msg.id, res)) broadcastPromptLog({ type: 'result', id: msg.id, result: res });
 		}
-	} finally {
-		perSocket.delete(msg.id);
 	}
+}
+
+/**
+ * A page claiming a generation it started before its socket went away: it says how many
+ * characters of each stream it already applied, and gets back the remainder plus, when the
+ * call has already ended, the ending it missed. Applying those in the order they are sent
+ * leaves it exactly where a page that never dropped would be.
+ *
+ * A generation nobody here has heard of (a server restart, a claim past the window, or a
+ * request that died in the socket it was written to) is answered as gone. It must never be
+ * left hanging: the asking page has a composer locked on it.
+ */
+function handleLlmAttach(
+	ws: ServerWebSocket<SocketData>,
+	msg: { id?: unknown; haveContent?: unknown; haveThinking?: unknown }
+): void {
+	const id = typeof msg.id === 'string' ? msg.id : '';
+	const gen = id ? generations.get(id) : undefined;
+	if (!gen) {
+		ws.send(JSON.stringify({ t: 'llm-attach-miss', id }));
+		return;
+	}
+	gen.ws = ws;
+	const haveContent = typeof msg.haveContent === 'number' ? msg.haveContent : 0;
+	const haveThinking = typeof msg.haveThinking === 'number' ? msg.haveThinking : 0;
+	ws.send(
+		JSON.stringify({
+			t: 'llm-attached',
+			id,
+			content: gen.content.slice(haveContent),
+			thinking: gen.thinking.slice(haveThinking)
+		})
+	);
+	if (gen.settled) {
+		if ('result' in gen.settled) {
+			ws.send(
+				JSON.stringify({
+					t: 'llm-done',
+					id,
+					result: gen.settled.result,
+					committedMessageId: gen.settled.committedMessageId,
+					spentSteeringIds: gen.settled.spentSteeringIds
+				})
+			);
+		} else {
+			ws.send(JSON.stringify({ t: 'llm-error', id, message: gen.settled.error }));
+		}
+	}
+}
+
+/** The claiming page has the answer and no longer needs the server to hold it. */
+function handleLlmRelease(msg: { id?: unknown }): void {
+	if (typeof msg.id === 'string' && msg.id) dropGeneration(msg.id);
 }
 
 /**
@@ -1544,13 +1813,13 @@ function serve(hostname: string) {
 			close(ws) {
 				sockets.delete(ws);
 				debugSockets.delete(ws);
-				// Plain llm generations die with their socket (their tokens have nowhere to go
-				// and the client rejected the pending on close). Assistant turns deliberately
-				// DON'T: they live in assistantTurns, keep working headless, and commit
-				// server-side: the finished turn syncs to the reconnected client.
-				const perSocket = generations.get(ws);
-				if (perSocket) {
-					for (const controller of perSocket.values()) controller.abort();
+				// Detach, never abort. A backgrounded phone has this socket torn down by the
+				// OS mid-reply, and aborting here threw away the call and every token the
+				// reader had already watched arrive. The generation keeps running with nobody
+				// listening; whoever comes back claims it (`llm-attach`). Assistant turns
+				// survive their socket the same way, in assistantTurns.
+				for (const gen of generations.values()) {
+					if (gen.ws === ws) gen.ws = null;
 				}
 			},
 			async message(ws, raw) {
@@ -1578,19 +1847,23 @@ function serve(hostname: string) {
 					// broadcasts prompt logs only while someone is listening.
 					if (msg.on) debugSockets.add(ws);
 					else debugSockets.delete(ws);
-				} else if (msg.t === 'llm-cancel' || msg.t === 'assistant-cancel') {
-					const perSocket = generations.get(ws);
-					perSocket?.get(String(msg.id))?.abort();
-					if (msg.t === 'assistant-cancel') {
-						// Assistant turns are session-keyed, not socket-keyed: match by request id
-						// first, and honour an explicit session id so a Stop still lands after the
-						// requesting socket reconnected (or from another device).
-						for (const turn of assistantTurns.values()) {
-							if (turn.requestId === String(msg.id)) turn.controller.abort();
-						}
-						const sessionId = typeof msg.assistantSessionId === 'string' ? msg.assistantSessionId : '';
-						if (sessionId) assistantTurns.get(sessionId)?.controller.abort();
+				} else if (msg.t === 'llm-attach') {
+					handleLlmAttach(ws, msg as never);
+				} else if (msg.t === 'llm-release') {
+					handleLlmRelease(msg as never);
+				} else if (msg.t === 'llm-cancel') {
+					// Matched by request id across every socket, so a Stop lands after the
+					// requesting socket reconnected, exactly like assistant-cancel below.
+					generations.get(String(msg.id))?.controller.abort();
+				} else if (msg.t === 'assistant-cancel') {
+					// Assistant turns are session-keyed, not socket-keyed: match by request id
+					// first, and honour an explicit session id so a Stop still lands after the
+					// requesting socket reconnected (or from another device).
+					for (const turn of assistantTurns.values()) {
+						if (turn.requestId === String(msg.id)) turn.controller.abort();
 					}
+					const sessionId = typeof msg.assistantSessionId === 'string' ? msg.assistantSessionId : '';
+					if (sessionId) assistantTurns.get(sessionId)?.controller.abort();
 				} else if (msg.t === 'ping') {
 					ws.send(JSON.stringify({ t: 'pong' }));
 				}
