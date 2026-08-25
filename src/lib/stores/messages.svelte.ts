@@ -211,7 +211,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(chatId);
-			this.triggerEchoChamber();
+			this.triggerEchoChamber(result.committedMessageId);
 			return result.committedMessageId;
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
@@ -852,7 +852,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
-			this.triggerEchoChamber();
+			this.triggerEchoChamber(target.id);
 		} catch (error) {
 			// A stop the server never answered: nothing streamed back, so the stored turn
 			// stays untouched (the kept-tail case resolves normally above).
@@ -988,7 +988,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
-			this.triggerEchoChamber();
+			this.triggerEchoChamber(result.committedMessageId);
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
@@ -1064,19 +1064,19 @@ class MessageStore {
 	}
 
 	/**
-	 * Fire-and-forget audience reactions for the reply that just landed. A sidecar beside
-	 * memory, on the same terms: never blocks generation, never rolled back, and a no-op
-	 * when the engine or its auto-generate switch is off. It reads the newest assistant
-	 * turn on the path.
+	 * Fire-and-forget audience reactions for the turn named. A sidecar beside memory, on the
+	 * same terms: never blocks generation, never rolled back, and a no-op when the engine or
+	 * its auto-generate switch is off.
+	 *
+	 * Named rather than searched for. A scan of the open path answers "whatever turn is
+	 * newest right now", which is the same thing as "the turn that just landed" only while
+	 * the reader stays put: walk to another branch or another chat while the reply is being
+	 * written and the scan files this reply's reactions against a turn nobody generated.
+	 * Each caller passes the row it just wrote, and a row that is not in the open chat
+	 * resolves to nothing.
 	 */
-	private triggerEchoChamber(): void {
-		const path = chatStore.currentChatState?.activePath ?? [];
-		for (let i = path.length - 1; i >= 0; i--) {
-			if (path[i].role === 'assistant') {
-				void echoChamberStore.ensureForMessage(path[i].id);
-				return;
-			}
-		}
+	private triggerEchoChamber(messageId: string): void {
+		void echoChamberStore.ensureForMessage(messageId);
 	}
 
 	private async createMessage(

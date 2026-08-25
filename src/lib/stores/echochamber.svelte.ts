@@ -26,6 +26,7 @@ import { llmService } from '$lib/services/llm/provider';
 import { readSetting, registerSettingsReload, writeSetting } from '$lib/services/syncedSetting';
 import type { LLMMessage } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
+import { findActivePath } from '$lib/utils/message-tree';
 
 import { expandMacros } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
@@ -322,11 +323,15 @@ class EchoChamberStore {
 		const state = chatStore.currentChatState;
 		if (!state) return null;
 
-		const path = state.activePath;
-		const target = path.findIndex((m) => m.id === messageId);
-		if (target < 0) return null;
+		// The turn's own ancestry, walked from the row rather than sliced out of the open
+		// path. A turn the reader has navigated away from is not on that path at all, and the
+		// crowd would otherwise have nothing to react to; the walk answers the same question
+		// in the ordinary case, where the two are the same list.
+		const ancestry = findActivePath(state.allMessages, messageId);
+		const target = ancestry[ancestry.length - 1];
+		if (!target || target.id !== messageId) return null;
 
-		const history = this.historyFor(path.slice(0, target + 1));
+		const history = this.historyFor(ancestry);
 		if (history.length === 0) return null;
 
 		const persona = personaStore.activeEntry;
@@ -350,7 +355,7 @@ class EchoChamberStore {
 			// What the STORY's own scan activated for this turn, not a second scan of our own:
 			// the crowd must never know something the reply it is reacting to was not told.
 			lorebook: this.settings.includeLorebook
-				? lorebookTextFromTrace(path[target].lorebook, lorebookStore.books)
+				? lorebookTextFromTrace(target.lorebook, lorebookStore.books)
 				: '',
 			// The engine's own recall for the open chat, already derived and branch-aware. It
 			// describes the story as of the current path tip, so regenerating a feed on an
