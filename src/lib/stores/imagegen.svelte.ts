@@ -29,6 +29,7 @@ import { findMarkers } from '$lib/imagegen/parse';
 import { buildGenerateRequest, randomSeed, resolveEffective } from '$lib/imagegen/request';
 import type { GeneratedImageMeta, ImagegenSettings, ParsedMarker, SeedToken } from '$lib/imagegen/types';
 import type { Message, MessageAttachment } from '$lib/types/chat';
+import { findActivePath } from '$lib/utils/message-tree';
 
 const SETTINGS_KEY = 'imagegen';
 
@@ -253,9 +254,11 @@ class ImagegenStore {
 		if (typeof token === 'number') return Number.isFinite(token) ? Math.round(token) : randomSeed();
 		if (token === 'RANDOM') return randomSeed();
 
-		const path = chatStore.currentChatState?.activePath ?? [];
-		const index = path.findIndex((m) => m.id === messageId);
-		const ancestors = index === -1 ? path : path.slice(0, index + 1);
+		// The turn's own ancestry, walked from the row itself rather than sliced out of the
+		// open path. A turn the reader has navigated away from is not on that path at all,
+		// and the path's tail is then a different story whose look this picture has no
+		// business inheriting.
+		const ancestors = findActivePath(chatStore.currentChatState?.allMessages ?? [], messageId);
 
 		for (let i = ancestors.length - 1; i >= 0; i--) {
 			const generated = (ancestors[i].attachments ?? [])

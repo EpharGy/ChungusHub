@@ -211,7 +211,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(chatId);
-			this.triggerImageGeneration();
+			this.triggerImageGeneration(result.committedMessageId);
 			return result.committedMessageId;
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
@@ -852,7 +852,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
-			this.triggerImageGeneration();
+			this.triggerImageGeneration(target.id);
 		} catch (error) {
 			// A stop the server never answered: nothing streamed back, so the stored turn
 			// stays untouched (the kept-tail case resolves normally above).
@@ -988,7 +988,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
-			this.triggerImageGeneration();
+			this.triggerImageGeneration(result.committedMessageId);
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
@@ -1069,18 +1069,14 @@ class MessageStore {
 	 * and follows the same rules - never blocks generation, never rolled back, no-op when the
 	 * engine or its auto-generate switch is off.
 	 *
-	 * Takes no message id on purpose. All three callers have just refreshed the chat and
-	 * differ in what they hold (a new reply, a continued turn, an opening scene), while the
-	 * turn to read is the same thing in each case: the newest assistant turn on the path.
+	 * Named rather than searched for. A scan of the open path answers "whatever turn is
+	 * newest right now", which is the same thing as "the turn that just landed" only while
+	 * the reader stays put: walk to another branch or another chat while the reply is being
+	 * written and the scan hangs one turn's markers on another turn's row. Each caller passes
+	 * the row it just wrote, and a row that is not in the open chat resolves to nothing.
 	 */
-	private triggerImageGeneration(): void {
-		const path = chatStore.currentChatState?.activePath ?? [];
-		for (let i = path.length - 1; i >= 0; i--) {
-			if (path[i].role === 'assistant') {
-				void imagegenStore.ensureForMessage(path[i].id);
-				return;
-			}
-		}
+	private triggerImageGeneration(messageId: string): void {
+		void imagegenStore.ensureForMessage(messageId);
 	}
 
 	private async createMessage(
