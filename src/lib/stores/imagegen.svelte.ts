@@ -23,11 +23,17 @@ import { db } from '$lib/services/database';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { readSetting, registerSettingsReload, writeSetting } from '$lib/services/syncedSetting';
-import { generateImage } from '$lib/services/imagegenService';
+import { generateImage, pingComfy } from '$lib/services/imagegenService';
 import { DEFAULT_IMAGEGEN_SETTINGS, resolveImagegenSettings } from '$lib/imagegen/config';
 import { findMarkers } from '$lib/imagegen/parse';
 import { buildGenerateRequest, randomSeed, resolveEffective } from '$lib/imagegen/request';
-import type { GeneratedImageMeta, ImagegenSettings, ParsedMarker, SeedToken } from '$lib/imagegen/types';
+import type {
+	GeneratedImageMeta,
+	ImagegenSettings,
+	MarkerMatch,
+	ParsedMarker,
+	SeedToken
+} from '$lib/imagegen/types';
 import type { Message, MessageAttachment } from '$lib/types/chat';
 import { findActivePath } from '$lib/utils/message-tree';
 
@@ -65,6 +71,12 @@ class ImagegenStore {
 	 *  failure lives: it is deliberately NOT written to the row, because a picture that
 	 *  failed is a marker with no picture, which is a state the text already describes. */
 	private failures = new SvelteMap<string, string>();
+	/** What the last reachability check found. Only the automatic path consults it; a reader
+	 *  who clicks Generate is asking for an attempt whatever this says. */
+	private offline = $state(false);
+	/** Whether the current outage has already been reported. One toast per outage, not one
+	 *  per turn: a GPU box asleep overnight would otherwise narrate every reply. */
+	private offlineReported = false;
 
 	async initialize(): Promise<void> {
 		this.settings = resolveImagegenSettings(
@@ -109,12 +121,25 @@ class ImagegenStore {
 		writeSetting(SETTINGS_KEY, this.settings);
 	}
 
+	/** True when the last reachability check found nothing answering. Automatic generation is
+	 *  skipped while this holds; the buttons on a marker ignore it. */
+	get hostOffline(): boolean {
+		return this.offline;
+	}
+
 	/**
 	 * Generate every marker on a turn that has no picture yet, oldest first.
 	 *
 	 * Fire-and-forget and strictly sequential: ComfyUI runs one job at a time through one
 	 * GPU, so three parallel requests only make the first picture arrive last. Called after a
 	 * reply lands (when auto-generate is on) and by the Generate button on a marker.
+	 *
+	 * **One reachability check per turn, and the first failure ends it.** A host that is not
+	 * there costs a connection timeout PER MARKER otherwise - the failure is recorded against
+	 * one marker, so the next marker on the same turn has no record of its own and is asked
+	 * anyway, and a reply carrying three markers spends three timeouts arriving nowhere. The
+	 * check runs only once something is actually pending, so a turn with no markers to make
+	 * still costs nothing at all.
 	 */
 	async ensureForMessage(messageId: string, opts: { manual?: boolean } = {}): Promise<void> {
 		if (!this.active) return;
@@ -123,16 +148,59 @@ class ImagegenStore {
 		const message = this.messageById(messageId);
 		if (!message || message.role !== 'assistant') return;
 
-		for (const marker of findMarkers(message.content)) {
-			if (marker.result.status !== 'ok') continue;
-			if (generatedFor(this.messageById(messageId), marker.index)) continue;
-			if (this.working.has(slotKey(messageId, marker.index))) continue;
-			// A marker that failed is not retried on its own: a broken host would otherwise be
-			// asked again by every subsequent reply, one slow timeout at a time.
-			if (!opts.manual && this.failures.has(slotKey(messageId, marker.index))) continue;
+		const pending = findMarkers(message.content).filter(
+			(marker): marker is MarkerMatch & { result: ParsedMarker } => {
+				if (marker.result.status !== 'ok') return false;
+				if (generatedFor(message, marker.index)) return false;
+				if (this.working.has(slotKey(messageId, marker.index))) return false;
+				// A marker that failed is not retried on its own: a broken host would otherwise
+				// be asked again by every subsequent reply.
+				if (!opts.manual && this.failures.has(slotKey(messageId, marker.index))) return false;
+				return true;
+			}
+		);
+		if (!pending.length) return;
 
-			await this.generate(messageId, marker.index, marker.result);
+		if (!opts.manual && !(await this.hostAnswers())) return;
+
+		for (const marker of pending) {
+			// Re-read the row per marker rather than trusting the list this started with: a
+			// picture takes a minute, which is long enough for the turn to have been edited or
+			// deleted, or for another tab to have filed this very marker.
+			const current = this.messageById(messageId);
+			if (!current) return;
+			if (generatedFor(current, marker.index)) continue;
+
+			// The first failure ends the turn. Whatever stopped that picture - a host that went
+			// away between the check and the call, a checkpoint that will not load - stops the
+			// next one the same way, and the reader has already been told once.
+			if (!(await this.generate(messageId, marker.index, marker.result))) return;
 		}
+	}
+
+	/**
+	 * Is ComfyUI there? Asked once per turn, before anything is generated.
+	 *
+	 * The ping carries its own five-second ceiling, against a connection timeout per marker,
+	 * so the worst case for a sleeping GPU box drops from minutes to seconds. It is
+	 * deliberately NOT recorded in `failures`: nothing here says a marker is broken, only
+	 * that now was a bad time to ask, so the next turn asks again and the buttons on a marker
+	 * keep working the moment the machine comes back.
+	 */
+	private async hostAnswers(): Promise<boolean> {
+		const online = await pingComfy(this.settings.host);
+		this.offline = !online;
+		if (online) {
+			this.offlineReported = false;
+			return true;
+		}
+		if (!this.offlineReported) {
+			this.offlineReported = true;
+			toastStore.warning(
+				`ComfyUI is not answering at ${this.settings.host}. Skipping image generation until it does.`
+			);
+		}
+		return false;
 	}
 
 	/**
@@ -185,13 +253,14 @@ class ImagegenStore {
 		await chatStore.refreshChat(message.chatId);
 	}
 
-	/** One picture, start to finish. */
+	/** One picture, start to finish. Answers whether the call itself succeeded, which is what
+	 *  lets a turn stop at its first failure instead of spending a timeout per marker. */
 	private async generate(
 		messageId: string,
 		markerIndex: number,
 		parsed: ParsedMarker,
 		opts: { seed?: number } = {}
-	): Promise<void> {
+	): Promise<boolean> {
 		const key = slotKey(messageId, markerIndex);
 		const settings = this.settings;
 		const effective = resolveEffective(parsed, settings);
@@ -205,7 +274,10 @@ class ImagegenStore {
 			// enough for the reader to have edited the turn, retried a neighbouring marker, or
 			// walked to another branch, and the attachment list is written whole.
 			const current = this.messageById(messageId);
-			if (!current) return;
+			// The picture was made, so the host is plainly fine; there is just no longer a row
+			// to hang it on. Reported as a success for that reason - the turn's remaining
+			// markers are gone with the row anyway, and the loop re-reads before each one.
+			if (!current) return true;
 
 			const meta: GeneratedImageMeta = {
 				marker: markerIndex,
@@ -229,6 +301,11 @@ class ImagegenStore {
 			await db.updateMessageAttachments(messageId, attachments);
 			await chatStore.refreshChat(current.chatId);
 			this.failures.delete(key);
+			// A picture just came back, so whatever the last check thought, the host is there.
+			// This is how a manual retry brings automatic generation back with it.
+			this.offline = false;
+			this.offlineReported = false;
+			return true;
 		} catch (error) {
 			// Loud once, in two places: the marker itself carries the reason and a retry, and a
 			// toast says so for the reader who is not looking at that part of the transcript.
@@ -236,6 +313,7 @@ class ImagegenStore {
 			this.failures.set(key, text);
 			console.error('[imagegen] generation failed:', error);
 			toastStore.failed('generate an image', error);
+			return false;
 		} finally {
 			this.working.delete(key);
 		}
