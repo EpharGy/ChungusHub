@@ -20,7 +20,10 @@
  * architecture/engines.md.
  */
 import { featurePromptsStore, type FeaturePromptKey } from '$lib/stores/featurePrompts.svelte';
-import { echoChamberStore } from '$lib/stores/echochamber.svelte';
+// The settings module, never the store: the store reaches the LLM provider, which imports
+// `stores/connections.svelte.ts`, which reads `ENGINES` from this file while it is still being
+// evaluated. See the header of `echochamber/settings.svelte.ts`.
+import { echoChamberSettings } from '$lib/echochamber/settings.svelte';
 
 export type EngineId =
 	| 'memory'
@@ -211,8 +214,8 @@ export const ENGINES: EngineDef[] = [
 		// templates, so they have their own page instead of the inline prompt editor here.
 		prompts: [],
 		enabled: {
-			get: () => echoChamberStore.settings.enabled,
-			set: (value) => echoChamberStore.update({ enabled: value })
+			get: () => echoChamberSettings.current.enabled,
+			set: (value) => echoChamberSettings.update({ enabled: value })
 		}
 	}
 ];

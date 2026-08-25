@@ -31,7 +31,7 @@ import { findActivePath } from '$lib/utils/message-tree';
 import { expandMacros } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
 
-import { DEFAULT_ECHOCHAMBER_SETTINGS, resolveEchoChamberSettings } from '$lib/echochamber/config';
+import { echoChamberSettings } from '$lib/echochamber/settings.svelte';
 import {
 	duplicateStyle,
 	normalizeCustomStyles,
@@ -56,7 +56,6 @@ import type {
 	StoryContext
 } from '$lib/echochamber/types';
 
-const SETTINGS_KEY = 'echochamber';
 /** Reader-authored styles, apart from the settings blob: they are the part that grows. */
 const STYLES_KEY = 'echochamber-styles';
 
@@ -66,7 +65,12 @@ function isStoryTurn(message: Message): message is Message & { role: 'user' | 'a
 }
 
 class EchoChamberStore {
-	settings = $state<EchoChamberSettings>(DEFAULT_ECHOCHAMBER_SETTINGS);
+	/** Held by `echochamber/settings.svelte.ts`, not here: `engines/registry.ts` reads the
+	 *  enabled flag and cannot import this module without closing an import ring. */
+	get settings(): EchoChamberSettings {
+		return echoChamberSettings.current;
+	}
+
 	loaded = $state(false);
 
 	/** The message a call is in flight for, or null. One at a time, by design. */
@@ -92,14 +96,13 @@ class EchoChamberStore {
 	}
 
 	async initialize(): Promise<void> {
+		await echoChamberSettings.initialize();
 		await this.reload();
 		registerSettingsReload(() => this.reload());
 		this.loaded = true;
 	}
 
 	private async reload(): Promise<void> {
-		const stored = await readSetting<Partial<EchoChamberSettings> | null>(SETTINGS_KEY, null);
-		this.settings = resolveEchoChamberSettings(stored);
 		this.customStyles = normalizeCustomStyles(await readSetting<unknown>(STYLES_KEY, []));
 	}
 
@@ -135,8 +138,7 @@ class EchoChamberStore {
 
 	/** Patch settings, clamped on the way in so the panel can never store a bad value. */
 	update(patch: Partial<EchoChamberSettings>): void {
-		this.settings = resolveEchoChamberSettings({ ...this.settings, ...patch });
-		writeSetting(SETTINGS_KEY, this.settings);
+		echoChamberSettings.update(patch);
 	}
 
 	// ===== Reading feeds =====
