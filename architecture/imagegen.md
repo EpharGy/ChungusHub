@@ -63,13 +63,13 @@ Every one of those is **reference counted, after the write**. A branch or fork c
 
 ## Seeds and the tree
 
-`LOCK` means "the seed the last picture used", which only a path can answer. `imagegenStore.resolveSeed` walks back from the turn through its own **ancestors**, so a swipe reuses the look of the reply it replaced rather than the look of a branch the reader has left. With nothing to lock onto (the first picture in a story), it is a random seed rather than an error.
+`LOCK` means "the seed the last picture used", which only a path can answer. `imagegenStore.resolveSeed` walks back from the turn through its own **ancestors** (`findActivePath` from the row, not a slice of the open path), so a swipe reuses the look of the reply it replaced rather than the look of a branch the reader has left. With nothing to lock onto (the first picture in a story), it is a random seed rather than an error.
 
 **Retry always bypasses the seed lock.** A reader clicked it because they did not want that picture, and honouring `LOCK` there hands them the same one back.
 
 ## Where it plugs in
 
-- `messageStore.triggerImageGeneration()` - fire-and-forget after a reply, a continuation and an opening scene, beside `triggerMemoryMaintenance`. It takes no message id: all three callers have just refreshed the chat and the turn to read is the same thing in each case, the newest assistant turn on the path.
+- `messageStore.triggerImageGeneration(messageId)` - fire-and-forget after a reply, a continuation and an opening scene, beside `triggerMemoryMaintenance`. Each caller names the row it just wrote. Named rather than scanned for: a scan of the open path answers "whatever turn is newest right now", which is the turn that just landed only while the reader stays put, so walking to another branch or another chat mid-generation would hang one turn's markers on another turn's row. A row that is not in the open chat resolves to nothing.
 - `imagegenStore.ensureForMessage` - every marker with no picture yet, **sequentially**. ComfyUI runs one job at a time through one GPU, so parallel requests only make the first picture arrive last.
 - A marker that **failed** is not retried automatically. A broken host would otherwise be re-asked by every subsequent reply, one slow timeout at a time. The failure lives in the store (not the row) with a button beside it, because a picture that failed is a marker with no picture, which the text already describes.
 - Settings ride the `settings` spine under `imagegen`, and the page is Settings → App → Image Generation. It is deliberately **not** an entry in the Engines registry: every engine there is a routing point for an LLM connection, and this one answers to a diffusion server (architecture/engines.md).
