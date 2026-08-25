@@ -185,6 +185,18 @@ debug panel for one entry. Its `prompts` list is empty on purpose: its prompts a
 styles, a list a reader adds to, not a fixed set of templates, so they get their own settings
 page instead of the Engines page's inline editor.
 
+**The settings blob lives apart from the store, in `echochamber/settings.svelte.ts`.** That
+split is not tidiness, it is what keeps the app loading. The registry needs the enabled flag to
+draw its row; the store needs the chat, lorebook and memory stores to build a prompt, and memory
+imports the LLM provider, which imports `stores/connections.svelte.ts`, which reads `ENGINES`
+straight back out of the registry. `ENGINES` is a `const`, so a registry that imports the store
+closes a ring in which one side always meets that `const` in the temporal dead zone, and the
+module graph dies on load rather than at the call. The settings module imports the setting
+transport and the pure config and nothing that can reach a connection, so the registry can hold
+the switch without pulling the runtime in behind it. Both sides read one copy of the state, so a
+toggle from the Engines page and one from this page are the same write. Adding an import to
+`echochamber/settings.svelte.ts` is how this comes back.
+
 The store is shaped after Sprites - one background call per reply, filed against one message
 row, never blocking the reply that triggered it - with one rule Sprites does not need:
 **one call at a time, newest wins.** A reader swiping alternates can ask for three feeds
@@ -249,6 +261,7 @@ it, deliberately. If upstream ever extracts such a shell itself, adopt it then.
 |---|---|
 | `src/lib/echochamber/types.ts` | Domain types: a reaction, a feed, a style, the settings |
 | `src/lib/echochamber/config.ts` | Shipped defaults, bounds, and clamping of a stored blob |
+| `src/lib/echochamber/settings.svelte.ts` | The settings state, held where the registry can reach it |
 | `src/lib/echochamber/styles.ts` | The 14 shipped styles (generated from upstream markdown) |
 | `src/lib/echochamber/parse.ts` | Model output into reactions, and cast-name snapping |
 | `src/lib/echochamber/custom-styles.ts` | Reader-authored styles: ids, validation, duplication |
@@ -256,7 +269,7 @@ it, deliberately. If upstream ever extracts such a shell itself, adopt it then.
 | `src/lib/echochamber/prompt.ts` | Prompt assembly and the style macros |
 | `src/lib/echochamber/feed-state.ts` | Where a feed lives, and the pruning that bounds it |
 | `src/lib/echochamber/echochamber.test.ts` | `bun test` coverage of all of the above |
-| `src/lib/stores/echochamber.svelte.ts` | The engine: settings, generation, context, writes |
+| `src/lib/stores/echochamber.svelte.ts` | The engine: styles, generation, context, writes |
 | `src/lib/components/echochamber/EchoChamberWidget.svelte` | The floating panel and its launcher |
 | `src/lib/components/echochamber/ReactionFeed.svelte` | The feed's rows |
 | `src/lib/components/settings/EchoChamberPage.svelte` | Settings → App → EchoChamber |
