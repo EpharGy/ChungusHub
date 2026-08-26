@@ -1505,6 +1505,44 @@ class ServerDatabase {
 		return report;
 	}
 
+	/**
+	 * The budget the reader set, read from the settings row the page writes.
+	 *
+	 * The page owns this number and the server only ever reads it, so the parse is total: a
+	 * missing row, an unreadable one, a build that predates the field, or anything that is
+	 * not a positive number all answer 0, which means no budget and deletes nothing. Every
+	 * way of failing to understand the setting therefore fails towards keeping pictures.
+	 */
+	private generatedCacheLimitBytes(): number {
+		const raw = this.getSetting('imagegen');
+		if (!raw) return 0;
+		try {
+			const mb = (JSON.parse(raw) as { cacheLimitMb?: unknown })?.cacheLimitMb;
+			if (typeof mb !== 'number' || !Number.isFinite(mb) || mb <= 0) return 0;
+			return Math.round(mb) * 1024 * 1024;
+		} catch {
+			return 0;
+		}
+	}
+
+	/**
+	 * The boot pass, and the answer to "what if the server restarted mid-grace".
+	 *
+	 * Nothing is lost by a restart - the grace window is a function of each picture's own
+	 * stored `createdAt`, so it expires on schedule whatever the process did - but without
+	 * this there would be nothing to ASK again. The sweep otherwise runs only when a picture
+	 * lands, so a burst that ended the session over budget would sit there until the reader
+	 * next generated something, which might be days.
+	 *
+	 * Returns null when no budget is set, which is both the shipped default and the reader
+	 * saying no.
+	 */
+	sweepGeneratedImageCacheToBudget(): ImagegenCacheReport | null {
+		const limit = this.generatedCacheLimitBytes();
+		if (!limit) return null;
+		return this.sweepGeneratedImageCache(limit);
+	}
+
 	deleteChat(chatId: string): void {
 		const paths = this.imagePathsOfChat(chatId);
 		this.execute('DELETE FROM chats WHERE id = ?', [chatId]); // messages cascade
