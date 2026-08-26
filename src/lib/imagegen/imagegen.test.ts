@@ -257,4 +257,18 @@ describe('settings resolution', () => {
 	test('ignores a shot lock naming a token that does not exist', () => {
 		expect(resolveImagegenSettings({ shotLock: 'SIDEWAYS' as never }).shotLock).toBe('MEDIUM');
 	});
+
+	test('ships with no cache budget, so an upgrade deletes nothing on its own', () => {
+		expect(DEFAULT_IMAGEGEN_SETTINGS.cacheLimitMb).toBe(0);
+	});
+
+	test('a cache budget keeps 0 as a real value rather than clamping it up', () => {
+		// The other numeric bounds have a smallest-useful floor. This one must not: 0 is how
+		// the reader says "no budget", and rounding it up to a small number would turn the
+		// off switch into the most destructive setting on the page.
+		expect(resolveImagegenSettings({ cacheLimitMb: 0 }).cacheLimitMb).toBe(0);
+		expect(resolveImagegenSettings({ cacheLimitMb: -5 }).cacheLimitMb).toBe(0);
+		expect(resolveImagegenSettings({ cacheLimitMb: 2048.6 }).cacheLimitMb).toBe(2049);
+		expect(resolveImagegenSettings({ cacheLimitMb: 'lots' as never }).cacheLimitMb).toBe(0);
+	});
 });

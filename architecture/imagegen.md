@@ -43,6 +43,8 @@ The app's only sanitize call (`utils/markdown.ts`) allows neither `img` nor a re
 
 A turn with no marker renders as **one** element with one `use:renderedHtml`, exactly as before this existed. Every ordinary turn in the app would otherwise pay an element per run for a feature it does not use.
 
+**A row naming a picture that is not on disk falls back to the placeholder**, rather than drawing the browser's broken-image glyph. `GeneratedImage` records the url whose fetch failed (the url, not a flag, so a retry's new url clears it with nothing having to reset anything) and renders the same "not generated yet" branch, because that is what it now is: the marker never left the text. Three unremarkable things reach that state - a restored backup older than the picture, a hand-tidied `images/chat/`, and the size budget below - and all three want the same Generate button.
+
 ## Cleanup: nothing here is a folder anyone has to weed
 
 A generated picture is an ordinary `images/chat/` file, so it inherits the whole lifecycle that column already has (`server/db.ts`, "Chat image attachments"), and inherits it **for free**: `imagePathsIn` reads `item.path` off the blob, and a generated attachment is an item with a path.
@@ -54,12 +56,31 @@ A generated picture is an ordinary `images/chat/` file, so it inherits the whole
 | Deletes a branch or a subtree ("start this part over") | `deleteMessageAndDescendants` / `deleteDescendants` → same |
 | Retries a picture, or removes one from its marker | `updateMessageAttachments` sweeps what the row stopped pointing at |
 | Anything else that ends up referenced by nothing | `sweepAbandonedChatImages` at boot, one-hour grace |
+| Sets a size budget, or presses Clean up | `sweepGeneratedImageCache`, oldest first, one-hour grace (below) |
 
 Every one of those is **reference counted, after the write**. A branch or fork copies the attachment list, so several rows can point at one file and it dies only when the last of them lets go - which is why the retry sweep asks the rows again rather than deleting what it just replaced.
 
 **`updateMessageAttachments` must keep sweeping.** Without it a retried picture is unreferenced but undeleted until the next server start, and a reader tuning a look through a dozen retries is the exact case that makes that visible.
 
 **ComfyUI's own output folder is not ours and is not needed.** The bytes are copied into `images/chat/` at generation time, so ComfyUI's `output/` can be emptied whenever the reader likes with no effect on any chat - the difference from hotlinking, where clearing it breaks every picture ever posted. A workflow ending in `PreviewImage` rather than `SaveImage` writes to ComfyUI's `temp/` (cleared on its restart) and works here, because the folder comes back with the filename from `/history` rather than being assumed.
+
+## The size budget: the one sweep that deletes a live picture
+
+Every sweep above reaps a file nothing points at any more. `sweepGeneratedImageCache` is the other kind - it deletes pictures that **are** still pointed at, because there are too many of them - and the only reason that is defensible is the rule at the top of this file: the marker never leaves the text. A picture taken away leaves a marker with a Generate button, not a hole, so the cache is a cache rather than an archive. A photo the reader attached is not recoverable that way, which is why the two are told apart by the `generated` block and never by the folder they share.
+
+Three rules carry it, and each one is a way this could quietly eat something it should not:
+
+- **Generated on both sides of the sum.** The budget is measured over exactly the set the sweep may delete. Sizing against everything in `images/chat/` while deleting only the generated half deletes every picture the engine ever made and still reports itself over budget, because the uploads it may not touch are what put it there.
+- **Files, not references.** A branch or fork copies the attachment list, so one picture can be named by several turns and is freed only when the last lets go. Counting references would promise bytes no delete can return.
+- **One transaction, one broadcast.** A sweep can rewrite hundreds of rows. Putting each through `updateMessageAttachments` would fire a `messages` broadcast per row for every other device to answer with a refetch.
+
+**A budget of 0 means no budget**, and that is what ships. A size limit arriving in a settings sync and quietly reaping a reader's pictures is a surprise; naming a number is the consent.
+
+**The one-hour grace wins over the budget.** Nothing generated in the last hour goes, so a budget that can only be met by reaching into this evening's work is left unmet rather than forced - the alternative is pictures vanishing out of the reply someone is reading. Because the plan is sorted by the same `createdAt` the window tests, everything behind a picture too new to take is newer still, so the walk stops rather than skipping.
+
+**Where it runs is a deliberate short list.** After a picture lands, because that is the only event that grows the cache, and from the button in Settings → App → Image Generation. Chat load and message send were both considered and are both wrong: neither adds a picture, so both would spend the walk to be told nothing changed, on the two paths where the reader is most obviously waiting.
+
+**A file the sweep cannot find is not an error.** `server/imagegenCache.test.ts` pins the four refusals above against real files; note that it writes under `IMAGES_ROOT` rather than its own temp dir, because that const is frozen at first import while the db handle rebinds per test file, and `deleteImage` resolves against the const.
 
 ## Seeds and the tree
 
@@ -79,6 +100,7 @@ Every one of those is **reference counted, after the write**. A branch or fork c
 ## Before touching this
 
 - `bun test src/lib/imagegen` covers the pure half: the parser's salvage rules, the split's offsets, the locks, and settings clamping. Keep `parse.ts`, `request.ts` and `config.ts` free of `$lib` and of Svelte so they stay testable.
+- `bun test server/imagegenCache.test.ts` covers the size budget against the real database and real files: that an upload is neither counted nor taken, that a shared file outlives one of its two turns, that the grace window beats the budget, and that 0 means no budget. Each is a way the sweep could delete something it must not, so they are worth more than they look.
 - `bun test src/lib/stores/imagegen-preflight.test.ts` covers the half that is not pure: how a turn sequences its calls when the host is not there. It shims `$state` and mocks the five modules the store reaches for, following `new-chat-flow.test.ts`. What it pins is a count - one ping, one generation attempt - so deleting either rule turns it red rather than leaving a comment nobody reads.
 - **The parser is lenient on purpose.** Models drop the seed, reorder the fields, state one twice, or bury `CLOSE` in the prompt, and every one of those is a picture the reader still wants. Only two shapes fail: an empty marker, and one with no prompt left after the control tokens are taken. Repairs are recorded in `RepairMeta` rather than hidden, because a quietly repaired marker is exactly the one whose picture looks wrong to its author.
 - Matching is **exact and case-sensitive**, and a bare number is only taken as a seed when it is a whole segment or a whole comma part. `close up of a wide field` is prose; `standing on platform 9432` keeps its number. Loosening either turns story text into control tokens.
