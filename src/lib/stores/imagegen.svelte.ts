@@ -78,6 +78,25 @@ class ImagegenStore {
 	 *  per turn: a GPU box asleep overnight would otherwise narrate every reply. */
 	private offlineReported = false;
 
+	/**
+	 * The newest reply on the open branch: the one turn a chat load re-asks about. The same walk
+	 * as the Sprites engine's `newestReply`, deliberately, because both engines answer the same
+	 * question about the turn the reader has just arrived at.
+	 *
+	 * A getter rather than a `$derived`, which is where this parts company with Sprites. There
+	 * the value is read by the layer's own deriveds on every render and caching earns its keep;
+	 * here it is read exactly once per pass of the effect that asks, so a derived would buy a
+	 * cache nobody spends and cost this store its first rune beyond `$state` - which the
+	 * preflight tests shim, and only that.
+	 */
+	private get newestReply(): Message | null {
+		const path = chatStore.currentChatState?.activePath ?? [];
+		for (let i = path.length - 1; i >= 0; i--) {
+			if (path[i].role === 'assistant') return path[i];
+		}
+		return null;
+	}
+
 	async initialize(): Promise<void> {
 		this.settings = resolveImagegenSettings(
 			await readSetting<Partial<ImagegenSettings> | null>(SETTINGS_KEY, null)
@@ -128,11 +147,36 @@ class ImagegenStore {
 	}
 
 	/**
+	 * Ask about the newest reply on the open branch. What the transcript calls on every change,
+	 * and the reason a picture missed while the reader was elsewhere still arrives.
+	 *
+	 * A reply is committed by the SERVER, so it lands whether or not the page that asked for it
+	 * is still on that chat. The trigger that would have made its pictures is not: it fires from
+	 * the generation that placed the row and resolves that row through the OPEN chat, so a
+	 * reader who walked to another character mid-reply came back to markers nobody had asked
+	 * about, and nothing ever re-asked - the trigger runs once, per generation, and a chat load
+	 * ran nothing at all.
+	 *
+	 * This is that second chance, on the Sprites engine's terms: the layer asks on every change
+	 * and the store decides whether that means a call. Bounded the same way too - the newest
+	 * turn only, never a sweep back through the branch, so opening an old chat cannot queue a
+	 * pile of jobs. Every other guard is {@link ensureForMessage}'s own, so a picture already
+	 * made, one being made, and one that failed are all left exactly as they are.
+	 */
+	ensureForNewestReply(): void {
+		if (!this.active) return;
+		const message = this.newestReply;
+		if (!message) return;
+		void this.ensureForMessage(message.id);
+	}
+
+	/**
 	 * Generate every marker on a turn that has no picture yet, oldest first.
 	 *
 	 * Fire-and-forget and strictly sequential: ComfyUI runs one job at a time through one
 	 * GPU, so three parallel requests only make the first picture arrive last. Called after a
-	 * reply lands (when auto-generate is on) and by the Generate button on a marker.
+	 * reply lands (when auto-generate is on), on arriving at a chat whose newest reply still owes
+	 * pictures ({@link ensureForNewestReply}), and by the Generate button on a marker.
 	 *
 	 * **One reachability check per turn, and the first failure ends it.** A host that is not
 	 * there costs a connection timeout PER MARKER otherwise - the failure is recorded against
