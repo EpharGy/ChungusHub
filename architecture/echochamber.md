@@ -212,6 +212,21 @@ than slicing the open path. In the ordinary case the two are the same list; for 
 reader has navigated away from the walk is the only one that answers at all. A row that is not
 in the open chat resolves to nothing.
 
+**Arriving at a chat re-asks about its newest reply**, which is what stops "resolves to nothing"
+being the end of the story. A reply is committed by the *server*, so it lands whether or not the
+page that asked for it is still on that chat - but the sidecar above runs once, from the
+generation that placed the row, and a chat load ran nothing at all. So a reader who switched
+character mid-reply came back to a turn the crowd never saw, permanently. `EchoChamberWidget`
+now calls `ensureForNewestReply()` from an effect, the way `SpriteLayer` calls
+`spriteStore.ensureRead()`: the widget asks on every change and the store decides whether that
+means a call. It carries **no policy of its own** - every gate is `ensureForMessage`'s, so a turn
+with a feed and a turn being generated are both left alone - and it is bounded to the newest
+reply, never a sweep back through the branch. Mounted with the widget rather than gated on the
+panel being open, so arrival behaves the same whether the feed is on screen or behind the
+launcher, which is how the per-turn sidecar already behaves. The image engine carries the same
+pair of rules for the same reason (architecture/imagegen.md), where the cost of getting it wrong
+is GPU time rather than one call.
+
 **The panel floats rather than docks, and that is the load-bearing UI decision.** The
 workspace's side panels are mutually exclusive (`uiStore.dropUnlockedSidePanels`), and a feed
 exists to be read WHILE the story is read. Docking it would have meant teaching that
