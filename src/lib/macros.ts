@@ -29,12 +29,13 @@ import { formatControlForPrompt } from '$lib/utils/prompt-controls';
 // ============================================================================
 
 /** Display buckets for the macro reference, in the order the reference panel shows them. */
-export type MacroGroup = 'names' | 'context' | 'character-field' | 'memory';
+export type MacroGroup = 'names' | 'context' | 'time' | 'character-field' | 'memory';
 
 /** Ordered group metadata for the macro reference UIs. */
 export const MACRO_GROUPS: readonly { id: MacroGroup; label: string; hint: string }[] = [
 	{ id: 'names', label: 'Names', hint: 'inline name references' },
 	{ id: 'context', label: 'Story & context', hint: 'profiles, world info, history, memory' },
+	{ id: 'time', label: 'Date & time', hint: "the reader's own clock, read as the prompt is built" },
 	{ id: 'character-field', label: 'Character fields', hint: 'one card field at a time' },
 	{ id: 'memory', label: 'Memory pipeline', hint: 'filled while the memory engine runs, literal anywhere else' }
 ];
@@ -87,6 +88,12 @@ export const MACROS: readonly MacroDef[] = [
 	{ name: 'lastMessage', description: 'The newest turn, as inline text. A copy: the turn itself still rides {{chatHistory}}.', engine: true, group: 'context' },
 	{ name: 'lastUserMessage', description: 'The newest user turn, as inline text.', engine: true, group: 'context' },
 	{ name: 'lastCharMessage', description: 'The newest character turn, as inline text.', engine: true, group: 'context' },
+
+	{ name: 'time', description: 'Current local time, e.g. 6:02 PM.', engine: true, group: 'time' },
+	{ name: 'date', description: 'Current local date, e.g. August 22, 2026.', engine: true, group: 'time' },
+	{ name: 'weekday', description: 'Current day of the week, e.g. Saturday.', engine: true, group: 'time' },
+	{ name: 'isotime', description: 'Current local time as 24-hour HH:MM.', engine: true, group: 'time' },
+	{ name: 'isodate', description: 'Current local date as YYYY-MM-DD.', engine: true, group: 'time' },
 
 	// ----- Per-field character macros (place one card field individually) -----
 	{ name: 'description', description: "The character's description field, on its own.", engine: true, group: 'character-field' },
@@ -333,6 +340,53 @@ export interface MacroContext {
 	droppedExampleBlocks?: number;
 }
 
+/**
+ * The clock macros, replicating SillyTavern's so a preset written there reads the same here.
+ * ST formats each through moment and reads the clock AT SUBSTITUTION TIME, which is what
+ * these do:
+ *
+ *   {{time}}     moment().format('LT')           6:02 PM
+ *   {{date}}     moment().format('LL')           August 22, 2026
+ *   {{weekday}}  moment().format('dddd')         Saturday
+ *   {{isotime}}  moment().format('HH:mm')        18:02
+ *   {{isodate}}  moment().format('YYYY-MM-DD')   2026-08-22
+ *
+ * The locale is pinned to en-US rather than following the browser's, which is the one place
+ * this deliberately does NOT do the locally-correct thing. ST never calls `moment.locale`, so
+ * it runs on moment's default `en` and a preset saying "the current real time is {{time}},
+ * {{weekday}} {{date}}" was written against that shape. A reader on en-GB would otherwise
+ * silently get "6:02 pm, Saturday 22 August 2026", changing what the model reads because of
+ * where the reader lives.
+ *
+ * The TIME ZONE is the reader's own: `Date`'s accessors are local, so this is the clock on
+ * their wall written in a fixed format, not a fixed clock.
+ */
+function formatClock(): string {
+	return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatLongDate(): string {
+	return new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function formatWeekday(): string {
+	return new Date().toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+function pad(n: number): string {
+	return String(n).padStart(2, '0');
+}
+
+function formatIsoTime(): string {
+	const d = new Date();
+	return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatIsoDate(): string {
+	const d = new Date();
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export interface PromptCharacter {
 	name: string;
 	traits: CharacterTraits;
@@ -448,6 +502,20 @@ function resolveMacro(name: string, context: MacroContext): string | undefined {
 			// Chat-memory recall, pre-rendered by the prompt builder. Empty when memory is
 			// off, so the macro simply vanishes from the prompt.
 			return context.memory ?? '';
+		// The reader's own clock, read here at substitution time exactly as SillyTavern reads
+		// it: these resolve in the browser, and a model told the time should be told the time
+		// where the person typing is, not where the server happens to be racked. Their locale
+		// is deliberately NOT followed - the formatters above say why.
+		case 'time':
+			return formatClock();
+		case 'date':
+			return formatLongDate();
+		case 'weekday':
+			return formatWeekday();
+		case 'isotime':
+			return formatIsoTime();
+		case 'isodate':
+			return formatIsoDate();
 	}
 
 	// {{mesExamples}} is block-formatted separately from the other per-field macros: <START>

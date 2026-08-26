@@ -28,9 +28,9 @@ A new macro joins class 1 if it can answer from story/chat state on every surfac
 ## Before touching this
 
 - Never write a bespoke `{{...}}` regex. Use `substitute` / `MACRO_REGEX` / `extractMacroNames`. The three that already exist are named in coupling 5 and are not a precedent.
-- Keep `substitute` a pure name → string map, and keep resolution deterministic: two resolutions of the same text against the same context must agree, because a meter and a send do exactly that.
+- Keep `substitute` a pure name → string map, and keep resolution deterministic: two resolutions of the same text against the same context must agree, because a meter and a send do exactly that. **The clock macros are the one exception**, and only because SillyTavern's are: `{{time}}` and its four siblings read the clock as they substitute, so a meter and the send after it can land either side of a minute and price a character apart (`9:59 AM` is seven, `10:00 AM` is eight). Replicating ST's behaviour was worth that; nothing else may read anything the context does not carry.
 - Every macro resolves on every surface or resolves empty. No silent gating, no surface-specific special cases inside `resolveMacro`.
-- There is no `macros.test.ts`. Coverage rides `prompt-pruning.test.ts` (the pruning rules, unit and integration), `prompt-assembly.test.ts` (expansion inside real assembly) and `contracts.test.ts`. Run `bun test` after any change here.
+- `macros.test.ts` holds the clock macros and nothing else, because they are the one group whose output is not a function of the context alone. With no instant to inject there is no exact string to assert, so it pins the SHAPE SillyTavern presets are written against and the 1-based month `Date` invites getting wrong. Every other macro's coverage rides `prompt-pruning.test.ts` (the pruning rules, unit and integration), `prompt-assembly.test.ts` (expansion inside real assembly) and `contracts.test.ts`. Run `bun test` after any change here.
 
 ## Hand-kept couplings
 
