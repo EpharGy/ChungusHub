@@ -44,6 +44,16 @@
 	 *  the previous feed on screen can mislead. */
 	let stale = $derived(displayed !== null && messageId !== null && displayed.messageId !== messageId);
 
+	// Ask on every change; the store decides whether that means a call. Same contract as
+	// SpriteLayer's, and here for the same reason: a reply committed while the reader was in
+	// another chat was never reacted to, and the sidecar that would have done it only ever runs
+	// once, from the generation that placed the row. Mounted with the widget rather than gated on
+	// the panel being open, so arriving at a chat behaves the same whether the feed is on screen
+	// or waiting behind the launcher, which is how the per-turn sidecar already behaves.
+	$effect(() => {
+		echoChamberStore.ensureForNewestReply();
+	});
+
 	type Rect = { x: number; y: number; w: number; h: number };
 	let rect = $state<Rect>({ x: 0, y: 0, w: 360, h: 520 });
 	let rectReady = $state(false);
