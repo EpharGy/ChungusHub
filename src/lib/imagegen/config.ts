@@ -35,6 +35,8 @@ export const DEFAULT_IMAGEGEN_SETTINGS: ImagegenSettings = {
 	scheduler: 'normal',
 	denoise: 1,
 	timeoutSeconds: 180,
+	cacheLimitMb: 0,
+	cacheAutoSweep: true,
 	resolutions: {
 		PORTRAIT: { width: 512, height: 768 },
 		SQUARE: { width: 512, height: 512 },
@@ -76,7 +78,11 @@ const NUMERIC_BOUNDS: Record<string, { min: number; max: number }> = {
 	steps: { min: 1, max: 150 },
 	cfg: { min: 0, max: 30 },
 	denoise: { min: 0, max: 1 },
-	timeoutSeconds: { min: 10, max: 1800 }
+	timeoutSeconds: { min: 10, max: 1800 },
+	// 0 is a real value here and means "no budget", so the floor cannot be raised to a
+	// smallest-useful number the way the others are. The ceiling is a typo guard rather
+	// than a policy: a reader who types their disk size gets their disk size.
+	cacheLimitMb: { min: 0, max: 4194304 }
 };
 
 /** Dimensions are clamped to what a diffusion model can actually take, and rounded to the
@@ -148,6 +154,10 @@ export function resolveImagegenSettings(stored?: Partial<ImagegenSettings> | nul
 				d.timeoutSeconds
 			)
 		),
+		cacheLimitMb: Math.round(
+			clampNumber(s.cacheLimitMb, NUMERIC_BOUNDS.cacheLimitMb.min, NUMERIC_BOUNDS.cacheLimitMb.max, d.cacheLimitMb)
+		),
+		cacheAutoSweep: typeof s.cacheAutoSweep === 'boolean' ? s.cacheAutoSweep : d.cacheAutoSweep,
 		resolutions,
 		resolutionLockEnabled:
 			typeof s.resolutionLockEnabled === 'boolean' ? s.resolutionLockEnabled : d.resolutionLockEnabled,

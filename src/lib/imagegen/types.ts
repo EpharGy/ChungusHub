@@ -114,6 +114,17 @@ export interface ImagegenSettings {
 	denoise: number;
 	/** Seconds to wait for one image before giving up. */
 	timeoutSeconds: number;
+	/**
+	 * Target size in MB for the pictures this engine has generated, across every chat.
+	 *
+	 * **0 means no budget and nothing is ever deleted.** That is the shipped value, because
+	 * a size limit arriving in a settings sync and quietly reaping a reader's pictures is a
+	 * surprise; naming a number is the consent.
+	 */
+	cacheLimitMb: number;
+	/** Sweep down to the budget on its own once a picture lands. Off leaves the button in
+	 *  Settings as the only thing that ever runs it. Moot while `cacheLimitMb` is 0. */
+	cacheAutoSweep: boolean;
 	/** Pixel size per AR token. */
 	resolutions: Record<ArToken, Resolution>;
 	/** Ignore the marker's AR and use `resolutionLock` for everything. */
