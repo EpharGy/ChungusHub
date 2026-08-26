@@ -1074,6 +1074,12 @@ class MessageStore {
 	 * the reader stays put: walk to another branch or another chat while the reply is being
 	 * written and the scan hangs one turn's markers on another turn's row. Each caller passes
 	 * the row it just wrote, and a row that is not in the open chat resolves to nothing.
+	 *
+	 * Resolving to nothing is not the end of it: a reader who walked away mid-reply would
+	 * otherwise come back to markers with no pictures and no way to know why, since this fires
+	 * once per generation and never again. Arriving at the chat re-asks about its newest reply
+	 * (`imagegenStore.ensureForNewestReply`, called from ChatContainer the way SpriteLayer calls
+	 * `ensureRead`), which is what actually makes those pictures.
 	 */
 	private triggerImageGeneration(messageId: string): void {
 		void imagegenStore.ensureForMessage(messageId);
