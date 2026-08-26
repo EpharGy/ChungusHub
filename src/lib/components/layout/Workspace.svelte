@@ -258,6 +258,7 @@
 				{#if shownUrl}
 					<div
 						class="background-image"
+						class:background-fading={incomingUrl !== null}
 						class:background-blurred={backgroundBlur > 0}
 						style="background-image: url('{shownUrl}'); {backgroundBlur > 0 ? `filter: blur(${backgroundBlur}px);` : ''}"
 					></div>
@@ -475,10 +476,18 @@
 		transform: scale(1.05);
 	}
 
-	/* The arriving picture, over the one it replaces until it is whole. */
+	/* The arriving picture, over the one it replaces until it is whole. Both are handed
+	   to the compositor for the length of the fade, so a full-screen photograph is
+	   rasterized once instead of on every frame of it; the hint is dropped the moment
+	   the fade ends, since a standing `will-change` is memory nobody is using. */
 	.background-incoming {
 		opacity: 0;
 		transition: opacity 260ms ease;
+		will-change: opacity;
+	}
+
+	.background-fading {
+		will-change: opacity;
 	}
 
 	.background-lit {

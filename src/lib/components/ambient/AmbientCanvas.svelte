@@ -46,9 +46,11 @@
 	let animationFrame: number | null = null;
 	let lastTime = 0;
 
-	// The density a settling drag is heading for, and when it last moved (NOT reactive).
+	// The density a settling drag is heading for, when it last moved, and when a state was
+	// last baked (NOT reactive).
 	let driftKey = '';
 	let driftSince = 0;
+	let lastBakeAt = 0;
 
 	interface EffectDef<S> {
 		baseCount: number;
@@ -136,6 +138,12 @@
 	// through here, so those two drags stay live.
 	const DENSITY_SETTLE_MS = 150;
 
+	// Room between two bakes. One effect joining is a tap on a catalog pill and arrives
+	// with it, since nothing else is happening in that frame. A whole scene arriving is
+	// several at once, on top of the chat that is rendering underneath them, so those
+	// leave the frames between them alone: nobody is waiting on weather.
+	const JOIN_STAGGER_MS = 80;
+
 	function resolveAmbientTypes(): AmbientEffect[] {
 		return effectsPlaced(config, placement);
 	}
@@ -172,14 +180,19 @@
 	}
 
 	/**
-	 * Drop what has left the mix and bake what has joined it, **one effect per frame**.
+	 * Drop what has left the mix and bake what has joined it, **one effect at a time**.
 	 *
-	 * A scene arriving with five effects at once would otherwise bake five sets of
-	 * offscreen textures inside a single frame, which is the lurch you feel when a chat
-	 * with a scene of its own opens. Spread out, the weather arrives over a few frames
-	 * instead, which is both smoother and closer to what weather does.
+	 * A scene arriving with five effects would otherwise bake five sets of offscreen
+	 * textures inside a single frame, which is the lurch a chat with a scene of its own
+	 * opens with. One at a time, spaced, the weather arrives over a moment instead, which
+	 * is both smoother and closer to what weather does.
 	 */
-	function syncMembership(activeTypes: AmbientEffect[], width: number, height: number): void {
+	function syncMembership(
+		activeTypes: AmbientEffect[],
+		width: number,
+		height: number,
+		now: number
+	): void {
 		const active = new Set<AmbientEffect>(activeTypes);
 
 		for (const existing of [...effectStates.keys()]) {
@@ -190,7 +203,9 @@
 		}
 
 		const joined = activeTypes.find((type) => !effectStates.has(type));
-		if (joined) bakeState(joined, width, height);
+		if (!joined || now - lastBakeAt < JOIN_STAGGER_MS) return;
+		bakeState(joined, width, height);
+		lastBakeAt = now;
 	}
 
 	/** Re-bake the effects whose density has moved, once the move has stopped. */
@@ -212,6 +227,7 @@
 		if (now - driftSince < DENSITY_SETTLE_MS) return;
 
 		for (const type of drifted) bakeState(type, width, height);
+		lastBakeAt = now;
 		driftKey = '';
 	}
 
@@ -272,7 +288,7 @@
 		const activeTypes = resolveAmbientTypes();
 		// Joining and leaving land now, since an effect has to arrive on the tap that
 		// added it; a density that is still moving waits until it stops.
-		if (!membershipMatches(activeTypes)) syncMembership(activeTypes, width, height);
+		if (!membershipMatches(activeTypes)) syncMembership(activeTypes, width, height, currentTime);
 		if (densityDrifted(activeTypes)) bakeSettledDensity(activeTypes, width, height, currentTime);
 		else driftKey = '';
 
