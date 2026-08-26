@@ -253,6 +253,35 @@ class ImagegenStore {
 		await chatStore.refreshChat(message.chatId);
 	}
 
+	/**
+	 * Bring the generated-image cache back under its budget, if the reader has named one.
+	 *
+	 * Hung off a picture landing because that is the only event that GROWS the cache. Chat
+	 * load and message send were both considered and are both wrong: neither adds a picture,
+	 * so they would spend a walk to be told nothing changed, on the two paths where the
+	 * reader is most obviously waiting.
+	 *
+	 * The walk itself is the server's, because only the server can see the files, and it
+	 * rewrites every row it touches inside one transaction - so this is one call and one
+	 * sync broadcast however many pictures go.
+	 *
+	 * A sweep that fails is a cache that stays too big for another picture, which is not
+	 * worth a toast: nothing the reader asked for has failed, and the button in Settings
+	 * says the same thing out loud when they do ask.
+	 */
+	private async sweepCache(chatId: string): Promise<void> {
+		const { cacheLimitMb, cacheAutoSweep } = this.settings;
+		if (!cacheAutoSweep || cacheLimitMb <= 0) return;
+		try {
+			const report = await db.sweepGeneratedImageCache(cacheLimitMb * 1024 * 1024);
+			// Only when something actually went. The usual answer is "nothing", and refetching
+			// the open chat after every single picture to learn that is pure noise.
+			if (report.files > 0) await chatStore.refreshChat(chatId);
+		} catch (error) {
+			console.error('[imagegen] cache sweep failed:', error);
+		}
+	}
+
 	/** One picture, start to finish. Answers whether the call itself succeeded, which is what
 	 *  lets a turn stop at its first failure instead of spending a timeout per marker. */
 	private async generate(
@@ -305,6 +334,10 @@ class ImagegenStore {
 			// This is how a manual retry brings automatic generation back with it.
 			this.offline = false;
 			this.offlineReported = false;
+			// Deliberately not awaited. A picture belongs on screen before its neighbours are
+			// counted, and holding the turn for a round trip that usually takes nothing would
+			// make every picture land later to pay for it.
+			void this.sweepCache(current.chatId);
 			return true;
 		} catch (error) {
 			// Loud once, in two places: the marker itself carries the reason and a retry, and a
