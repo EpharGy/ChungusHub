@@ -12,6 +12,7 @@
 	 * and a sampler; putting it in that list would mean a Connections row that can never be
 	 * pointed at a language model.
 	 */
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
@@ -23,6 +24,9 @@
 	import { AR_TOKENS, SHOT_TOKENS, type ArToken, type ShotToken } from '$lib/imagegen/types';
 	import { MARKER_INSTRUCTIONS } from '$lib/imagegen/instructions';
 	import { copyText } from '$lib/utils/clipboard';
+	import { formatDate } from '$lib/utils/date';
+	import { db } from '$lib/services/database';
+	import type { ImagegenCacheReport } from '$shared/imagegen';
 
 	const settings = $derived(imagegenStore.settings);
 
@@ -65,6 +69,64 @@
 	$effect(() => {
 		void loadWorkflows();
 	});
+
+	/** null = not asked yet. Only the server can answer (the files are its), and drawing a
+	 *  zero before the answer lands would read as "nothing stored". */
+	let cache = $state<ImagegenCacheReport | null>(null);
+	let cacheBusy = $state(false);
+	let confirmingSweep = $state(false);
+
+	const limitBytes = $derived(settings.cacheLimitMb * 1024 * 1024);
+
+	function megabytes(bytes: number): string {
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
+	async function refreshCache(bytes: number): Promise<void> {
+		cacheBusy = true;
+		try {
+			cache = await db.imagegenCacheReport(bytes);
+		} catch (error) {
+			toastStore.failed('read the picture cache', error);
+		} finally {
+			cacheBusy = false;
+		}
+	}
+
+	// Re-asked whenever the budget moves, because half the answer - what a sweep would take -
+	// is a function of it. Every other settings change recomputes the same number and the
+	// effect does not re-run.
+	$effect(() => {
+		void refreshCache(limitBytes);
+	});
+
+	async function runSweep(): Promise<void> {
+		confirmingSweep = false;
+		cacheBusy = true;
+		try {
+			const report = await db.sweepGeneratedImageCache(limitBytes);
+			toastStore.success(
+				report.files
+					? `Removed ${report.files} picture${report.files === 1 ? '' : 's'}, freeing ${megabytes(report.bytes)}`
+					: 'Nothing old enough to remove'
+			);
+		} catch (error) {
+			toastStore.failed('clean up the pictures', error);
+		} finally {
+			cacheBusy = false;
+		}
+		await refreshCache(limitBytes);
+	}
+
+	const sweepMessage = $derived(
+		cache && cache.files
+			? `${cache.files} picture${cache.files === 1 ? '' : 's'} go, freeing ${megabytes(cache.bytes)}.` +
+				(cache.oldest !== null && cache.newest !== null
+					? ` They were generated between ${formatDate(cache.oldest)} and ${formatDate(cache.newest)}.`
+					: '') +
+				' Their markers stay in the text with a Generate button, so any of them can be made again.'
+			: ''
+	);
 
 	function number(value: string, fallback: number): number {
 		const parsed = Number(value);
@@ -497,7 +559,88 @@
 			</div>
 		</div>
 	</section>
+
+	<section class="card" data-setting="imagegen-storage">
+		<div class="card-head">
+			<span class="card-title">Stored pictures</span>
+			<InfoTip
+				text="Generated pictures are kept on the server so a chat reads the same with ComfyUI switched off. Give them a size budget and the oldest are removed to stay inside it. Only pictures this engine made are ever removed - never one you attached yourself."
+			/>
+		</div>
+
+		<div class="card-body">
+			<p class="hint">
+				{#if cache}
+					{cache.totalFiles} picture{cache.totalFiles === 1 ? '' : 's'} stored, {megabytes(
+						cache.totalBytes
+					)}.
+				{:else}
+					Reading what is stored…
+				{/if}
+			</p>
+
+			<label class="field">
+				<span class="field-label">Budget (MB, 0 for no limit)</span>
+				<input
+					class="input-base"
+					type="number"
+					min="0"
+					step="100"
+					value={settings.cacheLimitMb}
+					onchange={(e) =>
+						imagegenStore.update({ cacheLimitMb: number(e.currentTarget.value, settings.cacheLimitMb) })}
+				/>
+			</label>
+
+			<div class="toggle-row" use:toggleRow>
+				<span class="slider-label">Stay inside the budget on its own</span>
+				<Toggle
+					checked={settings.cacheAutoSweep}
+					onchange={(v) => imagegenStore.update({ cacheAutoSweep: v })}
+					label="Stay inside the budget on its own"
+				/>
+			</div>
+			<p class="hint">
+				Runs after a picture lands, which is the only moment the cache grows. Off leaves the
+				button below as the only thing that removes anything. Pictures made in the last hour
+				are never removed either way.
+			</p>
+
+			<div class="row">
+				<Button
+					variant="secondary"
+					size="sm"
+					disabled={cacheBusy || !cache || cache.files === 0}
+					onclick={() => (confirmingSweep = true)}
+				>
+					{cache && cache.files
+						? `Clean up now (${cache.files}, ${megabytes(cache.bytes)})`
+						: 'Clean up now'}
+				</Button>
+				<span class="hint">
+					{#if !settings.cacheLimitMb}
+						Set a budget above and this says what it would remove.
+					{:else if cache && cache.files === 0}
+						Already inside the budget. Nothing to remove.
+					{:else}
+						Removes the oldest pictures until the cache fits the budget.
+					{/if}
+				</span>
+			</div>
+		</div>
+	</section>
 </div>
+
+<ConfirmDialog
+	open={confirmingSweep}
+	title="Clean up stored pictures?"
+	message={sweepMessage}
+	confirmLabel="Clean up"
+	variant="danger"
+	destructive
+	onConfirm={runSweep}
+	onCancel={() => (confirmingSweep = false)}
+/>
 
 <style>
 	.imagegen-page {
