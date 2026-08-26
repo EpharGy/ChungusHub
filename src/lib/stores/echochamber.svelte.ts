@@ -191,6 +191,28 @@ class EchoChamberStore {
 	// ===== Generating =====
 
 	/**
+	 * Ask about the newest reply on the open branch. What the widget calls on every change,
+	 * and the reason a feed missed while the reader was elsewhere still arrives.
+	 *
+	 * A reply is committed by the SERVER, so it lands whether or not the page that asked for it
+	 * is still on that chat. The sidecar that would have reacted to it is not: it fires from the
+	 * generation that placed the row, and `generateFor` builds its context out of the OPEN
+	 * chat's path, so a reader who walked to another character mid-reply came back to a turn the
+	 * crowd never saw. Nothing re-asked - the sidecar runs once, per generation, and a chat load
+	 * ran nothing at all.
+	 *
+	 * This is that second chance, on the Sprites engine's terms: the widget asks on every change
+	 * and the store decides whether that means a call. Bounded the same way, to the newest reply
+	 * only, and carrying no policy of its own - every gate is {@link ensureForMessage}'s, so a
+	 * turn that already has a feed and one being generated are both left alone.
+	 */
+	ensureForNewestReply(): void {
+		const messageId = this.newestReactableId();
+		if (!messageId) return;
+		void this.ensureForMessage(messageId);
+	}
+
+	/**
 	 * The per-turn sidecar: react to this message unless it already has a feed.
 	 *
 	 * Never throws and never blocks the reply that triggered it. Off when the engine is off
