@@ -7,6 +7,11 @@
 	 * with a reason, and finally a picture. Splitting them across components is how a
 	 * transcript ends up jumping every time a picture lands.
 	 *
+	 * A fifth condition folds into the first rather than adding a state of its own: a row
+	 * that names a picture whose file has gone draws the same placeholder as a marker that
+	 * was never generated, because it IS one - the marker never left the text, so the way
+	 * out of both is the same Generate button. See `brokenUrl`.
+	 *
 	 * The controls are part of the component rather than nodes bolted onto the rendered HTML
 	 * afterwards, which is the whole reason this can be re-rendered freely: nothing here has
 	 * to be re-attached after a stream patches the body around it.
@@ -32,6 +37,28 @@
 	const meta = $derived(attachment?.generated ?? null);
 	const url = $derived(attachment ? imageService.imageUrl(attachment.path) : null);
 
+	/**
+	 * The url whose file the browser could not fetch.
+	 *
+	 * Held as the url itself rather than as a flag, so a retry - which writes a new
+	 * attachment and therefore a new url - clears it with nothing having to remember to
+	 * reset it. A flag would outlive the retry and leave the reader looking at a placeholder
+	 * for a picture that is back on disk.
+	 *
+	 * What it covers is "the row still names a picture, but the file is gone", and that is
+	 * reached by more than one road: the cache sweep evicted it, a restored backup predates
+	 * it, or somebody tidied images/chat/ by hand. All three used to draw the browser's
+	 * broken-image glyph, which reads as a bug rather than as something a reader can fix.
+	 * Falling through to the placeholder below turns every one of them back into a marker
+	 * with a Generate button, which is what a marker with no picture already is.
+	 */
+	let brokenUrl = $state<string | null>(null);
+
+	/** The row names a picture the browser could not load, as against naming none at all.
+	 *  Worth saying out loud below: "not generated yet" and "generated once, no longer
+	 *  stored" are the same placeholder otherwise. */
+	const missing = $derived(!!url && brokenUrl === url);
+
 	/** The prompt as it was actually written, for the title text on the picture. A reader
 	 *  wondering why they got what they got is asking about this string. */
 	const promptText = $derived(
@@ -44,7 +71,7 @@
 	const parseError = $derived(marker.result.status === 'parse_error' ? marker.result.reason : null);
 </script>
 
-{#if url && meta}
+{#if url && meta && !missing}
 	<figure class="generated-image">
 		<img
 			src={url}
@@ -53,6 +80,7 @@
 			loading="lazy"
 			width={meta.width}
 			height={meta.height}
+			onerror={() => (brokenUrl = url)}
 		/>
 		<div class="generated-actions">
 			{#if status === 'working'}
@@ -98,6 +126,9 @@
 		<span class="generated-prompt" title={promptText}>{promptText}</span>
 		{#if status === 'error' && error}
 			<span class="generated-error" title={error}>{error}</span>
+		{/if}
+		{#if missing}
+			<span class="generated-note">picture no longer stored</span>
 		{/if}
 		{#if repaired}
 			<span class="generated-note">marker repaired</span>
