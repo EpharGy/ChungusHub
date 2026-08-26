@@ -132,6 +132,9 @@ beforeEach(() => {
 	// Each test starts from an empty table: the sweep is whole-table by nature, so a turn
 	// left behind by an earlier test is another test's budget.
 	for (const chat of serverDb.getAllChats() as { id: string }[]) serverDb.deleteChat(chat.id);
+	// The budget is read from this row by the boot pass, so a value one test left behind is
+	// another test's policy.
+	serverDb.deleteSetting('imagegen');
 });
 
 describe('what the sweep counts', () => {
@@ -244,6 +247,62 @@ describe('what the sweep takes', () => {
 		expect(attachmentsOf(swept)).toEqual([]);
 		expect(attachmentsOf(holder)).toEqual([{ kind: 'image', path: shared }]);
 		expect(onDisk(shared)).toBe(true);
+	});
+});
+
+describe('the boot pass reads the budget from settings', () => {
+	// Its whole failure mode is silence: a parse that does not match what the page writes
+	// returns "no budget", which looks exactly like a reader who never set one. These pin
+	// the read itself rather than the sweep, which the tests above already cover.
+
+	test('sweeps to the budget the settings row names', () => {
+		const old = writePicture(8 * MB);
+		makeTurn([generated(old, 10 * HOUR)]);
+		// The shape the page actually writes: the whole settings object, JSON-stringified
+		// under one key (syncedSetting.ts).
+		serverDb.setSetting('imagegen', JSON.stringify({ enabled: true, cacheLimitMb: 1 }));
+
+		const report = serverDb.sweepGeneratedImageCacheToBudget();
+		expect(report?.files).toBe(1);
+		expect(onDisk(old)).toBe(false);
+	});
+
+	test('does nothing when the budget is 0, missing, or unreadable', () => {
+		const kept = writePicture(8 * MB);
+		makeTurn([generated(kept, 10 * HOUR)]);
+
+		serverDb.setSetting('imagegen', JSON.stringify({ cacheLimitMb: 0 }));
+		expect(serverDb.sweepGeneratedImageCacheToBudget()).toBeNull();
+
+		serverDb.setSetting('imagegen', JSON.stringify({ enabled: true }));
+		expect(serverDb.sweepGeneratedImageCacheToBudget()).toBeNull();
+
+		serverDb.setSetting('imagegen', 'not json at all');
+		expect(serverDb.sweepGeneratedImageCacheToBudget()).toBeNull();
+
+		serverDb.deleteSetting('imagegen');
+		expect(serverDb.sweepGeneratedImageCacheToBudget()).toBeNull();
+
+		// Every one of those failed towards keeping the picture.
+		expect(onDisk(kept)).toBe(true);
+	});
+
+	test('a restart does not reprieve a picture: grace is its stored age, not uptime', () => {
+		// The question this answers: a picture generated 50 minutes before a restart is still
+		// inside its grace window afterwards, and still sweepable once an hour has passed.
+		// Nothing about the window lives in the process, so there is nothing for a restart
+		// to reset - the same row, read again, simply gives a different answer later.
+		const path = writePicture(8 * MB);
+		const messageId = makeTurn([generated(path, 50 * 60 * 1000)]);
+		serverDb.setSetting('imagegen', JSON.stringify({ cacheLimitMb: 1 }));
+
+		expect(serverDb.sweepGeneratedImageCacheToBudget()?.files).toBe(0);
+		expect(onDisk(path)).toBe(true);
+
+		// The same picture, restamped as 70 minutes old, is taken by an identical call.
+		serverDb.updateMessageAttachments(messageId, [generated(path, 70 * 60 * 1000)]);
+		expect(serverDb.sweepGeneratedImageCacheToBudget()?.files).toBe(1);
+		expect(onDisk(path)).toBe(false);
 	});
 });
 

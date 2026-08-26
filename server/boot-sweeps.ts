@@ -33,6 +33,12 @@ export function runBootSweeps(): void {
 	// The same reap for attached files: bytes whose row is gone (a session deleted while the
 	// server was down, a crash between the write and the insert) are reachable by nothing else.
 	serverDb.sweepAbandonedAssistantFiles();
+	// The generated-image cache, if the reader gave it a budget. Unlike the two above this
+	// reaps pictures that ARE still referenced, so it is guarded by that setting and by a
+	// one-hour grace on each picture's own age. It belongs here because every other trigger
+	// is a picture landing: a session that ended over budget would otherwise stay there
+	// until the reader next generated something.
+	serverDb.sweepGeneratedImageCacheToBudget();
 	// Also reseeds after a restore: a snapshot can predate a preset this build ships.
 	ensureDefaultPresets();
 	// The example characters, which are the opposite: seeded once per id and never again, so a
