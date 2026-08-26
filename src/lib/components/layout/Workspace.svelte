@@ -24,6 +24,7 @@
 	import { ambientStore } from '$lib/stores/ambient.svelte';
 	import { effectsPlaced } from '$lib/types/ambient';
 	import { backgroundStore } from '$lib/stores/background.svelte';
+	import { chatSceneStore } from '$lib/stores/chatScene.svelte';
 	import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { promptLogStore } from '$lib/debug/promptLog.svelte';
@@ -73,6 +74,16 @@
 	}
 
 	function startBackgroundSwap(target: string | null): void {
+		// Removing a picture is answered FIRST: it has nothing to decode and nothing to
+		// fade from, and asking "is this already the one arriving?" of a null target
+		// answers yes against an empty slot and leaves the old picture up forever.
+		if (!target) {
+			swapToken++;
+			shownUrl = null;
+			incomingUrl = null;
+			incomingLit = false;
+			return;
+		}
 		if (target === incomingUrl) return;
 		// Back to the picture already whole underneath: drop the one on its way in
 		// rather than fading it over itself.
@@ -83,14 +94,6 @@
 			return;
 		}
 		const token = ++swapToken;
-
-		// Removing a picture has nothing to decode and nothing to fade from.
-		if (!target) {
-			shownUrl = null;
-			incomingUrl = null;
-			incomingLit = false;
-			return;
-		}
 
 		const image = new Image();
 		image.src = target;
@@ -122,6 +125,17 @@
 	$effect(() => {
 		const target = backgroundUrl;
 		untrack(() => startBackgroundSwap(target));
+	});
+
+	// Fetch the picture of the chat being opened while its rows are still on the wire.
+	// The swap still waits for the chat, so nothing changes early; this only means the
+	// picture is already decoded by the time it is allowed to.
+	$effect(() => {
+		const warm = chatSceneStore.openingBackground;
+		if (!warm) return;
+		const image = new Image();
+		image.src = warm;
+		void image.decode().catch(() => undefined);
 	});
 
 	// Settings: a left-margin dock on wide screens, a chat-area overlay on narrow ones.

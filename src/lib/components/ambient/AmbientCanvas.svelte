@@ -46,11 +46,12 @@
 	let animationFrame: number | null = null;
 	let lastTime = 0;
 
-	// The density a settling drag is heading for, when it last moved, and when a state was
-	// last baked (NOT reactive).
+	// The density a settling drag is heading for, when it last moved, whether it has
+	// stopped, and whether a bake is already queued (NOT reactive).
 	let driftKey = '';
 	let driftSince = 0;
-	let lastBakeAt = 0;
+	let driftSettled = false;
+	let bakeQueued = false;
 
 	interface EffectDef<S> {
 		baseCount: number;
@@ -138,11 +139,9 @@
 	// through here, so those two drags stay live.
 	const DENSITY_SETTLE_MS = 150;
 
-	// Room between two bakes. One effect joining is a tap on a catalog pill and arrives
-	// with it, since nothing else is happening in that frame. A whole scene arriving is
-	// several at once, on top of the chat that is rendering underneath them, so those
-	// leave the frames between them alone: nobody is waiting on weather.
-	const JOIN_STAGGER_MS = 80;
+	// How long a bake may be held for a frame that has better things to do before it is
+	// forced through anyway.
+	const BAKE_TIMEOUT_MS = 600;
 
 	function resolveAmbientTypes(): AmbientEffect[] {
 		return effectsPlaced(config, placement);
@@ -166,10 +165,11 @@
 
 	// Both of these run on every frame of every canvas, so they allocate nothing: the
 	// work below them is what the answer buys.
-	function membershipMatches(activeTypes: AmbientEffect[]): boolean {
-		if (effectStates.size !== activeTypes.length) return false;
-		for (const type of activeTypes) if (!effectStates.has(type)) return false;
-		return true;
+	function hasDeparted(activeTypes: AmbientEffect[]): boolean {
+		for (const existing of effectStates.keys()) {
+			if (!activeTypes.includes(existing)) return true;
+		}
+		return false;
 	}
 
 	function densityDrifted(activeTypes: AmbientEffect[]): boolean {
@@ -179,56 +179,83 @@
 		return false;
 	}
 
-	/**
-	 * Drop what has left the mix and bake what has joined it, **one effect at a time**.
-	 *
-	 * A scene arriving with five effects would otherwise bake five sets of offscreen
-	 * textures inside a single frame, which is the lurch a chat with a scene of its own
-	 * opens with. One at a time, spaced, the weather arrives over a moment instead, which
-	 * is both smoother and closer to what weather does.
-	 */
-	function syncMembership(
-		activeTypes: AmbientEffect[],
-		width: number,
-		height: number,
-		now: number
-	): void {
+	/** Leaving the mix costs nothing, so it happens the moment it is noticed. */
+	function dropDeparted(activeTypes: AmbientEffect[]): void {
 		const active = new Set<AmbientEffect>(activeTypes);
-
 		for (const existing of [...effectStates.keys()]) {
 			if (!active.has(existing)) {
 				effectStates.delete(existing);
 				stateDensity.delete(existing);
 			}
 		}
-
-		const joined = activeTypes.find((type) => !effectStates.has(type));
-		if (!joined || now - lastBakeAt < JOIN_STAGGER_MS) return;
-		bakeState(joined, width, height);
-		lastBakeAt = now;
 	}
 
-	/** Re-bake the effects whose density has moved, once the move has stopped. */
-	function bakeSettledDensity(
-		activeTypes: AmbientEffect[],
-		width: number,
-		height: number,
-		now: number
-	): void {
-		const drifted = activeTypes.filter(
-			(type) => effectStates.has(type) && stateDensity.get(type) !== densityFor(type)
-		);
-		const key = drifted.map((type) => `${type}@${densityFor(type).toFixed(2)}`).join('|');
+	/** Whether the densities that have moved have stopped moving. Baking one mid-drag
+	 *  would bake it again on the next pointer move, and the one before that was wasted. */
+	function trackDensityDrift(activeTypes: AmbientEffect[], now: number): void {
+		if (!densityDrifted(activeTypes)) {
+			driftKey = '';
+			driftSettled = false;
+			return;
+		}
+		let key = '';
+		for (const type of activeTypes) {
+			if (!effectStates.has(type)) continue;
+			const density = densityFor(type);
+			if (stateDensity.get(type) !== density) key += `${type}@${density.toFixed(2)}|`;
+		}
 		if (key !== driftKey) {
 			driftKey = key;
 			driftSince = now;
+			driftSettled = false;
 			return;
 		}
-		if (now - driftSince < DENSITY_SETTLE_MS) return;
+		driftSettled = now - driftSince >= DENSITY_SETTLE_MS;
+	}
 
-		for (const type of drifted) bakeState(type, width, height);
-		lastBakeAt = now;
-		driftKey = '';
+	/** The one effect owed a bake, or null. An effect that has JOINED comes first: it has
+	 *  nothing on screen at all, while one whose density moved is still drawing. */
+	function nextBake(activeTypes: AmbientEffect[]): AmbientEffect | null {
+		for (const type of activeTypes) if (!effectStates.has(type)) return type;
+		if (!driftSettled) return null;
+		for (const type of activeTypes) {
+			if (stateDensity.get(type) !== densityFor(type)) return type;
+		}
+		return null;
+	}
+
+	function whenIdle(run: () => void): void {
+		if (typeof requestIdleCallback === 'function') {
+			requestIdleCallback(run, { timeout: BAKE_TIMEOUT_MS });
+		} else {
+			// Safari before 16.4 has no idle callback. A timeout at least keeps the bake
+			// out of the frame that noticed it was needed.
+			setTimeout(run, 32);
+		}
+	}
+
+	/**
+	 * Bake one effect in the browser's own idle time, then queue the next.
+	 *
+	 * Baking is the expensive half by far and **nothing is waiting on it**: a texture that
+	 * lands a moment late costs the reader nothing, while one baked inside a frame that
+	 * had work to do costs them that frame. While a chat is opening the main thread is
+	 * rendering a transcript and there IS no idle time, so a whole scene simply arrives
+	 * once the chat is on screen instead of competing with it. One bake per callback, so
+	 * two of them never share a frame.
+	 */
+	function queueBake(): void {
+		if (bakeQueued) return;
+		bakeQueued = true;
+		whenIdle(() => {
+			bakeQueued = false;
+			if (!canvas) return;
+			const activeTypes = resolveAmbientTypes();
+			const type = nextBake(activeTypes);
+			if (!type) return;
+			bakeState(type, canvas.clientWidth, canvas.clientHeight);
+			if (nextBake(activeTypes)) queueBake();
+		});
 	}
 
 	/** Everything at once, for a resize: the states hold the size they were baked at. */
@@ -286,11 +313,10 @@
 		const height = canvas.clientHeight;
 
 		const activeTypes = resolveAmbientTypes();
-		// Joining and leaving land now, since an effect has to arrive on the tap that
-		// added it; a density that is still moving waits until it stops.
-		if (!membershipMatches(activeTypes)) syncMembership(activeTypes, width, height, currentTime);
-		if (densityDrifted(activeTypes)) bakeSettledDensity(activeTypes, width, height, currentTime);
-		else driftKey = '';
+		// The frame decides what is owed; the browser's idle time is where it gets paid.
+		if (hasDeparted(activeTypes)) dropDeparted(activeTypes);
+		trackDensityDrift(activeTypes, currentTime);
+		if (nextBake(activeTypes)) queueBake();
 
 		// Clear canvas
 		ctx.clearRect(0, 0, width, height);

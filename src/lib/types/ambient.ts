@@ -94,12 +94,15 @@ export interface AmbientSettingDef {
  * one uniform list per row, and the canvas reads the first three out of the same bag it
  * hands the renderer. A per-effect def reusing one of these keys would shadow it, which
  * `contracts.test.ts` refuses.
+ *
+ * An effect ships BEHIND the story: weather over the words is a thing to ask for, never
+ * a thing to meet.
  */
 export const AMBIENT_BASE_SETTINGS: AmbientSettingDef[] = [
 	{ key: 'density', label: 'Density', kind: 'slider', min: 0.2, max: 2, step: 0.05, defaultValue: 1 },
 	{ key: 'speed', label: 'Speed', kind: 'slider', min: 0.25, max: 2, step: 0.05, defaultValue: 1 },
 	{ key: 'visibility', label: 'Visibility', kind: 'slider', min: 0.05, max: 1, step: 0.05, defaultValue: 0.5 },
-	{ key: 'overMessages', label: 'Over messages', kind: 'toggle', min: 0, max: 1, step: 1, defaultValue: 1 }
+	{ key: 'overMessages', label: 'Over messages', kind: 'toggle', min: 0, max: 1, step: 1, defaultValue: 0 }
 ];
 
 /**

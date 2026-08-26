@@ -67,28 +67,29 @@ describe('effectSetting', () => {
 });
 
 describe('effectsPlaced', () => {
-	test('every effect draws over the story until one is told otherwise', () => {
-		expect(effectsPlaced(base(), 'over')).toEqual(['rain', 'snow']);
-		expect(effectsPlaced(base(), 'under')).toEqual([]);
+	test('every effect draws behind the story until one is told otherwise', () => {
+		// Weather over the words is a thing to ask for, never a thing to meet.
+		expect(effectsPlaced(base(), 'under')).toEqual(['rain', 'snow']);
+		expect(effectsPlaced(base(), 'over')).toEqual([]);
 	});
 
-	test('an effect switched off the top moves to the other side alone', () => {
-		const config = base({ effectSettings: { snow: { overMessages: 0 } } });
-		expect(effectsPlaced(config, 'over')).toEqual(['rain']);
-		expect(effectsPlaced(config, 'under')).toEqual(['snow']);
+	test('an effect lifted over the story moves to the other side alone', () => {
+		const config = base({ effectSettings: { snow: { overMessages: 1 } } });
+		expect(effectsPlaced(config, 'over')).toEqual(['snow']);
+		expect(effectsPlaced(config, 'under')).toEqual(['rain']);
 	});
 
 	test('mix order survives the split', () => {
 		const config = base({
 			types: ['fog', 'rain', 'snow'],
-			effectSettings: { fog: { overMessages: 0 }, snow: { overMessages: 0 } }
+			effectSettings: { fog: { overMessages: 1 }, snow: { overMessages: 1 } }
 		});
-		expect(effectsPlaced(config, 'under')).toEqual(['fog', 'snow']);
+		expect(effectsPlaced(config, 'over')).toEqual(['fog', 'snow']);
 	});
 
 	test('`clear` and repeats never reach a canvas', () => {
 		const config = base({ types: ['clear', 'rain', 'rain'] });
-		expect(effectsPlaced(config, 'over')).toEqual(['rain']);
+		expect(effectsPlaced(config, 'under')).toEqual(['rain']);
 	});
 });
 
