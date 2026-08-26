@@ -790,6 +790,45 @@ export function sortEntries(
 	});
 }
 
+/** How a list of books orders itself on screen. Display only: no stored order moves. */
+export type LorebookSortOrder = 'updated' | 'a-z' | 'z-a';
+
+/**
+ * Return a new array of books in the chosen display order.
+ *
+ * 'updated' is the order the store already holds (most recently edited first), so it only
+ * copies. The name orders put unnamed books last in BOTH directions, because a book with no
+ * name is not an "A" and Z → A would otherwise bury it twice.
+ *
+ * Books sharing a name break the tie on `createdAt`, newest first, and deliberately NOT on
+ * `updatedAt`. Nothing dedupes names on import, so a card or a folder brought in twice leaves
+ * two rows that read identically, often down to the entry count. A last-edited tie-break makes
+ * that pair swap places the moment either one is touched, with nothing on screen admitting the
+ * swap, so the row you clicked yesterday opens a different book today. `createdAt` never moves
+ * after the insert, so the pair's order is fixed for good; newest first because a duplicate
+ * name is made BY the re-import, and the fresh copy is the one being hunted for.
+ *
+ * Never applied to `lorebookStore.books` itself: link resolution reads that order to decide
+ * what reaches the prompt first, and a display preference must not move a prompt.
+ */
+export function sortLorebooks<T extends Pick<Lorebook, 'name' | 'createdAt'>>(
+	books: T[],
+	order: LorebookSortOrder
+): T[] {
+	if (order === 'updated') return [...books];
+	const sign = order === 'a-z' ? 1 : -1;
+	return [...books].sort((a, b) => {
+		const an = a.name.trim();
+		const bn = b.name.trim();
+		if (!an || !bn) {
+			if (!an && !bn) return b.createdAt - a.createdAt;
+			return an ? -1 : 1;
+		}
+		const cmp = an.localeCompare(bn, undefined, { sensitivity: 'base', numeric: true });
+		return cmp !== 0 ? cmp * sign : b.createdAt - a.createdAt;
+	});
+}
+
 /** Parse a comma-separated keyword string into a trimmed, non-empty list. */
 export function parseKeys(input: string): string[] {
 	return input
