@@ -24,7 +24,8 @@
 	import { AR_TOKENS, SHOT_TOKENS, type ArToken, type ShotToken } from '$lib/imagegen/types';
 	import { MARKER_INSTRUCTIONS } from '$lib/imagegen/instructions';
 	import { copyText } from '$lib/utils/clipboard';
-	import { formatDate } from '$lib/utils/date';
+	import { themeStore } from '$lib/stores/theme.svelte';
+	import { formatMessageTime } from '$lib/utils/time-format.svelte';
 	import { db } from '$lib/services/database';
 	import type { ImagegenCacheReport } from '$shared/imagegen';
 
@@ -118,11 +119,28 @@
 		await refreshCache(limitBytes);
 	}
 
+	const appearance = $derived(themeStore.appearance);
+
+	/**
+	 * A generation's timestamp, absolute and to the minute.
+	 *
+	 * The reader's 12/24-hour pick is honoured, through the one module allowed to format a
+	 * time. The SHAPE, though, is pinned to `short` rather than following their timestamp
+	 * setting: this is the window a delete is about to take, and "between 2 days ago and 4
+	 * hours ago" is not something anyone can check against what they remember generating.
+	 * A confirmation owes them a date they can look up.
+	 *
+	 * `now` is read only by the relative format, so 0 is safe to pass here.
+	 */
+	function stamp(ts: number): string {
+		return formatMessageTime(ts, 'short', appearance.clockFormat, 0);
+	}
+
 	const sweepMessage = $derived(
 		cache && cache.files
 			? `${cache.files} image generation${cache.files === 1 ? '' : 's'} go, freeing ${megabytes(cache.bytes)}.` +
 				(cache.oldest !== null && cache.newest !== null
-					? ` They were generated between ${formatDate(cache.oldest)} and ${formatDate(cache.newest)}.`
+					? ` They were generated between ${stamp(cache.oldest)} and ${stamp(cache.newest)}.`
 					: '') +
 				' Their markers stay in the text with a Generate button, so any of them can be made again.'
 			: ''
