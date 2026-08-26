@@ -43,8 +43,11 @@ class MessageStore {
 
 	/** A generation is in flight ANYWHERE, not merely in the chat on screen: walking into
 	 *  another chat must not read as idle and let a second generation start beside the
-	 *  first, since both would share the one abort controller below. */
-	isStreaming = $derived(chatStore.stream !== null);
+	 *  first, since both would share the one abort controller below. A reply this page did
+	 *  not start counts too, and has to: it will be committed into the open chat's rows, so
+	 *  an edit, a delete or a retry run beside it forks the lineage it is about to attach to
+	 *  and the reply that was paid for is refused at commit time. */
+	isStreaming = $derived(chatStore.stream !== null || chatStore.visibleLiveElsewhere !== null);
 
 	/** True (with a toast) while a generation or another tree mutation is in flight.
 	 *  Edits, deletes, branching and branch navigation must wait: running them mid-stream
@@ -698,8 +701,15 @@ class MessageStore {
 		await this.retryMessageResponse(lastMessage.id, action);
 	}
 
+	/** Stop whichever reply this chat's Stop button is standing for: the one this page is
+	 *  writing, or the one it merely found running (a reply started before a reload, or on
+	 *  another device), which travels by request id instead of a controller. */
 	cancelGeneration(): void {
-		this.abortController?.abort();
+		if (this.abortController) {
+			this.abortController.abort();
+			return;
+		}
+		chatStore.stopLiveElsewhere();
 	}
 
 	/**

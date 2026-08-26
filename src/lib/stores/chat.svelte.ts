@@ -6,6 +6,7 @@ import {
 	type ImpersonatePerspective
 } from '$lib/types/chat';
 import { db } from '$lib/services/database';
+import { llmStatus, stopGeneration } from '$lib/services/transport';
 import { findActivePath } from '$lib/utils/message-tree';
 import { formatDate } from '$lib/utils/date';
 import { convertSillyTavernChat } from '$lib/services/sillyTavernChatImport';
@@ -16,12 +17,27 @@ import { chatCastStore } from '$lib/stores/chatCast.svelte';
 import { uiStore } from '$lib/stores/ui.svelte';
 import { memoryStore } from '$lib/memory/store.svelte';
 
+/** A reply being written for a chat by someone other than this page. */
+type ForeignGeneration = { chatId: string; requestId: string; startedAt: number };
+
+/** How often a held `liveElsewhere` re-asks whether it is still true. Matches the cadence the
+ *  line it feeds is re-rendered at, so the notice and the fact behind it move together. */
+const LIVE_RECHECK_MS = 30_000;
+
 class ChatStore {
 	chats = $state<Chat[]>([]);
 	activeChatId = $state<string | null>(null);
 	currentChatState = $state<ChatState | null>(null);
 	/** The one generation in flight, tagged with the chat that owns it. Null when idle. */
 	stream = $state<ChatStream | null>(null);
+	/** A reply being written for a chat that THIS page never asked for: one it started before
+	 *  a reload, or one another device is running. Found by asking the server, since a
+	 *  generation outlives the socket but not the page's memory of it. Without this the chat
+	 *  reads as idle and the send is refused with no Stop to reach. `startedAt` is derived
+	 *  from the server's own elapsed figure, so it is comparable to this machine's clock.
+	 *  Always written through `setLiveElsewhere`, which owns the re-ask that ends it. */
+	liveElsewhere = $state<ForeignGeneration | null>(null);
+	private liveRecheck: ReturnType<typeof setInterval> | null = null;
 	/** A sync hint that arrived mid-stream, replayed once the stream ends. */
 	private missedSyncWhileStreaming = false;
 
@@ -33,6 +49,17 @@ class ChatStore {
 	 *  chat the reader has left, which is what keeps those tokens out of this one. */
 	visibleStream = $derived(
 		this.stream && this.stream.chatId === this.currentChatState?.chat.id ? this.stream : null
+	);
+
+	/** The foreign reply only when it belongs to the chat on screen AND this page is not the
+	 *  one writing it: a generation this page owns already paints its own stream and carries
+	 *  its own Stop, so announcing it a second time would be the same reply reported twice. */
+	visibleLiveElsewhere = $derived(
+		this.liveElsewhere &&
+			this.liveElsewhere.chatId === this.currentChatState?.chat.id &&
+			this.stream?.chatId !== this.liveElsewhere.chatId
+			? this.liveElsewhere
+			: null
 	);
 
 	// Title scheme: "<character name> - YYYY-MM-DD", carrying the app's one numeric date
@@ -278,6 +305,69 @@ class ChatStore {
 		// archive boundary for the current active path so the ghost markers stay correct
 		// after swipes/branches/edits. No-op when memory is off for this chat.
 		void this.refreshMemory(chat, messages);
+		void this.refreshLiveElsewhere(chatId);
+	}
+
+	/**
+	 * Ask the server whether a reply is being written for this chat by anyone. Runs on every
+	 * load of the open chat, which covers all three doors: opening it, a `messages` sync, and
+	 * the reconnect resync. Non-blocking and never fatal, like the memory refresh above: a
+	 * transcript must still open when the socket is down.
+	 */
+	private async refreshLiveElsewhere(chatId: string): Promise<void> {
+		try {
+			const running = (await llmStatus([chatId]))[0];
+			// The chat may have changed under the round trip.
+			if (this.currentChatState?.chat.id !== chatId) return;
+			this.setLiveElsewhere(
+				running ? { chatId, requestId: running.requestId, startedAt: Date.now() - running.runningMs } : null
+			);
+		} catch (e) {
+			console.error('[chat] could not ask what is generating:', e);
+		}
+	}
+
+	/**
+	 * Hold the foreign reply, and keep a re-ask armed for exactly as long as one is held.
+	 *
+	 * The answer is a snapshot, and the ending it is waiting for may never be announced: a
+	 * generation that finishes WITHOUT writing a turn (a provider error, a stop before its
+	 * first token) commits nothing and so broadcasts nothing, and this page is not the one
+	 * its frames are addressed to. Nothing would then clear the notice, and the composer
+	 * would sit busy over a reply that ended minutes ago. The re-ask runs only while one is
+	 * believed live, and the first empty answer disarms it.
+	 */
+	private setLiveElsewhere(live: ForeignGeneration | null): void {
+		this.liveElsewhere = live;
+		if (live && !this.liveRecheck) {
+			this.liveRecheck = setInterval(() => {
+				const open = this.currentChatState?.chat.id;
+				// No chat open (goHome, a chat deleted elsewhere): nothing to report it to, and
+				// nothing left to re-ask for, so the record and its timer go together.
+				if (open) void this.refreshLiveElsewhere(open);
+				else this.setLiveElsewhere(null);
+			}, LIVE_RECHECK_MS);
+		} else if (!live && this.liveRecheck) {
+			clearInterval(this.liveRecheck);
+			this.liveRecheck = null;
+		}
+	}
+
+	/**
+	 * Stop the reply this page found running rather than started. Cleared here rather than on
+	 * the server's word, because an abort ends the request at once and a cancelled generation
+	 * with nothing to keep commits nothing and so broadcasts nothing: there is no answer
+	 * coming to clear it. A Stop that never landed simply comes back on the next load.
+	 */
+	stopLiveElsewhere(): void {
+		const live = this.visibleLiveElsewhere;
+		if (!live) return;
+		try {
+			stopGeneration(live.requestId);
+			this.setLiveElsewhere(null);
+		} catch (e) {
+			toastStore.failed('stop that reply', e);
+		}
 	}
 
 	private async refreshMemory(chat: Chat, messages: Message[]): Promise<void> {
@@ -367,7 +457,9 @@ class ChatStore {
 		const chat = this.chats.find((c) => c.id === chatId);
 		if (!chat) return;
 
-		if (this.stream?.chatId === chatId) {
+		// A reply this page is not writing counts the same: the rows it is about to be
+		// committed into are the ones being deleted.
+		if (this.stream?.chatId === chatId || this.liveElsewhere?.chatId === chatId) {
 			toastStore.warning('A reply is still generating in this chat. Wait for it, or stop it first.');
 			return;
 		}

@@ -16,7 +16,10 @@ function delta(content: string): string {
 const USAGE = '{"usage":{"prompt_tokens":5,"completion_tokens":7,"total_tokens":12}}';
 
 /** Scripted responses, selected by the requested model id. */
-const SCENARIOS: Record<string, { stream?: string[]; json?: unknown; hangs?: boolean }> = {
+const SCENARIOS: Record<
+	string,
+	{ stream?: string[]; json?: unknown; hangs?: boolean; silent?: boolean; delayMs?: number }
+> = {
 	'split-tags': {
 		stream: [
 			delta('<thi'),
@@ -115,6 +118,15 @@ const SCENARIOS: Record<string, { stream?: string[]; json?: unknown; hangs?: boo
 	// A genuine explicit empty stop (finish_reason present, no content) passes through: the
 	// assistant loop decides what to do with an empty-but-clean turn.
 	'empty-stop': { stream: [JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }), USAGE, '[DONE]'] },
+	// Accepts the request and answers never: a wedged endpoint, or a model so slow on this
+	// hardware that nothing has come back yet. From here those are the same thing.
+	'never-answers': { silent: true },
+	// A local endpoint that spends a while on the prompt before its first token. The whole
+	// reply still lands: a slow start is not a dead endpoint.
+	'slow-to-start': {
+		stream: [delta('Worth '), JSON.stringify({ choices: [{ delta: { content: 'the wait.' }, finish_reason: 'stop' }] }), '[DONE]'],
+		delayMs: 400
+	},
 	// Stream one delta and then never close, so a test can abort mid-flight.
 	'abort-midstream': { stream: [delta('Half a reply')], hangs: true },
 	// Same, with reasoning only: aborting from the thinking callback lands the "cancelled
@@ -131,6 +143,8 @@ const server = Bun.serve({
 		const body = (await req.json()) as { model: string; stream?: boolean };
 		const scenario = SCENARIOS[body.model];
 		if (!scenario) return new Response('unknown scenario', { status: 500 });
+		if (scenario.silent) return new Promise<Response>(() => {});
+		if (scenario.delayMs) await Bun.sleep(scenario.delayMs);
 		if (body.stream) {
 			const sse = (scenario.stream ?? []).map((d) => `data: ${d}\n\n`).join('');
 			const headers = { 'Content-Type': 'text/event-stream' };
@@ -264,6 +278,40 @@ describe('OpenAICompatibleProvider user aborts keep what streamed', () => {
 		});
 		expect(result.content).toBe('');
 		expect(result.finishReason).toBe('cancelled');
+	});
+});
+
+describe('OpenAICompatibleProvider slow endpoints', () => {
+	// These two hold the shape rather than the bound: net.ts owns the deadlines and net.test.ts
+	// is what goes red if either changes. What is pinned here is that the provider carries an
+	// abort through the non-streamed path as an AbortError rather than swallowing it or
+	// waiting the deadline out, since a Stop that only stops WAITING leaves the endpoint
+	// generating and the whole "Stop is the real bound" argument with it.
+	test('non-streaming: an endpoint that never answers is ended by Stop, and by nothing else', async () => {
+		const controller = new AbortController();
+		const startedAt = performance.now();
+		setTimeout(() => controller.abort(), 150);
+		const error = await provider
+			.complete({ model: 'never-answers', messages: USER, signal: controller.signal })
+			.then(() => null)
+			.catch((e: Error) => e);
+		expect(error?.name).toBe('AbortError');
+		// The abort ended the request, rather than the request ending on its own deadline.
+		expect(performance.now() - startedAt).toBeLessThan(3_000);
+	});
+
+	// Streamed, the same slow endpoint is answerable: the reply starts late and still lands,
+	// and from the first token on it is silence (not elapsed time) that would call it dead.
+	test('streaming: a reply that starts late still lands whole', async () => {
+		const tokens: string[] = [];
+		const result = await provider.complete({
+			model: 'slow-to-start',
+			messages: USER,
+			onToken: (t) => tokens.push(t)
+		});
+		expect(result.content).toBe('Worth the wait.');
+		expect(tokens.join('')).toBe('Worth the wait.');
+		expect(result.finishReason).toBe('stop');
 	});
 });
 

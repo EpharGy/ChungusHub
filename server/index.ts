@@ -128,6 +128,10 @@ interface LiveGeneration {
 	/** The chat this generation will write a turn into, for the single-flight rule below.
 	 *  Null for every call that writes nothing. */
 	commitChatId: string | null;
+	/** When the request went out, for `handleLlmStatus`. Wall clock rather than the monotonic
+	 *  one the timings use, because this number is answered to a client rather than measured:
+	 *  the elapsed time is computed here and sent, so the two clocks never have to agree. */
+	startedAt: number;
 }
 type LlmCompletionResult = Awaited<ReturnType<typeof complete>>;
 const generations = new Map<string, LiveGeneration>();
@@ -1135,6 +1139,10 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	/** The connection's OpenRouter routing (openrouter only; ignored elsewhere). */
 	routing?: RoutingConfig | null;
 	stream?: boolean;
+	/** Whether the streamed tokens are wanted back as frames. False for a call whose asker
+	 *  reads none (every engine sidecar): the wire still streams, so the idle guard still
+	 *  measures silence, but nothing is pushed to a page that would drop it. */
+	deliverTokens?: boolean;
 	/** Debug-panel label for what kind of query this is ('chat', 'memory', …). */
 	source?: string;
 	/** Where this generation's reply belongs in the story, when it belongs in one at all.
@@ -1195,11 +1203,14 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 		settled: null,
 		dropTimer: null,
 		source: msg.source ?? 'completion',
-		commitChatId: msg.commit?.chatId ?? null
+		commitChatId: msg.commit?.chatId ?? null,
+		startedAt: Date.now()
 	};
 	generations.set(msg.id, gen);
 
 	const stream = msg.stream !== false;
+	// Default true: a sender that says nothing wants what it asked to stream.
+	const deliver = msg.deliverTokens !== false;
 
 	// Capture the request for the shared debug log once, up front, so the request and
 	// its result stay paired even if debug is toggled off mid-flight.
@@ -1246,15 +1257,15 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 			routing: msg.routing,
 			signal: controller.signal,
 			// Only wire the callbacks when streaming: their presence is what makes the
-			// provider issue a streaming request, so stream:false now genuinely asks the
-			// API for a single non-streamed completion instead of just muting tokens.
-			// Each token is kept as well as sent, so a page that was not listening for it
-			// can still be handed it.
+			// provider issue a streaming request, so stream:false genuinely asks the API for
+			// a single non-streamed completion instead of just muting tokens. Every token is
+			// KEPT whatever `deliver` says, so a page that was not listening for one can
+			// still be handed it; only the frame is withheld, for a caller that reads none.
 			onToken: stream
 				? (token) => {
 						firstTokenAt ??= performance.now();
 						gen.content += token;
-						emitGeneration(gen, { t: 'llm-token', id: msg.id, token });
+						if (deliver) emitGeneration(gen, { t: 'llm-token', id: msg.id, token });
 					}
 				: undefined,
 			onThinkingToken: stream
@@ -1266,7 +1277,7 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 						thinkingFirstAt ??= at;
 						thinkingLastAt = at;
 						gen.thinking += token;
-						emitGeneration(gen, { t: 'llm-thinking', id: msg.id, token });
+						if (deliver) emitGeneration(gen, { t: 'llm-thinking', id: msg.id, token });
 					}
 				: undefined
 		});
@@ -1366,6 +1377,37 @@ function handleLlmAttach(
 			ws.send(JSON.stringify({ t: 'llm-error', id, message: gen.settled.error }));
 		}
 	}
+}
+
+/**
+ * Answers "is a reply being written for these chats?" for a page that just opened one, or
+ * reconnected, or reloaded.
+ *
+ * A generation outlives the socket that asked for it, but the page's own record of it does
+ * not survive a reload: a phone whose tab the OS discarded comes back to a chat that IS busy
+ * while nothing on screen says so. It reads as idle, a send is refused by the single-flight
+ * rule in handleLlm, and the Stop that would clear it belonged to a page that no longer
+ * exists. This is how the chat learns to say what it is doing, and how the Stop becomes
+ * reachable again (`llm-cancel` already matches by request id from any socket).
+ *
+ * Only the calls that WRITE a turn are reported, since only those hold that rule; an engine
+ * call blocks nothing and has its own surfaces. The answer carries no tokens and does NOT
+ * claim the stream: `gen.ws` stays with whoever is still watching, so a second device asking
+ * this question cannot cut the first one off mid-reply.
+ */
+function handleLlmStatus(ws: ServerWebSocket<SocketData>, msg: { id?: unknown; chatIds?: unknown }): void {
+	// An answer carries the asking id back or it correlates with nothing, so a frame without
+	// one is dropped rather than answered into the void (the same guard handleLlm keeps).
+	if (typeof msg.id !== 'string' || !msg.id) return;
+	const wanted = new Set(
+		Array.isArray(msg.chatIds) ? msg.chatIds.filter((c): c is string => typeof c === 'string') : []
+	);
+	const running: { chatId: string; requestId: string; runningMs: number }[] = [];
+	for (const [requestId, gen] of generations) {
+		if (gen.settled || !gen.commitChatId || !wanted.has(gen.commitChatId)) continue;
+		running.push({ chatId: gen.commitChatId, requestId, runningMs: Date.now() - gen.startedAt });
+	}
+	ws.send(JSON.stringify({ t: 'llm-status-result', id: msg.id, running }));
 }
 
 /** The claiming page has the answer and no longer needs the server to hold it. */
@@ -1926,6 +1968,8 @@ function serve(hostname: string) {
 					// broadcasts prompt logs only while someone is listening.
 					if (msg.on) debugSockets.add(ws);
 					else debugSockets.delete(ws);
+				} else if (msg.t === 'llm-status') {
+					handleLlmStatus(ws, msg as never);
 				} else if (msg.t === 'llm-attach') {
 					handleLlmAttach(ws, msg as never);
 				} else if (msg.t === 'llm-release') {

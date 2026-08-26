@@ -334,9 +334,17 @@ class LLMService {
 			: options.messages.map(({ images: _images, ...m }) => m);
 		// Every call rides its own connection's sampling. No exceptions anywhere in the app.
 		const params = this.getGenerationParams(conn, model);
-		// Streaming off = a genuine non-streamed request; the reply lands whole.
+		// The connection's own setting decides the WIRE shape, for every call it serves; who
+		// wants the tokens is a separate question and rides `deliverTokens`. Both halves are
+		// load-bearing. A non-streamed request carries no sign of life at all, since nothing
+		// arrives until everything does, so an engine call sent non-streamed because nobody
+		// reads its tokens would have nothing bounding it but a guess at the user's hardware.
+		// And streaming to a caller that reads none must not also SEND them, or a memory fold
+		// pushes a frame per token to a page that drops every one.
 		const stream = conn.generation.streamResponses;
 		const result = await llmComplete({
+			stream,
+			deliverTokens: !!options.onToken || !!options.onThinkingToken,
 			connectionId: conn.id,
 			provider,
 			model,
