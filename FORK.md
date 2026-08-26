@@ -20,14 +20,6 @@ is the one thing that will not work.
 | Image generation | `feature/comfy-inject` | `[[IMG: ...]]` markers in a reply become pictures, drawn by a ComfyUI server the backend dials directly. Settings page for host, workflow, sampler and framing. See `architecture/imagegen.md`. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 
-## Fixes
-
-| Fix | Branch | What it fixes |
-|---|---|---|
-| Lorebook entry sort menu | `fix/lorebook-entry-sort-popover` | The Sort button inside a lorebook lit up and appeared to do nothing. The menu was rendering, with no positioned ancestor to anchor to, so it landed off its trigger and the page's scroll container clipped it. |
-| Lorebook list sorting | `fix/lorebook-sort` | Book lists sort A to Z by default, with unnamed books last in both directions. Books sharing a name break the tie on creation time, not last edit, so a re-imported duplicate cannot swap places with its twin between visits. |
-| Clock macros | `fix/macros-clock` | `{{time}}`, `{{date}}`, `{{weekday}}` and their ISO pair, resolved once per assembly rather than per read, so one prompt cannot print two different times. |
-
 ## Running it
 
 Docker needs two addresses specific to the machine it runs on, so they are not committed.
