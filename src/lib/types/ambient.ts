@@ -1,4 +1,11 @@
-// Ambient effect type definitions
+/**
+ * The ambient mix: the model, its ranges and its normalizer.
+ *
+ * Import-free on purpose (the steering model's rule): a mix is stored in two places, the
+ * app-wide setting and a chat's own scene, and the store that reads the first and the chat
+ * feature-state normalizer that reads the second have to agree exactly on what a corrupt
+ * or missing value degrades to.
+ */
 
 /**
  * Every ambient effect, in picker order. THE list: the union, the store's validation
@@ -35,17 +42,25 @@ export type AmbientEffect = (typeof AMBIENT_EFFECTS)[number];
  *  `AmbientEffect`: it has no renderer and never appears in the picker's list. */
 export type AmbientType = 'clear' | AmbientEffect;
 
+/** Which side of the message layer an effect paints on. */
+export type AmbientPlacement = 'over' | 'under';
+
 export interface AmbientConfig {
 	type: AmbientType;
 	types: AmbientType[]; // Active ambient effects for multi-toggle mode
-	density: number; // 0.2-2, particle amount multiplier (1 = designed look)
-	speed: number; // 0.25-2, animation speed multiplier (1 = designed look)
-	visibility: number; // 0.05-1, overlay opacity (0.5 = designed look)
 	enabled: boolean;
-	particlesOverMessages: boolean; // Whether particles show on top of message bubbles
-	// Per-effect overrides for the sliders/toggles in AMBIENT_EFFECT_SETTINGS.
+	/** Every knob of every effect: the four AMBIENT_BASE_SETTINGS every effect carries
+	 *  plus whatever AMBIENT_EFFECT_SETTINGS gives that one. A key missing here is that
+	 *  def's shipped default, so a mix nobody has tuned stores nothing at all. */
 	effectSettings: Partial<Record<AmbientType, Record<string, number>>>;
 }
+
+export const DEFAULT_AMBIENT_CONFIG: AmbientConfig = {
+	type: 'clear',
+	types: [],
+	enabled: false,
+	effectSettings: {}
+};
 
 /** Runtime knobs passed into every effect's update/render each frame. */
 export interface AmbientParams {
@@ -66,6 +81,26 @@ export interface AmbientSettingDef {
 	step: number;
 	defaultValue: number; // toggles use 0/1
 }
+
+/**
+ * The four knobs EVERY effect carries, ahead of whatever it has of its own.
+ *
+ * The first three used to be one set of sliders scaling the whole stack at once, and the
+ * fourth one switch over all of it. They are per effect because a stack is regularly one
+ * effect that wants to be quieter, slower or behind the story while the rest stay where
+ * they are, which a single set could only ever move together.
+ *
+ * They share `AmbientSettingDef` with an effect's own knobs deliberately: the mixer draws
+ * one uniform list per row, and the canvas reads the first three out of the same bag it
+ * hands the renderer. A per-effect def reusing one of these keys would shadow it, which
+ * `contracts.test.ts` refuses.
+ */
+export const AMBIENT_BASE_SETTINGS: AmbientSettingDef[] = [
+	{ key: 'density', label: 'Density', kind: 'slider', min: 0.2, max: 2, step: 0.05, defaultValue: 1 },
+	{ key: 'speed', label: 'Speed', kind: 'slider', min: 0.25, max: 2, step: 0.05, defaultValue: 1 },
+	{ key: 'visibility', label: 'Visibility', kind: 'slider', min: 0.05, max: 1, step: 0.05, defaultValue: 0.5 },
+	{ key: 'overMessages', label: 'Over messages', kind: 'toggle', min: 0, max: 1, step: 1, defaultValue: 1 }
+];
 
 /**
  * Effect-specific settings surfaced in the settings UI. Every def here must be
@@ -107,12 +142,152 @@ export const AMBIENT_EFFECT_SETTINGS: Partial<Record<AmbientType, AmbientSetting
 	]
 };
 
-export function getEffectSettingDefaults(type: AmbientType): Record<string, number> {
-	const defs = AMBIENT_EFFECT_SETTINGS[type];
-	if (!defs) return {};
-	const defaults: Record<string, number> = {};
-	for (const def of defs) defaults[def.key] = def.defaultValue;
+/** Every knob one effect answers to: the shared four, then its own. */
+export function settingsFor(type: AmbientType): AmbientSettingDef[] {
+	return [...AMBIENT_BASE_SETTINGS, ...(AMBIENT_EFFECT_SETTINGS[type] ?? [])];
+}
+
+/** Built once per effect and frozen: the render loop asks for these every frame, and
+ *  the defaults are a fact about the defs rather than about any one mix. */
+const DEFAULTS_BY_TYPE = new Map<AmbientType, Readonly<Record<string, number>>>();
+
+export function getEffectSettingDefaults(type: AmbientType): Readonly<Record<string, number>> {
+	let defaults = DEFAULTS_BY_TYPE.get(type);
+	if (!defaults) {
+		const built: Record<string, number> = {};
+		for (const def of settingsFor(type)) built[def.key] = def.defaultValue;
+		defaults = Object.freeze(built);
+		DEFAULTS_BY_TYPE.set(type, defaults);
+	}
 	return defaults;
+}
+
+/** What one effect actually plays at. The canvas and the mixer's rows both resolve
+ *  through this, so a row cannot state a number the canvas is not using. */
+export function effectSetting(config: AmbientConfig, type: AmbientType, key: string): number {
+	return config.effectSettings[type]?.[key] ?? getEffectSettingDefaults(type)[key] ?? 0;
+}
+
+/**
+ * The active effects painting on one side of the message layer, in mix order.
+ *
+ * Two canvases draw the stack rather than one, and this is what splits it. `Workspace`
+ * asks the same question to decide whether a side is worth mounting at all, so with every
+ * effect on the same side (the shipped state) there is exactly one canvas, as before.
+ */
+export function effectsPlaced(config: AmbientConfig, placement: AmbientPlacement): AmbientEffect[] {
+	const out: AmbientEffect[] = [];
+	for (const type of config.types) {
+		if (type === 'clear' || out.includes(type)) continue;
+		const over = effectSetting(config, type, 'overMessages') >= 0.5;
+		if (over === (placement === 'over')) out.push(type);
+	}
+	return out;
+}
+
+const EFFECT_TYPE_SET = new Set<string>(AMBIENT_EFFECTS);
+
+/** Known effects only, in the order given, deduped. `fallback` covers a blob from before
+ *  the mix could hold more than one. */
+export function normalizeAmbientTypes(input: unknown, fallback?: unknown): AmbientType[] {
+	const normalized: AmbientType[] = [];
+
+	function tryAdd(value: unknown): void {
+		if (typeof value !== 'string') return;
+		const ambient = value as AmbientType;
+		if (!EFFECT_TYPE_SET.has(ambient)) return;
+		if (!normalized.includes(ambient)) normalized.push(ambient);
+	}
+
+	if (Array.isArray(input)) {
+		for (const value of input) {
+			tryAdd(value);
+		}
+	}
+
+	if (normalized.length === 0) {
+		tryAdd(fallback);
+	}
+
+	return normalized;
+}
+
+function finite(value: unknown): number | null {
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * What a blob written before the four base knobs were per effect says about them.
+ *
+ * The three sliders and the over-messages switch used to scale the whole stack, so an
+ * upgrade carries them onto every effect that is actually playing: a mix nobody touched
+ * again looks exactly as it did. A knob the old blob never held is left out, so it lands
+ * on its shipped default rather than on a guess. Effects that are only parked keep
+ * whatever they were tuned to and take the defaults for the rest, since the value that
+ * was on screen was never theirs.
+ */
+function legacyBaseSettings(stored: Record<string, unknown>): Record<string, number> {
+	const seeded: Record<string, number> = {};
+	// Older still: one `intensity` that scaled both alpha and motion.
+	const intensity = finite(stored.intensity);
+	const density = finite(stored.density);
+	const speed = finite(stored.speed) ?? (intensity !== null ? intensity * 2 : null);
+	const visibility = finite(stored.visibility) ?? intensity;
+	if (density !== null) seeded.density = density;
+	if (speed !== null) seeded.speed = speed;
+	if (visibility !== null) seeded.visibility = visibility;
+	if (typeof stored.particlesOverMessages === 'boolean') {
+		seeded.overMessages = stored.particlesOverMessages ? 1 : 0;
+	}
+	return seeded;
+}
+
+/** Keep only known effects and known keys, each clamped to its def's range. */
+function normalizeEffectSettings(
+	input: unknown,
+	seed: Record<string, number>,
+	seedTypes: AmbientType[]
+): AmbientConfig['effectSettings'] {
+	const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+	const normalized: AmbientConfig['effectSettings'] = {};
+
+	for (const type of AMBIENT_EFFECTS) {
+		const stored = (raw[type] && typeof raw[type] === 'object' ? raw[type] : {}) as Record<
+			string,
+			unknown
+		>;
+		const merged = seedTypes.includes(type) ? { ...seed, ...stored } : stored;
+		const entry: Record<string, number> = {};
+		for (const def of settingsFor(type)) {
+			const value = finite(merged[def.key]);
+			if (value === null) continue;
+			entry[def.key] = Math.max(def.min, Math.min(def.max, value));
+		}
+		if (Object.keys(entry).length > 0) normalized[type] = entry;
+	}
+
+	return normalized;
+}
+
+/** Coerce a raw blob into a valid AmbientConfig. Anything corrupt degrades to the
+ *  shipped default rather than throwing (the settings-store convention). */
+export function normalizeAmbientConfig(parsed: unknown): AmbientConfig {
+	if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_AMBIENT_CONFIG };
+	const stored = parsed as Record<string, unknown>;
+	const normalizedTypes = normalizeAmbientTypes(stored.types, stored.type);
+	const parsedEnabled =
+		typeof stored.enabled === 'boolean' ? stored.enabled : normalizedTypes.length > 0;
+
+	return {
+		type: normalizedTypes[0] ?? 'clear',
+		types: normalizedTypes,
+		enabled: normalizedTypes.length > 0 ? parsedEnabled : false,
+		effectSettings: normalizeEffectSettings(
+			stored.effectSettings,
+			legacyBaseSettings(stored),
+			normalizedTypes
+		)
+	};
 }
 
 export const AMBIENT_LABELS: Record<AmbientType, string> = {

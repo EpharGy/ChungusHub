@@ -174,17 +174,18 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	'prompt-caching': 'connections',
 	// Appearance
 	palette: 'interface',
-	// Conditional anchor, the `ambient-display` shape: it exists only while a palette is
-	// open in the editor, so a deep link with none open lands on the page and flashes
-	// nothing. It is routable rather than a bare marker because a `data-setting` with no
-	// entry here is an anchor the app cannot reach, which is the rule at the top of this file.
+	// A conditional anchor: it exists only while a palette is open in the editor, so a deep
+	// link with none open lands on the page and flashes nothing. It is routable rather than a
+	// bare marker because a `data-setting` with no entry here is an anchor the app cannot
+	// reach, which is the rule at the top of this file. `interface-defaults` and
+	// `chat-defaults` below are the same shape.
 	'palette-editor': 'interface',
 	accent: 'interface',
 	'interface-type': 'interface',
 	surfaces: 'interface',
+	'chat-scene': 'interface',
 	background: 'interface',
 	'ambient-effects': 'interface',
-	'ambient-display': 'interface',
 	'reading-column': 'chat',
 	'story-type': 'chat',
 	'chat-style': 'chat',

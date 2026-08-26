@@ -1,87 +1,64 @@
 /**
- * Workspace background image.
+ * The workspace background in force.
  *
- * One synced setting: which image (a /files/-relative path, bundled default or
- * user upload) backs the workspace, plus readability knobs (dim + blur). Renders
- * beneath the ambient layer in Workspace.svelte; picked from Settings → Interface.
+ * Which image (a /files/-relative path, bundled default or user upload) backs the
+ * workspace, plus its readability knobs (dim + blur). Two places hold one, the app-wide
+ * setting and the open chat's own scene (stores/chatScene.svelte.ts), and `config` is
+ * whichever is in force: the picker and the sliders on Settings → Interface edit exactly
+ * what is on screen. Renders beneath the ambient layer in Workspace.svelte.
  */
 import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
 import { fileUrl } from '$lib/services/transport';
+import type { BackgroundConfig } from '$lib/types/background';
+import { DEFAULT_BACKGROUND, normalizeBackgroundConfig } from '$lib/types/background';
+import { chatSceneStore } from '$lib/stores/chatScene.svelte';
 
 const SETTINGS_KEY = 'backgroundConfig';
-
-export interface BackgroundConfig {
-	/** /files/-relative image path (e.g. backgrounds/foo.jpg), or null for none. */
-	path: string | null;
-	/** How strongly the image is darkened, 0..0.9. Plain black on every palette:
-	 *  the scrim is photographic, not part of the app's surface language, so the
-	 *  theme has no say in it (architecture/ui-shell-settings.md). */
-	dim: number;
-	/** Gaussian blur over the image, 0..24 px. */
-	blur: number;
-}
-
-export const DEFAULT_BACKGROUND: BackgroundConfig = {
-	path: null,
-	dim: 0.35,
-	blur: 0
-};
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
 	if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
 	return Math.max(min, Math.min(max, value));
 }
 
-function normalizeConfig(parsed: Partial<BackgroundConfig> | null): BackgroundConfig {
-	if (!parsed) return { ...DEFAULT_BACKGROUND };
-	return {
-		path: typeof parsed.path === 'string' && parsed.path ? parsed.path : null,
-		dim: clampNumber(parsed.dim, 0, 0.9, DEFAULT_BACKGROUND.dim),
-		blur: clampNumber(parsed.blur, 0, 24, DEFAULT_BACKGROUND.blur)
-	};
-}
-
 class BackgroundStore {
-	config = $state<BackgroundConfig>({ ...DEFAULT_BACKGROUND });
+	/** The app-wide background: what every chat without a scene of its own wears. */
+	private appConfig = $state<BackgroundConfig>({ ...DEFAULT_BACKGROUND });
+
+	config = $derived(chatSceneStore.active?.background ?? this.appConfig);
 
 	/** Resolved image URL, or null when no background is set. */
 	url = $derived(this.config.path ? fileUrl(this.config.path) : null);
 
 	async initialize(): Promise<void> {
-		this.config = normalizeConfig(
-			await readSetting<Partial<BackgroundConfig> | null>(SETTINGS_KEY, null)
-		);
+		this.appConfig = normalizeBackgroundConfig(await readSetting<unknown>(SETTINGS_KEY, null));
 		registerSettingsReload(() => this.syncReload());
 	}
 
 	async syncReload(): Promise<void> {
-		this.config = normalizeConfig(
-			await readSetting<Partial<BackgroundConfig> | null>(SETTINGS_KEY, null)
-		);
+		this.appConfig = normalizeBackgroundConfig(await readSetting<unknown>(SETTINGS_KEY, null));
 	}
 
-	private persist(): void {
-		writeSetting(SETTINGS_KEY, this.config);
+	/** Land a whole background on whichever scene is in force. */
+	private write(next: BackgroundConfig): void {
+		const chatScene = chatSceneStore.active;
+		if (chatScene) {
+			chatSceneStore.write({ ...chatScene, background: next });
+			return;
+		}
+		this.appConfig = next;
+		writeSetting(SETTINGS_KEY, next);
 	}
 
 	setBackground(path: string | null): void {
-		this.config.path = path;
-		this.persist();
+		this.write({ ...this.config, path });
 	}
 
 	setDim(dim: number): void {
-		this.config.dim = clampNumber(dim, 0, 0.9, this.config.dim);
-		this.persist();
+		this.write({ ...this.config, dim: clampNumber(dim, 0, 0.9, this.config.dim) });
 	}
 
 	setBlur(blur: number): void {
-		this.config.blur = clampNumber(blur, 0, 24, this.config.blur);
-		this.persist();
-	}
-
-	clear(): void {
-		this.config = { ...DEFAULT_BACKGROUND };
-		this.persist();
+		this.write({ ...this.config, blur: clampNumber(blur, 0, 24, this.config.blur) });
 	}
 }
 

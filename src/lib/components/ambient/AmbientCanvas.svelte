@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { AmbientType, AmbientEffect, AmbientParams } from '$lib/types/ambient';
-	import { getEffectSettingDefaults } from '$lib/types/ambient';
+	import type {
+		AmbientConfig,
+		AmbientEffect,
+		AmbientParams,
+		AmbientPlacement
+	} from '$lib/types/ambient';
+	import { effectSetting, effectsPlaced, getEffectSettingDefaults } from '$lib/types/ambient';
 	import { createRainState, updateRain, renderRain } from './effects/rain';
 	import { createSnowState, updateSnow, renderSnow } from './effects/snow';
 	import { createStormState, updateStorm, renderStorm } from './effects/storm';
@@ -24,27 +29,17 @@
 	import { createFilmGrainState, updateFilmGrain, renderFilmGrain } from './effects/filmgrain';
 
 	interface Props {
-		types?: AmbientType[];
-		/** Particle amount multiplier; 1 = designed density. */
-		density?: number;
-		/** Animation speed multiplier; 1 = designed pace. */
-		speed?: number;
-		/** Overlay opacity 0-1; 0.5 = designed look. */
-		visibility?: number;
-		effectSettings?: Partial<Record<AmbientType, Record<string, number>>>;
+		/** The whole mix. One object rather than a prop per field, so an effect gaining a
+		 *  knob never has to be threaded through the call sites. */
+		config: AmbientConfig;
+		/** Which side of the message layer this canvas is, and therefore which of the
+		 *  mix's effects it draws. The caller stacks it accordingly. */
+		placement: AmbientPlacement;
 		paused?: boolean;
 		class?: string;
 	}
 
-	let {
-		types = [],
-		density = 1,
-		speed = 1,
-		visibility = 0.5,
-		effectSettings = {},
-		paused = false,
-		class: className = ''
-	}: Props = $props();
+	let { config, placement, paused = false, class: className = '' }: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let ctx: CanvasRenderingContext2D | null = null;
@@ -122,26 +117,29 @@
 	// Live effect states, keyed by type (plain map, not reactive)
 	const effectStates = new Map<AmbientEffect, unknown>();
 
+	// The density each live state was built with. Particle counts are baked in at
+	// creation, so a state has to be rebuilt when ITS density moves; keyed per effect so
+	// one row's slider never rebuilds the rest of the stack.
+	const stateDensity = new Map<AmbientEffect, number>();
+
 	const REFERENCE_AREA = 1920 * 1080;
 
 	// Cap a runaway frame delta (tab jank, breakpoint) so particles don't teleport
 	const MAX_DELTA_MS = 64;
 
 	function resolveAmbientTypes(): AmbientEffect[] {
-		const resolved: AmbientEffect[] = [];
-		for (const ambientType of types) {
-			if (ambientType === 'clear') continue;
-			if (resolved.includes(ambientType)) continue;
-			resolved.push(ambientType);
-		}
-		return resolved;
+		return effectsPlaced(config, placement);
+	}
+
+	function densityFor(type: AmbientEffect): number {
+		return effectSetting(config, type, 'density');
 	}
 
 	function getStatesKey(activeTypes: AmbientEffect[]): string {
-		return `${activeTypes.join('|')}@${density.toFixed(2)}`;
+		return activeTypes.map((type) => `${type}@${densityFor(type).toFixed(2)}`).join('|');
 	}
 
-	function scaledCount(baseCount: number, width: number, height: number): number {
+	function scaledCount(baseCount: number, width: number, height: number, density: number): number {
 		const areaScale = Math.max(0.25, Math.min(1.2, (width * height) / REFERENCE_AREA));
 		return Math.max(4, Math.round(baseCount * areaScale * density));
 	}
@@ -155,28 +153,33 @@
 		const active = new Set<AmbientEffect>(activeTypes);
 
 		for (const existing of [...effectStates.keys()]) {
-			if (!active.has(existing)) effectStates.delete(existing);
+			if (!active.has(existing)) {
+				effectStates.delete(existing);
+				stateDensity.delete(existing);
+			}
 		}
 
 		for (const ambientType of activeTypes) {
 			const def = EFFECTS[ambientType];
-			if (forceRecreate || !effectStates.has(ambientType)) {
+			const density = densityFor(ambientType);
+			if (forceRecreate || !effectStates.has(ambientType) || stateDensity.get(ambientType) !== density) {
 				effectStates.set(
 					ambientType,
-					def.create(scaledCount(def.baseCount, width, height), width, height)
+					def.create(scaledCount(def.baseCount, width, height, density), width, height)
 				);
+				stateDensity.set(ambientType, density);
 			}
 		}
 
 		previousStatesKey = getStatesKey(activeTypes);
 	}
 
-	function paramsFor(type: AmbientType): AmbientParams {
-		return {
-			speed,
-			visibility,
-			settings: { ...getEffectSettingDefaults(type), ...effectSettings[type] }
-		};
+	/** One merge per effect per frame: the renderer gets every knob of that effect,
+	 *  and the two the loop itself needs come out of the same bag, so neither can be
+	 *  looking at a different number. */
+	function paramsFor(type: AmbientEffect): AmbientParams {
+		const settings = { ...getEffectSettingDefaults(type), ...config.effectSettings[type] };
+		return { speed: settings.speed, visibility: settings.visibility, settings };
 	}
 
 	function resize(): void {
@@ -220,12 +223,10 @@
 		const height = canvas.clientHeight;
 
 		const activeTypes = resolveAmbientTypes();
-		const statesKey = getStatesKey(activeTypes);
-		if (statesKey !== previousStatesKey) {
-			// A density change must rebuild existing states (their particle counts
-			// are baked in at creation); a type toggle only adds/removes.
-			const densityChanged = statesKey.split('@')[1] !== previousStatesKey.split('@')[1];
-			syncStates(activeTypes, width, height, densityChanged);
+		if (getStatesKey(activeTypes) !== previousStatesKey) {
+			// syncStates decides per effect what a change means: a type toggle only adds or
+			// removes, and a density move rebuilds the one effect it belongs to.
+			syncStates(activeTypes, width, height, false);
 		}
 
 		// Clear canvas

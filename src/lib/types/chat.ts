@@ -1,6 +1,10 @@
 /** Domain types for chat and messages */
 
 import type { LorebookTrace } from '$lib/lorebook/types';
+import type { AmbientConfig } from '$lib/types/ambient';
+import { normalizeAmbientConfig } from '$lib/types/ambient';
+import type { BackgroundConfig } from '$lib/types/background';
+import { normalizeBackgroundConfig } from '$lib/types/background';
 
 export interface Chat {
 	id: string;
@@ -79,25 +83,39 @@ export interface ChatSettings {
 /** Grammatical person the Impersonate feature writes the user's turn in. */
 export type ImpersonatePerspective = 'first' | 'second' | 'third';
 
-/** Per-chat state for the composer's steering + impersonate features. Persisted on
- *  Chat.featureState as an opaque JSON string. Always read through
+/**
+ * A chat's own background and ambient mix: a whole scene rather than a patch over the
+ * app's, so nothing has to say which half of it is inherited.
+ *
+ * `enabled` false keeps the scene the reader built while the app's is back in force, so
+ * the Scene switch is a switch and not a way to lose an afternoon's tuning.
+ */
+export interface ChatScene {
+	enabled: boolean;
+	background: BackgroundConfig;
+	ambient: AmbientConfig;
+}
+
+/** Per-chat state for the composer's steering + impersonate features and this chat's own
+ *  scene. Persisted on Chat.featureState as an opaque JSON string. Always read through
  *  normalizeChatFeatureState, never constructed by hand except via
  *  DEFAULT_CHAT_FEATURE_STATE.
  *
  *  A stored blob may still carry a `steering` object. Steering notes live in their own rows
  *  (`steering_notes`, src/lib/types/steering.ts) because one object has no room for a scope,
  *  so that key is simply not parsed: the blob still reads fine and drops it on the chat's
- *  next write. What belongs here is the ONE thing genuinely per-chat: the reuse history of
- *  spent one-shots. */
+ *  next write. */
 export interface ChatFeatureState {
 	/** The last 10 consumed one-shot steering texts, most-recent first, for quick reuse
 	 *  from the composer's popover. */
 	steeringHistory: string[];
 	impersonatePerspective: ImpersonatePerspective;
+	/** Null while this chat has never been given a scene of its own. */
+	scene: ChatScene | null;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
-	return { steeringHistory: [], impersonatePerspective: 'first' };
+	return { steeringHistory: [], impersonatePerspective: 'first', scene: null };
 }
 
 export const DEFAULT_CHAT_FEATURE_STATE: ChatFeatureState = defaultChatFeatureState();
@@ -109,6 +127,18 @@ function normalizeSteeringHistory(raw: unknown): string[] {
 
 function normalizeImpersonatePerspective(raw: unknown): ImpersonatePerspective {
 	return raw === 'first' || raw === 'second' || raw === 'third' ? raw : 'first';
+}
+
+/** A chat with no scene of its own reads as null, which is what "follows the app's" is.
+ *  A stored one is coerced through the same two normalizers the settings stores use. */
+export function normalizeChatScene(raw: unknown): ChatScene | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const stored = raw as Partial<ChatScene>;
+	return {
+		enabled: stored.enabled === true,
+		background: normalizeBackgroundConfig(stored.background),
+		ambient: normalizeAmbientConfig(stored.ambient)
+	};
 }
 
 /** Parse + sanitize a chat's feature_state column value: a JSON string (the normal
@@ -133,7 +163,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 	const obj = value as Record<string, unknown>;
 	return {
 		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
-		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective)
+		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
+		scene: normalizeChatScene(obj.scene)
 	};
 }
 

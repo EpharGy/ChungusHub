@@ -21,6 +21,7 @@
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { ambientStore } from '$lib/stores/ambient.svelte';
+	import { effectsPlaced } from '$lib/types/ambient';
 	import { backgroundStore } from '$lib/stores/background.svelte';
 	import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
@@ -35,14 +36,13 @@
 	let settingsOpen = $derived(uiStore.settingsOpen);
 	let canDock = $derived(viewport.canDockSettings);
 
-	// Ambient is a single workspace-wide layer behind every panel, so the chat,
-	// Settings, Library, Lorebook, Chats and Assistant all share the same effect.
-	// `particlesOverMessages` flips it between a backdrop (behind translucent
-	// surfaces) and an overlay that floats above every panel.
+	// Ambient is workspace-wide, so the chat, Settings, Library, Lorebook, Chats and
+	// Assistant all sit in the same weather. Each effect picks its own side of the
+	// story: a backdrop behind every panel, or an overlay floating above them all.
 	let ambientConfig = $derived(ambientStore.config);
-	let ambientTypes = $derived(ambientConfig.types);
-	let particlesOverMessages = $derived(ambientConfig.particlesOverMessages);
-	let ambientVisible = $derived(ambientConfig.enabled && ambientTypes.length > 0);
+	let ambientOn = $derived(ambientConfig.enabled && ambientConfig.types.length > 0);
+	let ambientUnder = $derived(ambientOn ? effectsPlaced(ambientConfig, 'under') : []);
+	let ambientOver = $derived(ambientOn ? effectsPlaced(ambientConfig, 'over') : []);
 
 	// Background image: the workspace's bottom-most layer. Ambient particles, the
 	// chat and every panel paint over it; dim darkens it so text stays readable
@@ -189,17 +189,18 @@
 			</div>
 		{/if}
 
-		<!-- Workspace-wide ambient. Behind every panel as a backdrop, or floated above
-		     them all when "particles over messages" is on. -->
-		{#if ambientVisible}
-			<div class="ambient-layer" class:ambient-layer-over={particlesOverMessages}>
-				<AmbientCanvas
-				types={ambientTypes}
-				density={ambientConfig.density}
-				speed={ambientConfig.speed}
-				visibility={ambientConfig.visibility}
-				effectSettings={ambientConfig.effectSettings}
-			/>
+		<!-- Workspace-wide ambient, in two layers because the choice is per effect: a
+		     backdrop behind every panel, and one floated above them all. Each side is
+		     mounted only when it has something to draw, so a mix that is all one way
+		     costs exactly one canvas. -->
+		{#if ambientUnder.length > 0}
+			<div class="ambient-layer">
+				<AmbientCanvas config={ambientConfig} placement="under" />
+			</div>
+		{/if}
+		{#if ambientOver.length > 0}
+			<div class="ambient-layer ambient-layer-over">
+				<AmbientCanvas config={ambientConfig} placement="over" />
 			</div>
 		{/if}
 

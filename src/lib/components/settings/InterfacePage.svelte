@@ -30,7 +30,9 @@
 	import AmbientMixer from '$lib/components/ambient/AmbientMixer.svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import { ambientStore } from '$lib/stores/ambient.svelte';
-	import { backgroundStore, DEFAULT_BACKGROUND } from '$lib/stores/background.svelte';
+	import { backgroundStore } from '$lib/stores/background.svelte';
+	import { chatSceneStore } from '$lib/stores/chatScene.svelte';
+	import { DEFAULT_BACKGROUND } from '$lib/types/background';
 	import { DEFAULT_APPEARANCE } from '$lib/themes/presets';
 	import { rangeReset } from '$lib/actions/rangeReset';
 	import { toggleRow } from '$lib/actions/toggleRow';
@@ -125,6 +127,25 @@
 			customOpen = false;
 		}
 	}
+
+	/* --- Scene scope --- */
+
+	// The two cards below the Scene card edit whichever scene is in force, so nothing
+	// here reads or writes a second copy: flipping the switch is the whole control.
+	let ownScene = $derived(chatSceneStore.active !== null);
+	let canScope = $derived(chatSceneStore.canScope);
+	let otherScenes = $derived(chatSceneStore.otherChatsWithScene);
+
+	let scopeNote = $derived.by(() => {
+		// The disabled pill says why here rather than only in a title: a phone never
+		// hovers, so a tooltip is the one explanation it would never see.
+		if (!canScope) return 'Open a chat to give it a scene of its own.';
+		if (ownScene) return 'The background and effects below belong to this chat alone.';
+		if (otherScenes === 0) return 'Every chat wears the background and effects below.';
+		const others =
+			otherScenes === 1 ? 'one with a scene of its own' : `${otherScenes} with scenes of their own`;
+		return `Every chat wears the background and effects below, except ${others}.`;
+	});
 
 	/* --- Background --- */
 
@@ -379,12 +400,56 @@
 		</div>
 	</section>
 
+	<section class="card" data-setting="chat-scene">
+		<div class="card-head">
+			<span class="card-title">Scene</span>
+			<InfoTip
+				text="A chat given its own scene keeps it: switching back to the app's leaves this one where you left it, ready to pick up again."
+			/>
+		</div>
+
+		<div class="card-body">
+			<div class="seg-pills" role="radiogroup" aria-label="Which scene the cards below edit">
+				<button
+					type="button"
+					role="radio"
+					aria-checked={!ownScene}
+					class="seg-pill"
+					class:active={!ownScene}
+					class:seg-lift={!ownScene}
+					onclick={() => chatSceneStore.release()}
+				>
+					Everywhere
+				</button>
+				<button
+					type="button"
+					role="radio"
+					aria-checked={ownScene}
+					class="seg-pill"
+					class:active={ownScene}
+					class:seg-lift={ownScene}
+					disabled={!canScope}
+					title={canScope ? undefined : 'Open a chat to give it a scene of its own.'}
+					onclick={() =>
+						chatSceneStore.adopt({
+							background: backgroundStore.config,
+							ambient: ambientStore.config
+						})}
+				>
+					This chat
+				</button>
+			</div>
+			<p class="scope-note font-ui">{scopeNote}</p>
+		</div>
+	</section>
+
 	<section class="card" data-setting="background">
 		<div class="card-head">
 			<span class="card-title">Background</span>
 			<InfoTip
 				text="A picture behind the whole workspace, with ambient effects and every panel layered on top of it."
 			/>
+			{#if ownScene}<span class="scope-chip font-ui">This chat</span>{/if}
 		</div>
 
 		<div class="card-body">
@@ -470,8 +535,9 @@
 		<div class="card-head">
 			<span class="card-title">Ambient Effects</span>
 			<InfoTip
-				text="Weather and atmosphere layered over the whole workspace, in every story. Stack as many effects as you like."
+				text="Weather and atmosphere layered over the whole workspace. Stack as many effects as you like."
 			/>
+			{#if ownScene}<span class="scope-chip font-ui">This chat</span>{/if}
 			{#if ambientStore.config.types.length > 0}
 				<button type="button" class="link-btn clear-mix" onclick={() => ambientStore.clearAmbients()}>
 					Clear all
@@ -793,6 +859,32 @@
 	   active pill. */
 	.seg-pill:hover:not(.active) {
 		color: var(--color-text-primary);
+	}
+
+	.seg-pill:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	/* --- Scene scope --- */
+
+	.scope-note {
+		font-size: 0.7rem;
+		line-height: 1.4;
+		color: var(--color-text-muted);
+	}
+
+	/* Rides beside the card's title, since what it qualifies is the title: these two
+	   cards are the only ones on the page that a chat can take for itself, and with
+	   the Scene card scrolled off there is otherwise nothing saying so. */
+	.scope-chip {
+		padding: 0.1rem 0.4rem;
+		border-radius: var(--radius-full);
+		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
+		font-size: 0.64rem;
+		font-weight: 600;
+		color: var(--color-accent);
+		white-space: nowrap;
 	}
 
 	/* --- Background --- */

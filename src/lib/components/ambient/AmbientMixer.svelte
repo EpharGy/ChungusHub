@@ -1,17 +1,20 @@
 <script lang="ts">
 	/**
-	 * The whole Ambient Effects settings surface: stage, catalog, mix, whole-mix.
+	 * The whole Ambient Effects settings surface: stage, catalog, mix.
 	 *
 	 * One interface for both readers of it. Picking a single effect is one tap in
-	 * the catalog; its row appears just below with that effect's own settings
-	 * unfolded, and nothing else is in the way. Stacking is the same gesture
-	 * repeated: every active effect holds a row in the mix, each tunable on its
-	 * own, with the whole-mix sliders scaling all of them at once.
+	 * the catalog; its row appears just below with its settings already open, and
+	 * nothing else is in the way. Stacking is the same gesture repeated: every
+	 * active effect holds a row of its own, tuned on its own.
 	 *
-	 * Zone order is load-bearing: everything the selection adds (rows, whole-mix
-	 * controls) appends BELOW the catalog, so a tapped pill never moves under the
-	 * pointer. The stage keeps one size whether empty or playing, for the same
-	 * reason.
+	 * Every knob belongs to one effect and there is no cluster over the top of them,
+	 * which is the only way a stack of five can have four of them calm and one
+	 * heavy. A set of sliders across the whole stack could only ever move all five
+	 * together, and would leave every row answering to two owners.
+	 *
+	 * Zone order is load-bearing: the rows the selection adds append BELOW the
+	 * catalog, so a tapped pill never moves under the pointer. The stage keeps one
+	 * size whether empty or playing, for the same reason.
 	 *
 	 * The hosting card, its title/InfoTip and the Clear all action live in
 	 * settings/InterfacePage.svelte, which also carries data-setting="ambient-effects".
@@ -21,22 +24,16 @@
 		AMBIENT_EFFECTS,
 		AMBIENT_LABELS,
 		AMBIENT_DESCRIPTIONS,
-		AMBIENT_EFFECT_SETTINGS,
-		getEffectSettingDefaults
+		effectSetting,
+		effectsPlaced,
+		settingsFor
 	} from '$lib/types/ambient';
-	import {
-		ambientStore,
-		DENSITY_RANGE,
-		SPEED_RANGE,
-		VISIBILITY_RANGE
-	} from '$lib/stores/ambient.svelte';
+	import { ambientStore } from '$lib/stores/ambient.svelte';
 	import { backgroundStore } from '$lib/stores/background.svelte';
 	import AmbientCanvas from './AmbientCanvas.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Slider from '$lib/components/ui/Slider.svelte';
 	import Toggle from '$lib/components/ui/Toggle.svelte';
-	import { rangeReset } from '$lib/actions/rangeReset';
-	import { toggleRow } from '$lib/actions/toggleRow';
 
 	const SHELVES = [
 		{ id: 'weather', label: 'Weather' },
@@ -79,27 +76,27 @@
 
 	let config = $derived(ambientStore.config);
 	let active = $derived(config.types);
+	// The stage stacks exactly the way the workspace does, mounting a side only when it
+	// has something to draw rather than running an animation loop over an empty canvas.
+	let stageUnder = $derived(effectsPlaced(config, 'under'));
+	let stageOver = $derived(effectsPlaced(config, 'over'));
 	let backgroundUrl = $derived(backgroundStore.url);
 	let backgroundDim = $derived(backgroundStore.config.dim);
 
-	// Mix rows whose settings are unfolded. Session state only; a just-added
-	// configurable effect unfolds so its knobs introduce themselves.
+	// Mix rows whose settings are unfolded. Session state only: a just-added effect
+	// opens so its knobs introduce themselves, and folding it away is the reader's.
 	let expanded = $state<AmbientType[]>([]);
 
 	function isOn(type: AmbientType): boolean {
 		return active.includes(type);
 	}
 
-	function hasSettings(type: AmbientType): boolean {
-		return (AMBIENT_EFFECT_SETTINGS[type]?.length ?? 0) > 0;
-	}
-
 	function toggleEffect(type: AmbientType): void {
 		const adding = !isOn(type);
 		ambientStore.toggleAmbient(type);
-		if (adding && hasSettings(type)) {
+		if (adding) {
 			if (!expanded.includes(type)) expanded = [...expanded, type];
-		} else if (!adding) {
+		} else {
 			expanded = expanded.filter((t) => t !== type);
 		}
 	}
@@ -110,36 +107,7 @@
 			: [...expanded, type];
 	}
 
-	function effectSettingValue(type: AmbientType, key: string): number {
-		return config.effectSettings[type]?.[key] ?? getEffectSettingDefaults(type)[key] ?? 0;
-	}
-
 	const pct = (v: number) => `${Math.round(v * 100)}%`;
-
-	// The three sliders that scale every active effect at once.
-	const WHOLE_MIX_SLIDERS = [
-		{
-			id: 'ambient-density',
-			label: 'Density',
-			range: DENSITY_RANGE,
-			value: () => config.density,
-			set: (v: number) => ambientStore.setDensity(v)
-		},
-		{
-			id: 'ambient-speed',
-			label: 'Speed',
-			range: SPEED_RANGE,
-			value: () => config.speed,
-			set: (v: number) => ambientStore.setSpeed(v)
-		},
-		{
-			id: 'ambient-visibility',
-			label: 'Visibility',
-			range: VISIBILITY_RANGE,
-			value: () => config.visibility,
-			set: (v: number) => ambientStore.setVisibility(v)
-		}
-	];
 </script>
 
 <div class="mixer">
@@ -158,17 +126,19 @@
 				<!-- The workspace dim is always plain black; the stage mirrors it. -->
 				<div class="stage-dim" style="opacity: {backgroundDim}"></div>
 			{/if}
+			<!-- Mock bubbles between the two canvases: which side of the story an effect
+			     paints on is one of the things being decided here, so the preview has to
+			     have a story to be on a side of. -->
+			{#if stageUnder.length > 0}
+				<AmbientCanvas {config} placement="under" />
+			{/if}
 			<div class="stage-chat" aria-hidden="true">
 				<div class="stage-bubble stage-bubble-user">The storm rolled in just after dusk.</div>
 				<div class="stage-bubble">She watched the first drops streak the glass.</div>
 			</div>
-			<AmbientCanvas
-				types={active}
-				density={config.density}
-				speed={config.speed}
-				visibility={config.visibility}
-				effectSettings={config.effectSettings}
-			/>
+			{#if stageOver.length > 0}
+				<AmbientCanvas {config} placement="over" />
+			{/if}
 		{/if}
 	</div>
 
@@ -201,25 +171,18 @@
 		<div class="mix">
 			<span class="section-label">In the mix</span>
 			{#each active as type (type)}
-				{@const defs = AMBIENT_EFFECT_SETTINGS[type] ?? []}
 				{@const open = expanded.includes(type)}
 				<div class="fx-row" class:fx-row-open={open}>
 					<div class="fx-row-head">
-						{#if defs.length > 0}
-							<button
-								type="button"
-								class="fx-row-main"
-								aria-expanded={open}
-								onclick={() => toggleExpanded(type)}
-							>
-								<span class="fx-name">{AMBIENT_LABELS[type]}</span>
-								<Icon name="chevronDown" class="w-3.5 h-3.5 fx-chevron" />
-							</button>
-						{:else}
-							<span class="fx-row-main">
-								<span class="fx-name">{AMBIENT_LABELS[type]}</span>
-							</span>
-						{/if}
+						<button
+							type="button"
+							class="fx-row-main"
+							aria-expanded={open}
+							onclick={() => toggleExpanded(type)}
+						>
+							<span class="fx-name">{AMBIENT_LABELS[type]}</span>
+							<Icon name="chevronDown" class="w-3.5 h-3.5 fx-chevron" />
+						</button>
 						<button
 							type="button"
 							class="fx-remove"
@@ -232,26 +195,28 @@
 					</div>
 
 					{#if open}
+						<!-- One uniform list: the four every effect carries, then whatever
+						     this one has of its own. -->
 						<div class="fx-settings">
-							{#each defs as def (def.key)}
+							{#each settingsFor(type) as def (def.key)}
 								<span class="fx-setting-label">{def.label}</span>
 								{#if def.kind === 'toggle'}
 									<div class="fx-setting-toggle">
 										<Toggle
-											checked={effectSettingValue(type, def.key) >= 0.5}
-											label={def.label}
+											checked={effectSetting(config, type, def.key) >= 0.5}
+											label="{AMBIENT_LABELS[type]}: {def.label}"
 											onchange={(on) => ambientStore.setEffectSetting(type, def.key, on ? 1 : 0)}
 										/>
 									</div>
 								{:else}
 									<Slider
-										value={effectSettingValue(type, def.key)}
+										value={effectSetting(config, type, def.key)}
 										min={def.min}
 										max={def.max}
 										step={def.step}
 										defaultValue={def.defaultValue}
 										format={pct}
-										label={def.label}
+										label="{AMBIENT_LABELS[type]}: {def.label}"
 										oninput={(v) => ambientStore.setEffectSetting(type, def.key, v)}
 									/>
 								{/if}
@@ -262,39 +227,6 @@
 			{/each}
 		</div>
 
-		<!-- Whole mix: scales every active effect at once, and where particles sit
-		     relative to message bubbles. -->
-		<div class="whole" data-setting="ambient-display">
-			<span class="section-label">Whole mix</span>
-			{#each WHOLE_MIX_SLIDERS as s (s.id)}
-				<div class="slider-block">
-					<div class="slider-top">
-						<label for={s.id} class="slider-label">{s.label}</label>
-						<span class="slider-value">{pct(s.value())}</span>
-					</div>
-					<input
-						id={s.id}
-						type="range"
-						class="slider"
-						min={s.range.min}
-						max={s.range.max}
-						step="0.05"
-						value={s.value()}
-						oninput={(e) => s.set(parseFloat(e.currentTarget.value))}
-						use:rangeReset={{ defaultValue: s.range.default, apply: s.set }}
-					/>
-				</div>
-			{/each}
-
-			<div class="toggle-row" use:toggleRow>
-				<span class="slider-label">Show particles over messages</span>
-				<Toggle
-					checked={config.particlesOverMessages}
-					label="Show particles over messages"
-					onchange={(on) => ambientStore.setParticlesOverMessages(on)}
-				/>
-			</div>
-		</div>
 	{/if}
 </div>
 
@@ -539,13 +471,5 @@
 
 	.fx-setting-toggle {
 		justify-self: end;
-	}
-
-	/* --- Whole mix --- */
-
-	.whole {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
 	}
 </style>

@@ -8,6 +8,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import { effectSetting } from './ambient';
 import { DEFAULT_CHAT_FEATURE_STATE, normalizeChatFeatureState, pushSteeringHistoryEntry } from './chat';
 
 describe('normalizeChatFeatureState: degrading to defaults', () => {
@@ -40,14 +41,16 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 		});
 		expect(normalizeChatFeatureState(raw)).toEqual({
 			steeringHistory: ['earlier note'],
-			impersonatePerspective: 'third'
+			impersonatePerspective: 'third',
+			scene: null
 		});
 	});
 
 	test('accepts an already-parsed object directly', () => {
 		const value = {
 			steeringHistory: ['x'],
-			impersonatePerspective: 'second' as const
+			impersonatePerspective: 'second' as const,
+			scene: null
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -61,8 +64,62 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third'
 		});
-		expect(result).toEqual({ steeringHistory: ['earlier note'], impersonatePerspective: 'third' });
+		expect(result).toEqual({
+			steeringHistory: ['earlier note'],
+			impersonatePerspective: 'third',
+			scene: null
+		});
 		expect('steering' in result).toBe(false);
+	});
+});
+
+describe('normalizeChatFeatureState: scene', () => {
+	test('a chat that has never had one reads as null', () => {
+		expect(normalizeChatFeatureState({}).scene).toBeNull();
+		expect(normalizeChatFeatureState({ scene: null }).scene).toBeNull();
+		expect(normalizeChatFeatureState({ scene: 'winter' }).scene).toBeNull();
+	});
+
+	test('a stored scene comes back through both config normalizers', () => {
+		const scene = normalizeChatFeatureState({
+			scene: {
+				enabled: true,
+				background: { path: 'backgrounds/snow.jpg', dim: 5, blur: -2 },
+				ambient: { types: ['snow', 'nonsense'], effectSettings: { snow: { density: 99 } } }
+			}
+		}).scene;
+		expect(scene?.enabled).toBe(true);
+		// Clamped, not trusted: the blob is the same data any device may have written.
+		expect(scene?.background).toEqual({ path: 'backgrounds/snow.jpg', dim: 0.9, blur: 0 });
+		expect(scene?.ambient.types).toEqual(['snow']);
+		expect(effectSetting(scene!.ambient, 'snow', 'density')).toBe(2);
+	});
+
+	test('a scene survives the trip through the column it is stored in', () => {
+		// The wire shape is a JSON string on chats.feature_state, and the server never
+		// parses it, so what comes back has to be exactly what went in: a field JSON
+		// drops on the way out is a chat that quietly loses half its scene.
+		const state = normalizeChatFeatureState({
+			steeringHistory: ['a note'],
+			impersonatePerspective: 'second',
+			scene: {
+				enabled: true,
+				background: { path: 'images/backgrounds/dusk.png', dim: 0.5, blur: 6 },
+				ambient: {
+					types: ['rain', 'fog'],
+					enabled: true,
+					effectSettings: { rain: { density: 1.25, splashes: 0 }, fog: { overMessages: 0 } }
+				}
+			}
+		});
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+	});
+
+	test('a scene missing its enabled flag is kept but not in force', () => {
+		// Anything but an explicit true: a chat must never end up wearing a scene
+		// because a half-written blob was read generously.
+		const scene = normalizeChatFeatureState({ scene: { background: {}, ambient: {} } }).scene;
+		expect(scene?.enabled).toBe(false);
 	});
 });
 
