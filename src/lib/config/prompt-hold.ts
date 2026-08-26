@@ -10,8 +10,9 @@
  * over an assembled prompt this layer ever holds.
  *
  * Glyphs are SOURCED, not chosen: each is what its action already draws elsewhere (the
- * composer's send arrow, a turn's Retry, the Continue row, and the two engines' own registry
- * icons), so a row here reads the same as the control it stands in for.
+ * composer's send arrow, a turn's Retry, a turn's Continue, and the two engines' own registry
+ * icons), so a row here reads the same as the control it stands in for. No two gates may share
+ * a glyph: the names tell the rows apart, but the glyph is what the eye lands on first.
  */
 import { engineById, type EngineDef } from '$lib/engines/registry';
 
@@ -38,8 +39,8 @@ export const HOLD_GATES = [
 		icon: 'arrowRight'
 	},
 	{
-		// Both names, because the transcript's button says one and the composer's menu row
-		// says the other, and a reader looking for either has to find this switch.
+		// Both names, because the button says one on a reply and the other on a turn of the
+		// reader's own, and a reader looking for either has to find this switch.
 		id: 'regenerate',
 		name: 'Retry / Regenerate',
 		confirm: 'Regenerate',
