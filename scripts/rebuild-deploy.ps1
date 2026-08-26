@@ -53,10 +53,7 @@ $Topics = @(
     'fork/deploy-tooling',
     'feature/comfy-inject',
     'feature/docker',
-    'fix/macros-clock',
-    'fix/lorebook-sort',
-    'feature/echochamber',
-    'fix/lorebook-entry-sort-popover'
+    'feature/echochamber'
 )
 
 function Fail($message) {
