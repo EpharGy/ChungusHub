@@ -107,7 +107,7 @@
 			const report = await db.sweepGeneratedImageCache(limitBytes);
 			toastStore.success(
 				report.files
-					? `Removed ${report.files} picture${report.files === 1 ? '' : 's'}, freeing ${megabytes(report.bytes)}`
+					? `Removed ${report.files} image generation${report.files === 1 ? '' : 's'}, freeing ${megabytes(report.bytes)}`
 					: 'Nothing old enough to remove'
 			);
 		} catch (error) {
@@ -120,7 +120,7 @@
 
 	const sweepMessage = $derived(
 		cache && cache.files
-			? `${cache.files} picture${cache.files === 1 ? '' : 's'} go, freeing ${megabytes(cache.bytes)}.` +
+			? `${cache.files} image generation${cache.files === 1 ? '' : 's'} go, freeing ${megabytes(cache.bytes)}.` +
 				(cache.oldest !== null && cache.newest !== null
 					? ` They were generated between ${formatDate(cache.oldest)} and ${formatDate(cache.newest)}.`
 					: '') +
@@ -571,7 +571,7 @@
 		<div class="card-body">
 			<p class="hint">
 				{#if cache}
-					{cache.totalFiles} picture{cache.totalFiles === 1 ? '' : 's'} stored, {megabytes(
+					{cache.totalFiles} image generation{cache.totalFiles === 1 ? '' : 's'} stored, {megabytes(
 						cache.totalBytes
 					)}.
 				{:else}
@@ -614,7 +614,7 @@
 					onclick={() => (confirmingSweep = true)}
 				>
 					{cache && cache.files
-						? `Clean up now (${cache.files}, ${megabytes(cache.bytes)})`
+						? `Clean up now (${cache.files} Image Generation${cache.files === 1 ? '' : 's'}, ${megabytes(cache.bytes)})`
 						: 'Clean up now'}
 				</Button>
 				<span class="hint">
