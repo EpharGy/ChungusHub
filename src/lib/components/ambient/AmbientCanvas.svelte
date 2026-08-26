@@ -46,8 +46,9 @@
 	let animationFrame: number | null = null;
 	let lastTime = 0;
 
-	// Plain key for tracking selection changes (NOT reactive)
-	let previousStatesKey = '';
+	// The density a settling drag is heading for, and when it last moved (NOT reactive).
+	let driftKey = '';
+	let driftSince = 0;
 
 	interface EffectDef<S> {
 		baseCount: number;
@@ -127,6 +128,14 @@
 	// Cap a runaway frame delta (tab jank, breakpoint) so particles don't teleport
 	const MAX_DELTA_MS = 64;
 
+	// How still a density has to be before its effect is baked again. Building a state is
+	// not a cheap allocation: the textured effects bake full-screen offscreen canvases in
+	// `create…State` (fog draws three of them, over a hundred gradient blobs each), so a
+	// slider dragged at pointer rate would bake them tens of times a second and take the
+	// frame rate with it. Speed and visibility are read fresh every frame and never come
+	// through here, so those two drags stay live.
+	const DENSITY_SETTLE_MS = 150;
+
 	function resolveAmbientTypes(): AmbientEffect[] {
 		return effectsPlaced(config, placement);
 	}
@@ -135,21 +144,42 @@
 		return effectSetting(config, type, 'density');
 	}
 
-	function getStatesKey(activeTypes: AmbientEffect[]): string {
-		return activeTypes.map((type) => `${type}@${densityFor(type).toFixed(2)}`).join('|');
-	}
-
 	function scaledCount(baseCount: number, width: number, height: number, density: number): number {
 		const areaScale = Math.max(0.25, Math.min(1.2, (width * height) / REFERENCE_AREA));
 		return Math.max(4, Math.round(baseCount * areaScale * density));
 	}
 
-	function syncStates(
-		activeTypes: AmbientEffect[],
-		width: number,
-		height: number,
-		forceRecreate: boolean
-	): void {
+	function bakeState(type: AmbientEffect, width: number, height: number): void {
+		const def = EFFECTS[type];
+		const density = densityFor(type);
+		effectStates.set(type, def.create(scaledCount(def.baseCount, width, height, density), width, height));
+		stateDensity.set(type, density);
+	}
+
+	// Both of these run on every frame of every canvas, so they allocate nothing: the
+	// work below them is what the answer buys.
+	function membershipMatches(activeTypes: AmbientEffect[]): boolean {
+		if (effectStates.size !== activeTypes.length) return false;
+		for (const type of activeTypes) if (!effectStates.has(type)) return false;
+		return true;
+	}
+
+	function densityDrifted(activeTypes: AmbientEffect[]): boolean {
+		for (const type of activeTypes) {
+			if (effectStates.has(type) && stateDensity.get(type) !== densityFor(type)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Drop what has left the mix and bake what has joined it, **one effect per frame**.
+	 *
+	 * A scene arriving with five effects at once would otherwise bake five sets of
+	 * offscreen textures inside a single frame, which is the lurch you feel when a chat
+	 * with a scene of its own opens. Spread out, the weather arrives over a few frames
+	 * instead, which is both smoother and closer to what weather does.
+	 */
+	function syncMembership(activeTypes: AmbientEffect[], width: number, height: number): void {
 		const active = new Set<AmbientEffect>(activeTypes);
 
 		for (const existing of [...effectStates.keys()]) {
@@ -159,19 +189,36 @@
 			}
 		}
 
-		for (const ambientType of activeTypes) {
-			const def = EFFECTS[ambientType];
-			const density = densityFor(ambientType);
-			if (forceRecreate || !effectStates.has(ambientType) || stateDensity.get(ambientType) !== density) {
-				effectStates.set(
-					ambientType,
-					def.create(scaledCount(def.baseCount, width, height, density), width, height)
-				);
-				stateDensity.set(ambientType, density);
-			}
-		}
+		const joined = activeTypes.find((type) => !effectStates.has(type));
+		if (joined) bakeState(joined, width, height);
+	}
 
-		previousStatesKey = getStatesKey(activeTypes);
+	/** Re-bake the effects whose density has moved, once the move has stopped. */
+	function bakeSettledDensity(
+		activeTypes: AmbientEffect[],
+		width: number,
+		height: number,
+		now: number
+	): void {
+		const drifted = activeTypes.filter(
+			(type) => effectStates.has(type) && stateDensity.get(type) !== densityFor(type)
+		);
+		const key = drifted.map((type) => `${type}@${densityFor(type).toFixed(2)}`).join('|');
+		if (key !== driftKey) {
+			driftKey = key;
+			driftSince = now;
+			return;
+		}
+		if (now - driftSince < DENSITY_SETTLE_MS) return;
+
+		for (const type of drifted) bakeState(type, width, height);
+		driftKey = '';
+	}
+
+	/** Everything at once, for a resize: the states hold the size they were baked at. */
+	function rebakeAll(width: number, height: number): void {
+		for (const type of [...effectStates.keys()]) bakeState(type, width, height);
+		driftKey = '';
 	}
 
 	/** One merge per effect per frame: the renderer gets every knob of that effect,
@@ -195,8 +242,8 @@
 			ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset any previous scale
 		}
 
-		// Reinitialize currently active ambient stack on resize
-		syncStates(resolveAmbientTypes(), rect.width, rect.height, true);
+		// The states hold the size they were baked at, so a resize re-bakes them.
+		rebakeAll(rect.width, rect.height);
 	}
 
 	function update(currentTime: number): void {
@@ -223,11 +270,11 @@
 		const height = canvas.clientHeight;
 
 		const activeTypes = resolveAmbientTypes();
-		if (getStatesKey(activeTypes) !== previousStatesKey) {
-			// syncStates decides per effect what a change means: a type toggle only adds or
-			// removes, and a density move rebuilds the one effect it belongs to.
-			syncStates(activeTypes, width, height, false);
-		}
+		// Joining and leaving land now, since an effect has to arrive on the tap that
+		// added it; a density that is still moving waits until it stops.
+		if (!membershipMatches(activeTypes)) syncMembership(activeTypes, width, height);
+		if (densityDrifted(activeTypes)) bakeSettledDensity(activeTypes, width, height, currentTime);
+		else driftKey = '';
 
 		// Clear canvas
 		ctx.clearRect(0, 0, width, height);

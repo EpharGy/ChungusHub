@@ -15,6 +15,7 @@
 	import AmbientCanvas from '$lib/components/ambient/AmbientCanvas.svelte';
 	import PromptDebugPanel from '$lib/components/debug/PromptDebugPanel.svelte';
 	import PromptReviewDialog from '$lib/components/chat/PromptReviewDialog.svelte';
+	import { untrack } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
@@ -50,6 +51,78 @@
 	let backgroundUrl = $derived(backgroundStore.url);
 	let backgroundDim = $derived(backgroundStore.config.dim);
 	let backgroundBlur = $derived(backgroundStore.config.blur);
+
+	// A picture reaches the screen only once it is DECODED, and then it fades in over
+	// the one it replaces. Handing a fresh url straight to CSS decodes a multi-megabyte
+	// photo on the main thread at the exact moment a chat with its own scene is opening,
+	// which is a freeze on top of the work of opening it, and then a hard cut. Both
+	// layers wear the live blur: a blur being dragged has no url change to wait for.
+	const FADE_MS = 260;
+	let shownUrl = $state<string | null>(null);
+	let incomingUrl = $state<string | null>(null);
+	let incomingLit = $state(false);
+	// Bumped per swap, so a chat opened during a fade cancels the one still in flight
+	// instead of landing on top of it.
+	let swapToken = 0;
+
+	function promoteIncoming(): void {
+		if (!incomingUrl) return;
+		shownUrl = incomingUrl;
+		incomingUrl = null;
+		incomingLit = false;
+	}
+
+	function startBackgroundSwap(target: string | null): void {
+		if (target === incomingUrl) return;
+		// Back to the picture already whole underneath: drop the one on its way in
+		// rather than fading it over itself.
+		if (target === shownUrl) {
+			swapToken++;
+			incomingUrl = null;
+			incomingLit = false;
+			return;
+		}
+		const token = ++swapToken;
+
+		// Removing a picture has nothing to decode and nothing to fade from.
+		if (!target) {
+			shownUrl = null;
+			incomingUrl = null;
+			incomingLit = false;
+			return;
+		}
+
+		const image = new Image();
+		image.src = target;
+		// A file that has gone missing rejects here and still swaps: the setting says
+		// this chat has that picture, and quietly leaving the last one up would be the
+		// app disagreeing with what it is showing in Settings.
+		void image
+			.decode()
+			.catch(() => undefined)
+			.then(() => {
+				if (token !== swapToken) return;
+				if (!shownUrl) {
+					shownUrl = target;
+					return;
+				}
+				incomingUrl = target;
+				incomingLit = false;
+				requestAnimationFrame(() => {
+					if (token === swapToken) incomingLit = true;
+				});
+				// Promoted on a timer rather than on transitionend, which never fires at
+				// all when the reader has asked for reduced motion.
+				setTimeout(() => {
+					if (token === swapToken) promoteIncoming();
+				}, FADE_MS + 40);
+			});
+	}
+
+	$effect(() => {
+		const target = backgroundUrl;
+		untrack(() => startBackgroundSwap(target));
+	});
 
 	// Settings: a left-margin dock on wide screens, a chat-area overlay on narrow ones.
 	let settingsDocked = $derived(settingsOpen && canDock);
@@ -177,14 +250,26 @@
 		bind:this={workspaceEl}
 	>
 		<!-- Workspace background image: bottom of the stack, beneath the ambient layer
-		     (same z-index, earlier in the DOM). -->
-		{#if backgroundUrl}
+		     (same z-index, earlier in the DOM). Two pictures while one is arriving: the
+		     one leaving stays whole underneath, so the crossfade never dips to the bare
+		     surface between them. -->
+		{#if shownUrl || incomingUrl}
 			<div class="background-layer" aria-hidden="true">
-				<div
-					class="background-image"
-					class:background-blurred={backgroundBlur > 0}
-					style="background-image: url('{backgroundUrl}'); {backgroundBlur > 0 ? `filter: blur(${backgroundBlur}px);` : ''}"
-				></div>
+				{#if shownUrl}
+					<div
+						class="background-image"
+						class:background-blurred={backgroundBlur > 0}
+						style="background-image: url('{shownUrl}'); {backgroundBlur > 0 ? `filter: blur(${backgroundBlur}px);` : ''}"
+					></div>
+				{/if}
+				{#if incomingUrl}
+					<div
+						class="background-image background-incoming"
+						class:background-lit={incomingLit}
+						class:background-blurred={backgroundBlur > 0}
+						style="background-image: url('{incomingUrl}'); {backgroundBlur > 0 ? `filter: blur(${backgroundBlur}px);` : ''}"
+					></div>
+				{/if}
 				<div class="background-dim" style="opacity: {backgroundDim}"></div>
 			</div>
 		{/if}
@@ -388,6 +473,22 @@
 	/* Blur samples past the edges; scale slightly so the fringe stays offscreen. */
 	.background-blurred {
 		transform: scale(1.05);
+	}
+
+	/* The arriving picture, over the one it replaces until it is whole. */
+	.background-incoming {
+		opacity: 0;
+		transition: opacity 260ms ease;
+	}
+
+	.background-lit {
+		opacity: 1;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.background-incoming {
+			transition: none;
+		}
 	}
 
 	/* The picture's dim, strength from Settings → Background. Plain black on every

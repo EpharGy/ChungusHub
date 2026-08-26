@@ -14,13 +14,20 @@ import {
 	settingsFor
 } from '$lib/types/ambient';
 import { chatSceneStore } from '$lib/stores/chatScene.svelte';
-import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
+import {
+	BurstSettingWriter,
+	readSetting,
+	registerSettingsReload
+} from '$lib/services/syncedSetting';
 
 const SETTINGS_KEY = 'ambientConfig';
 
 class AmbientStore {
 	/** The app-wide mix: what every chat without a scene of its own wears. */
 	private appConfig = $state<AmbientConfig>({ ...DEFAULT_AMBIENT_CONFIG });
+
+	/** Every knob here is a slider or a switch on one card, so the writes come in bursts. */
+	private writer = new BurstSettingWriter<AmbientConfig>(SETTINGS_KEY);
 
 	/** The mix in force. */
 	config = $derived(chatSceneStore.active?.ambient ?? this.appConfig);
@@ -31,7 +38,11 @@ class AmbientStore {
 	}
 
 	async syncReload(): Promise<void> {
-		this.appConfig = normalizeAmbientConfig(await readSetting<unknown>(SETTINGS_KEY, null));
+		const next = normalizeAmbientConfig(await readSetting<unknown>(SETTINGS_KEY, null));
+		// A write still owed is newer than anything the server can hand back, so taking
+		// this would drag the slider out from under the finger holding it.
+		if (this.writer.busy) return;
+		this.appConfig = next;
 	}
 
 	/** Land a whole mix on whichever scene is in force. */
@@ -42,7 +53,7 @@ class AmbientStore {
 			return;
 		}
 		this.appConfig = next;
-		writeSetting(SETTINGS_KEY, next);
+		this.writer.write(next);
 	}
 
 	private applySelection(nextTypes: AmbientType[]): void {

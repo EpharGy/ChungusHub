@@ -7,7 +7,11 @@
  * whichever is in force: the picker and the sliders on Settings → Interface edit exactly
  * what is on screen. Renders beneath the ambient layer in Workspace.svelte.
  */
-import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
+import {
+	BurstSettingWriter,
+	readSetting,
+	registerSettingsReload
+} from '$lib/services/syncedSetting';
 import { fileUrl } from '$lib/services/transport';
 import type { BackgroundConfig } from '$lib/types/background';
 import { DEFAULT_BACKGROUND, normalizeBackgroundConfig } from '$lib/types/background';
@@ -24,6 +28,9 @@ class BackgroundStore {
 	/** The app-wide background: what every chat without a scene of its own wears. */
 	private appConfig = $state<BackgroundConfig>({ ...DEFAULT_BACKGROUND });
 
+	/** Dim and blur are dragged, so the writes come in bursts. */
+	private writer = new BurstSettingWriter<BackgroundConfig>(SETTINGS_KEY);
+
 	config = $derived(chatSceneStore.active?.background ?? this.appConfig);
 
 	/** Resolved image URL, or null when no background is set. */
@@ -35,7 +42,10 @@ class BackgroundStore {
 	}
 
 	async syncReload(): Promise<void> {
-		this.appConfig = normalizeBackgroundConfig(await readSetting<unknown>(SETTINGS_KEY, null));
+		const next = normalizeBackgroundConfig(await readSetting<unknown>(SETTINGS_KEY, null));
+		// A write still owed is newer than anything the server can hand back.
+		if (this.writer.busy) return;
+		this.appConfig = next;
 	}
 
 	/** Land a whole background on whichever scene is in force. */
@@ -46,7 +56,7 @@ class BackgroundStore {
 			return;
 		}
 		this.appConfig = next;
-		writeSetting(SETTINGS_KEY, next);
+		this.writer.write(next);
 	}
 
 	setBackground(path: string | null): void {

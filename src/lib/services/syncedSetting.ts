@@ -39,11 +39,54 @@ export async function readSetting<T>(key: string, fallback: T): Promise<T> {
 }
 
 /** Persist a setting as JSON. This is the write that triggers the `settings` broadcast. */
-export function writeSetting(key: string, value: unknown): void {
-	void db.setSetting(key, JSON.stringify(value)).catch((error) => {
+export function writeSetting(key: string, value: unknown): Promise<void> {
+	return db.setSetting(key, JSON.stringify(value)).catch((error) => {
 		// The store already moved, so a silent failure means this device shows a value no
 		// other device (and not the next boot) will ever agree with. Say it out loud.
 		console.error(`[settings] write failed for "${key}":`, error);
 		toastStore.error(`Couldn't save "${key}". The change is on screen but not stored.`);
 	});
+}
+
+/**
+ * One settings key, written at most once per burst.
+ *
+ * Every write is an HTTP round trip AND a broadcast that every other device answers by
+ * re-reading every synced setting it holds, so a slider firing an input event per pointer
+ * move costs far more than the value it carries. Nothing waits on this: the store's own
+ * state is what the screen reads, so the drag stays live either way.
+ *
+ * For a knob whose every value is worth keeping, write straight through instead. This is
+ * for one where only where the finger stops matters.
+ */
+export class BurstSettingWriter<T> {
+	private pending: { value: T } | null = null;
+	private timer: ReturnType<typeof setTimeout> | null = null;
+
+	constructor(
+		private readonly key: string,
+		private readonly delayMs = 250
+	) {}
+
+	/** True while a write is still owed. A reload landing now would hand the reader back
+	 *  a value older than the one they are looking at. */
+	get busy(): boolean {
+		return this.pending !== null;
+	}
+
+	write(value: T): void {
+		this.pending = { value };
+		if (this.timer !== null) clearTimeout(this.timer);
+		this.timer = setTimeout(() => void this.flush(), this.delayMs);
+	}
+
+	private async flush(): Promise<void> {
+		this.timer = null;
+		const write = this.pending;
+		if (!write) return;
+		await writeSetting(this.key, write.value);
+		// Only drop what actually went out: a drag that carried on during the round trip
+		// left a newer value here, and clearing it would lose the end of the drag.
+		if (this.pending === write) this.pending = null;
+	}
 }
