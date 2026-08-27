@@ -1472,9 +1472,13 @@ class ServerDatabase {
 
 		const drop = new Set(doomed);
 		this.inTransaction(() => {
-			const rows = this.select<{ id: string; attachments_json: string | null }[]>(
-				'SELECT id, attachments_json FROM messages WHERE attachments_json IS NOT NULL'
+			const rows = this.select<{ id: string; chat_id: string; attachments_json: string | null }[]>(
+				'SELECT id, chat_id, attachments_json FROM messages WHERE attachments_json IS NOT NULL'
 			);
+			// One rev per CHAT, not per row: every row this sweep rewrites in a given chat
+			// changed at the same moment, and a delta only asks whether a row is newer than
+			// the rev the client already holds.
+			const revs = new Map<string, number>();
 			for (const row of rows) {
 				let parsed: unknown;
 				try {
@@ -1492,9 +1496,15 @@ class ServerDatabase {
 					return !(typeof att.path === 'string' && drop.has(att.path));
 				});
 				if (kept.length === parsed.length) continue;
+				let rev = revs.get(row.chat_id);
+				if (rev === undefined) {
+					rev = this.bumpMessagesRev(row.chat_id);
+					revs.set(row.chat_id, rev);
+				}
 				// NULL for an empty list, the shape a turn that never had one wears.
-				this.execute('UPDATE messages SET attachments_json = ? WHERE id = ?', [
+				this.execute('UPDATE messages SET attachments_json = ?, rev = ? WHERE id = ?', [
 					kept.length ? JSON.stringify(kept) : null,
+					rev,
 					row.id
 				]);
 			}
@@ -2197,7 +2207,13 @@ class ServerDatabase {
 		const before = this.imagePathsOfMessages([messageId]);
 
 		const json = Array.isArray(attachments) && attachments.length ? JSON.stringify(attachments) : null;
-		this.execute('UPDATE messages SET attachments_json = ? WHERE id = ?', [json, messageId]);
+		// Stamped like every other message write. Under delta refresh a row whose rev did not
+		// move is a row no device re-reads, so a generated picture would be hung on the turn
+		// here and never reach the open chat until something else happened to that chat.
+		this.inTransaction(() => {
+			const rev = this.revForMessageWrite(messageId);
+			this.execute('UPDATE messages SET attachments_json = ?, rev = ? WHERE id = ?', [json, rev, messageId]);
+		});
 
 		// AFTER the write, like every other caller: the sweep asks the rows themselves, so
 		// running it first would find this row still holding the file it is about to release.
