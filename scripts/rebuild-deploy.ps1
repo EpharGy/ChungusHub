@@ -53,7 +53,8 @@ $Topics = @(
     'fork/deploy-tooling',
     'feature/comfy-inject',
     'feature/docker',
-    'feature/echochamber'
+    'feature/echochamber',
+    'feature/per-chat-persona'
 )
 
 function Fail($message) {
