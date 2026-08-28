@@ -20,6 +20,7 @@ import type { Message } from '$lib/types/chat';
 
 let pingResult = true;
 let generateResult: 'ok' | 'throw' = 'ok';
+let generateDelayMs = 0;
 const pingCalls: string[] = [];
 const generateCalls: unknown[] = [];
 const warnings: string[] = [];
@@ -31,6 +32,9 @@ mock.module('$lib/services/imagegenService', () => ({
 	},
 	generateImage: async (req: unknown) => {
 		generateCalls.push(req);
+		// A picture takes a minute in life and nothing here by default. The delay is what
+		// lets a case put a second pass INSIDE a generation rather than only before one.
+		if (generateDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, generateDelayMs));
 		if (generateResult === 'throw') throw new Error('ComfyUI did not answer');
 		return { path: `images/chat/${generateCalls.length}.png`, promptId: 'p', filename: 'f.png' };
 	}
@@ -97,6 +101,7 @@ beforeEach(() => {
 	warnings.length = 0;
 	pingResult = true;
 	generateResult = 'ok';
+	generateDelayMs = 0;
 	imagegenStore.update({ enabled: true, autoGenerate: true, host: 'http://gpu-box:8188' });
 });
 
@@ -175,5 +180,45 @@ describe('the buttons on a marker', () => {
 		await imagegenStore.generateOne(id, 0);
 
 		expect(imagegenStore.hostOffline).toBe(false);
+	});
+});
+
+/**
+ * Re-entrancy: two overlapping passes over the same turn.
+ *
+ * This is not a hypothetical. `ensureForNewestReply` is called from a `$effect`, and the
+ * synchronous prefix of `ensureForMessage` reads `working`, `failures` and the row's
+ * attachments - so the effect re-runs the moment any of them moves, which is exactly what
+ * claiming a marker does. A pass that has not yet claimed anything is therefore the normal
+ * state to be interrupted in, and every interrupting pass sees the same markers unclaimed.
+ */
+describe('two passes over the same turn', () => {
+	test('overlapping passes generate each marker once, not once per pass', async () => {
+		// Not awaited: the effect fires again while the first pass is still between its
+		// marker list and its first claim, which is the whole window this guards.
+		const first = imagegenStore.ensureForMessage(id);
+		const second = imagegenStore.ensureForMessage(id);
+		await Promise.all([first, second]);
+
+		expect(generateCalls).toHaveLength(3);
+	});
+
+	test('a second pass does not re-ask whether the host is there', async () => {
+		await Promise.all([imagegenStore.ensureForMessage(id), imagegenStore.ensureForMessage(id)]);
+
+		expect(pingCalls).toHaveLength(1);
+	});
+
+	test('a pass arriving mid-picture does not start the markers ahead of it', async () => {
+		// The realistic shape, and the expensive one: claiming a marker moves `working`, which
+		// the asking effect reads, so the turn is re-asked while this pass is still on its
+		// first picture and has claimed nothing beyond it.
+		generateDelayMs = 5;
+		const first = imagegenStore.ensureForMessage(id);
+		await new Promise((resolve) => setTimeout(resolve, 1));
+		const second = imagegenStore.ensureForMessage(id);
+		await Promise.all([first, second]);
+
+		expect(generateCalls).toHaveLength(3);
 	});
 });
