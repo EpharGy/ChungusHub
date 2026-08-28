@@ -79,6 +79,30 @@ real user/assistant turns. That frames the history as a transcript the crowd is 
 while still letting the model see it as a conversation. Close the tag in the system message
 instead and models start continuing the story rather than reacting to it.
 
+**One deliberate departure from the extension: `<reacting_to>`.** A history window is a
+transcript with no present tense in it - nothing but position says which turn just landed -
+and the extension's final user message asked only for reactions "based on the chat history
+above". With several turns of background in front of the reply, models answer that by
+reaching for the top of the window, and the feed reads as a crowd reacting to something the
+reader finished with three turns ago. The block names the last turn as the moment being
+reacted to and demotes everything above it to background, and the `<task>` line points at the
+same turn.
+
+It sits in the **final user message**, beside `</chat_history>`, for the reason the failure
+exists: that is the last thing the model reads before it writes, and the one position a long
+history window cannot push the target away from. It **names** the turn rather than quoting it
+again - the reply is already in the window, and with `includeUserInput` off the window IS the
+reply, so quoting would send the same text twice for emphasis the wording already carries.
+The one-turn window gets different wording, because the multi-turn text demotes turns that in
+that case do not exist, and inviting a model to look for them is how it invents them.
+
+The window itself is `history.ts`, which is pure and tested: the last `contextDepth` turns,
+moved **forward** to begin on a user turn so the crowd sees a complete exchange rather than an
+answer to a question it was never shown. Forward, not back - the rule used to walk backwards
+for the user turn and then trim to `contextDepth` again, which lands on exactly the turn the
+walk started from, so it never once changed the window it was meant to fix. `contextDepth` is
+a ceiling the reader set against a cost paid on every reply, never a target to overshoot.
+
 Styles live in `styles.ts` as constants, not as files under `defaults/`, because the app
 already holds its editable prompts that way (`featurePrompts.svelte.ts`, `memory/prompts.ts`)
 and because a style is needed on the client, where reaching a file would mean a server route
@@ -212,6 +236,18 @@ than slicing the open path. In the ordinary case the two are the same list; for 
 reader has navigated away from the walk is the only one that answers at all. A row that is not
 in the open chat resolves to nothing.
 
+**A turn whose generation failed is not asked about again** (`failed`, message id against the
+text that failed). This is Sprites' guard, and EchoChamber was missing it, which made a
+failure both permanent and expensive: the widget's effect reads `generatingFor` and the turn's
+feed, so clearing `generatingFor` in the `finally` re-runs the effect that asked - and a turn
+that just failed has no feed and is no longer generating, so it qualified again immediately.
+One unreachable connection, or one reply the parser could read nothing out of, was an unbounded
+loop of model calls with a toast each. Keyed on the **content** rather than the id alone so the
+guard does not outlive what it guards: continuing or editing the reply is a new question and
+gets a new attempt. The regenerate button drops it outright - it exists to stop a broken engine
+re-asking on every render, never to stop the reader from asking - and a feed that lands clears
+it, so one successful regenerate brings the automatic path back with it.
+
 **Arriving at a chat re-asks about its newest reply**, which is what stops "resolves to nothing"
 being the end of the story. A reply is committed by the *server*, so it lands whether or not the
 page that asked for it is still on that chat - but the sidecar above runs once, from the
@@ -281,10 +317,12 @@ it, deliberately. If upstream ever extracts such a shell itself, adopt it then.
 | `src/lib/echochamber/parse.ts` | Model output into reactions, and cast-name snapping |
 | `src/lib/echochamber/custom-styles.ts` | Reader-authored styles: ids, validation, duplication |
 | `src/lib/echochamber/lorebook-context.ts` | The story turn own lorebook trace into world text |
-| `src/lib/echochamber/prompt.ts` | Prompt assembly and the style macros |
+| `src/lib/echochamber/history.ts` | Which turns of the story the crowd is shown |
+| `src/lib/echochamber/prompt.ts` | Prompt assembly, the style macros, and `<reacting_to>` |
 | `src/lib/echochamber/feed-state.ts` | Where a feed lives, and the pruning that bounds it |
 | `src/lib/echochamber/echochamber.test.ts` | `bun test` coverage of all of the above |
 | `src/lib/stores/echochamber.svelte.ts` | The engine: styles, generation, context, writes |
+| `src/lib/stores/echochamber-retry.test.ts` | What a failed feed costs: the guard against a retry loop |
 | `src/lib/components/echochamber/EchoChamberWidget.svelte` | The floating panel and its launcher |
 | `src/lib/components/echochamber/ReactionFeed.svelte` | The feed's rows |
 | `src/lib/components/settings/EchoChamberPage.svelte` | Settings → App → EchoChamber |

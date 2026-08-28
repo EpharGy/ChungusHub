@@ -44,6 +44,7 @@ import {
 	putFeed,
 	type EchoChamberChatState
 } from '$lib/echochamber/feed-state';
+import { historyWindow } from '$lib/echochamber/history';
 import { lorebookTextFromTrace } from '$lib/echochamber/lorebook-context';
 import { parseReactions } from '$lib/echochamber/parse';
 import { buildPrompt, castNamesForStyle, pastReactionsFor } from '$lib/echochamber/prompt';
@@ -79,6 +80,26 @@ class EchoChamberStore {
 	lastError = $state<string | null>(null);
 
 	private controller: AbortController | null = null;
+
+	/**
+	 * Turns whose generation failed, against the exact text that failed: message id -> content.
+	 *
+	 * Sprites carries this and EchoChamber did not, which made a failure permanent AND
+	 * expensive. `ensureForNewestReply` is called from a `$effect` whose synchronous prefix
+	 * reads `generatingFor` and the turn's feed, so clearing `generatingFor` in the `finally`
+	 * re-runs that effect - and a turn that failed has no feed and is no longer generating, so
+	 * it qualified again immediately. One unreachable connection or one unparseable reply was
+	 * an unbounded loop of model calls, each with its own toast.
+	 *
+	 * Keyed on the CONTENT and not just the id, which is Sprites' rule and the reason this
+	 * guard does not outlive what it is guarding: continuing or editing the reply produces
+	 * different text, which is a new question and deserves a new attempt. Same text, no retry
+	 * until the reader presses regenerate or the app starts again.
+	 *
+	 * A plain Map, not a `SvelteMap`: nothing on screen reports it (`lastError` does), and
+	 * making it reactive would wake that effect again to be told the same thing.
+	 */
+	private failed = new Map<string, string>();
 
 	/** Reader-authored styles, loaded from their own setting. */
 	customStyles = $state<ChatStyle[]>([]);
@@ -223,11 +244,21 @@ class EchoChamberStore {
 		if (!this.settings.enabled || !this.settings.autoGenerate) return;
 		if (this.feedFor(messageId)) return;
 		if (this.generatingFor === messageId) return;
+		// Same turn, same text, already failed. The effect that asks re-runs the moment the
+		// failure clears `generatingFor`, so without this the answer to a broken connection is
+		// another call to it, forever.
+		if (this.failed.get(messageId) === this.contentOf(messageId)) return;
 		await this.generateFor(messageId).catch(() => undefined);
 	}
 
-	/** Regenerate on demand, from the panel's button. Replaces whatever is filed. */
+	/**
+	 * Regenerate on demand, from the panel's button. Replaces whatever is filed.
+	 *
+	 * Drops the failure guard for this turn first. The guard exists to stop a broken engine
+	 * re-asking on every render, never to stop the reader from asking.
+	 */
 	async regenerate(messageId: string): Promise<void> {
+		this.failed.delete(messageId);
 		await this.generateFor(messageId);
 	}
 
@@ -273,6 +304,7 @@ class EchoChamberStore {
 				// A style that produced nothing readable is worth saying out loud: the call was
 				// paid for, and an empty panel otherwise looks like the engine never ran.
 				this.lastError = 'The model returned nothing this style could read.';
+				this.failed.set(messageId, this.contentOf(messageId) ?? '');
 				return;
 			}
 
@@ -281,10 +313,14 @@ class EchoChamberStore {
 				reactions,
 				createdAt: Date.now()
 			});
+			// A feed came back, so whatever the last attempt concluded no longer holds. This is
+			// how one successful regenerate brings the automatic path back with it.
+			this.failed.delete(messageId);
 		} catch (error) {
 			if (controller.signal.aborted) return;
 			const message = error instanceof Error ? error.message : String(error);
 			this.lastError = message;
+			this.failed.set(messageId, this.contentOf(messageId) ?? '');
 			toastStore.error(`EchoChamber: ${message}`);
 		} finally {
 			if (this.controller === controller) {
@@ -342,6 +378,15 @@ class EchoChamberStore {
 		return expanded === style.prompt ? style : { ...style, prompt: expanded };
 	}
 
+	/** The turn's text as the chat store currently holds it, which is what the failure guard
+	 *  keys on. Null when the row is not in the open chat, which reads as "not the text that
+	 *  failed" and so allows an attempt rather than blocking one. */
+	private contentOf(messageId: string): string | null {
+		const state = chatStore.currentChatState;
+		if (!state) return null;
+		return state.allMessages.find((m) => m.id === messageId)?.content ?? null;
+	}
+
 	/** Everything the prompt builder needs, resolved from the stores that hold it. */
 	private buildContext(messageId: string): StoryContext | null {
 		const state = chatStore.currentChatState;
@@ -392,29 +437,14 @@ class EchoChamberStore {
 		};
 	}
 
-	/**
-	 * The turns to react to.
-	 *
-	 * With `includeUserInput` off this is the reply alone, which is the cheap default: one
-	 * turn in, a feed out. With it on, the window walks back to start on a user turn where
-	 * it can, so the crowd sees a complete exchange rather than an answer to a question it
-	 * was never shown.
-	 */
+	/** The turns to react to, oldest first, ending on the turn being reacted to. The cut
+	 *  itself is `echochamber/history.ts`, which is pure and tested; this half is the part
+	 *  that needs the settings and the story tree. */
 	private historyFor(upToTarget: Message[]): (Message & { role: 'user' | 'assistant' })[] {
-		const visible = upToTarget.filter(isStoryTurn);
-		if (visible.length === 0) return [];
-		if (!this.settings.includeUserInput) return visible.slice(-1);
-
-		const depth = this.settings.contextDepth;
-		let start = Math.max(0, visible.length - depth);
-		for (let i = start; i >= 0; i--) {
-			if (visible[i].role === 'user') {
-				start = i;
-				break;
-			}
-		}
-		const window = visible.slice(start);
-		return window.length > depth ? window.slice(-depth) : window;
+		return historyWindow(upToTarget.filter(isStoryTurn), {
+			includeUserInput: this.settings.includeUserInput,
+			contextDepth: this.settings.contextDepth
+		});
 	}
 }
 
