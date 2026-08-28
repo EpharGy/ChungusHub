@@ -71,6 +71,25 @@ class ImagegenStore {
 	 *  failure lives: it is deliberately NOT written to the row, because a picture that
 	 *  failed is a marker with no picture, which is a state the text already describes. */
 	private failures = new SvelteMap<string, string>();
+	/**
+	 * Turns with a pass already running, claimed **synchronously** before that pass awaits
+	 * anything. This is the Sprites engine's `inFlight` rule, which this store was shaped
+	 * after and did not carry over: there the turn is claimed on the line before
+	 * `void this.read(...)`, so a second ask is refused; here the only claim was `working`,
+	 * set per marker inside {@link generate}, which is several awaits later.
+	 *
+	 * That gap is not a rare race, it is the ordinary case. `ensureForNewestReply` is called
+	 * from a `$effect`, and the synchronous prefix of {@link ensureForMessage} reads
+	 * `working`, `failures` and the row's attachments - so claiming a marker re-runs the very
+	 * effect that asked, and the pass it starts finds every marker this one has not reached
+	 * yet still unclaimed. Each pass then re-asks ComfyUI for the same prompt and the same
+	 * seed, which it answers from its cache in milliseconds with a history entry carrying no
+	 * output, so the picture never arrives and the poll runs to the timeout.
+	 *
+	 * A plain Set, not a `SvelteSet`: nothing on screen reports it, and making it reactive
+	 * would wake that effect once more per turn to be told the same thing.
+	 */
+	private passes = new Set<string>();
 	/** What the last reachability check found. Only the automatic path consults it; a reader
 	 *  who clicks Generate is asking for an attempt whatever this says. */
 	private offline = $state(false);
@@ -188,6 +207,9 @@ class ImagegenStore {
 	async ensureForMessage(messageId: string, opts: { manual?: boolean } = {}): Promise<void> {
 		if (!this.active) return;
 		if (!opts.manual && !this.settings.autoGenerate) return;
+		// Before anything is read, because everything read below is a reason to be asked
+		// again: a pass already covering this turn is the whole answer for a second one.
+		if (this.passes.has(messageId)) return;
 
 		const message = this.messageById(messageId);
 		if (!message || message.role !== 'assistant') return;
@@ -205,20 +227,31 @@ class ImagegenStore {
 		);
 		if (!pending.length) return;
 
-		if (!opts.manual && !(await this.hostAnswers())) return;
+		// The claim, on the last line that is still synchronous. Everything from here is
+		// awaited, and every await is a window another pass would walk through.
+		this.passes.add(messageId);
+		try {
+			if (!opts.manual && !(await this.hostAnswers())) return;
 
-		for (const marker of pending) {
-			// Re-read the row per marker rather than trusting the list this started with: a
-			// picture takes a minute, which is long enough for the turn to have been edited or
-			// deleted, or for another tab to have filed this very marker.
-			const current = this.messageById(messageId);
-			if (!current) return;
-			if (generatedFor(current, marker.index)) continue;
+			for (const marker of pending) {
+				// Re-read the row per marker rather than trusting the list this started with: a
+				// picture takes a minute, which is long enough for the turn to have been edited or
+				// deleted, or for another tab to have filed this very marker.
+				const current = this.messageById(messageId);
+				if (!current) return;
+				if (generatedFor(current, marker.index)) continue;
+				// And the same question of `working`, which the list above asked a minute ago.
+				// The pass claim keeps other passes out; this is what keeps the Generate button
+				// on a marker from being duplicated by the pass that is walking towards it.
+				if (this.working.has(slotKey(messageId, marker.index))) continue;
 
-			// The first failure ends the turn. Whatever stopped that picture - a host that went
-			// away between the check and the call, a checkpoint that will not load - stops the
-			// next one the same way, and the reader has already been told once.
-			if (!(await this.generate(messageId, marker.index, marker.result))) return;
+				// The first failure ends the turn. Whatever stopped that picture - a host that went
+				// away between the check and the call, a checkpoint that will not load - stops the
+				// next one the same way, and the reader has already been told once.
+				if (!(await this.generate(messageId, marker.index, marker.result))) return;
+			}
+		} finally {
+			this.passes.delete(messageId);
 		}
 	}
 
