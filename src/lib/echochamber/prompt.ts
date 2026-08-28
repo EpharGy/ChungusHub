@@ -10,6 +10,11 @@
  * see it as a conversation. Closing the tag in the system message instead leaves the turns
  * outside it, and models start continuing the story rather than reacting to it.
  *
+ * **One deliberate departure from the extension: `<reacting_to>`.** The extension always sent
+ * a window and trusted the model to react to the end of it. It does not reliably do that -
+ * with several turns of history in front of it the feed drifts to the oldest turn in the
+ * window, because nothing in the prompt says which turn is "now". See {@link reactingTo}.
+ *
  * Pure: no DOM, no `$lib`, no Svelte. `echochamber.test.ts` covers it directly.
  */
 
@@ -98,6 +103,45 @@ function countInstruction(style: ChatStyle, count: number): string {
 	return `IMPORTANT: You MUST generate EXACTLY ${count} chat messages. Not fewer, not more - exactly ${count}.\n\n`;
 }
 
+/**
+ * The pointer at the turn the crowd is actually reacting to.
+ *
+ * Without it the final user message says only "based on the chat history above", and a
+ * history window is a transcript with no "now" in it: nothing in the prompt distinguishes
+ * the reply that just landed from the four turns of background sitting in front of it. Models
+ * answer that by reaching for the top of the window, which reads as a crowd reacting to
+ * something the reader finished with several turns ago.
+ *
+ * It sits in the final user message rather than the system message deliberately. That is the
+ * last thing the model reads before it writes, and it is the one position in the prompt that
+ * a long history window cannot push the target away from - which is the whole failure being
+ * fixed.
+ *
+ * Naming the turn rather than quoting it again is the point: the reply is already in the
+ * window, and with `includeUserInput` off the window IS the reply, so quoting would send the
+ * same text twice for emphasis the wording already carries.
+ */
+function reactingTo(context: StoryContext): string {
+	// One turn in the window is the `includeUserInput` off case: there is no older material to
+	// be distracted by, so the block only has to say what the turn is.
+	if (context.history.length <= 1) {
+		return `<reacting_to>
+The message inside <chat_history> is what has JUST happened. Your reactions are to that message and to nothing else.
+</reacting_to>
+
+`;
+	}
+	return `<reacting_to>
+The LAST message inside <chat_history> is what has JUST happened. It is the moment your audience is reacting to, and it is the only new thing in this prompt.
+
+Every turn before it has already been seen. Those turns are here so you know the characters, the running jokes and what led up to this moment - and for nothing else. Do NOT react to them as though they were news, and do NOT open your feed on them.
+
+Weight everything to that final message. A reaction that could have been written before it existed is the wrong reaction.
+</reacting_to>
+
+`;
+}
+
 export interface BuiltPrompt {
 	messages: PromptMessage[];
 	/** What was asked for, so the parser's cap and the request agree. */
@@ -150,12 +194,12 @@ You are an excellent creator of fake chat feeds that react dynamically to the us
 
 	const instructions = `</chat_history>
 
-<instructions>
+${reactingTo(context)}<instructions>
 ${countInstruction(style, count)}${stylePrompt}
 </instructions>
 
 <task>
-Based on the chat history above, generate fake chat feed reactions. Remember to think about them step-by-step first.
+Based on the chat history above, generate fake chat feed reactions to its FINAL message - the one <reacting_to> names. Remember to think about them step-by-step first.
 STRICTLY follow the format defined in the instruction. Output exactly ${count} messages. Do NOT continue the story or roleplay as the characters. The people you create are allowed to interact with each other over your generated feed. Do NOT output preamble like "Here are the messages". Just output the content directly.
 </task>`;
 
