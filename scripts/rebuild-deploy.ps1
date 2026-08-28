@@ -54,7 +54,8 @@ $Topics = @(
     'feature/comfy-inject',
     'feature/docker',
     'feature/echochamber',
-    'feature/per-chat-persona'
+    'feature/per-chat-persona',
+    'feature/memory-defaults'
 )
 
 function Fail($message) {
