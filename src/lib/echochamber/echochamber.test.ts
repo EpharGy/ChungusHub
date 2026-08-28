@@ -32,6 +32,7 @@ import {
 	pruneFeeds,
 	putFeed
 } from './feed-state';
+import { historyWindow } from './history';
 import { lorebookTextFromTrace } from './lorebook-context';
 import { parseReactions, snapToCast } from './parse';
 import { buildPrompt, castNamesForStyle, pastReactionsFor, resolveStyleMacros } from './prompt';
@@ -719,5 +720,100 @@ describe('the round trip', () => {
 		});
 
 		expect(out).toHaveLength(3);
+	});
+});
+
+/**
+ * The pointer at "now".
+ *
+ * A history window is a transcript with no present tense in it: nothing but position tells
+ * the model which turn just landed, and with several turns of background in front of it the
+ * feed drifts to the oldest one. These pin that the pointer exists, that it is in the LAST
+ * message (the one position a long window cannot push the target away from), and that it
+ * says something different when the window is only the reply itself.
+ */
+describe('naming the turn being reacted to', () => {
+	const settings = { ...DEFAULT_ECHOCHAMBER_SETTINGS, reactionCount: 6 };
+
+	test('the last message names the final turn as the moment being reacted to', () => {
+		const history: StoryContext['history'] = [
+			{ role: 'user', content: 'I open the door.' },
+			{ role: 'assistant', content: 'It creaks.' },
+			{ role: 'user', content: 'I step through.' },
+			{ role: 'assistant', content: 'The hall is dark.' }
+		];
+		const { messages } = buildPrompt(CROWD, settings, context({ history }));
+		const last = messages[messages.length - 1].content;
+
+		expect(last).toContain('<reacting_to>');
+		expect(last).toContain('LAST message');
+		expect(last).toContain('FINAL message');
+	});
+
+	test('the pointer sits after the history, not in the system turn', () => {
+		const { messages } = buildPrompt(CROWD, settings, context());
+		expect(messages[0].content).not.toContain('<reacting_to>');
+		expect(messages[messages.length - 1].content).toContain('<reacting_to>');
+	});
+
+	test('a single-turn window says so instead of demoting turns that are not there', () => {
+		const history: StoryContext['history'] = [{ role: 'assistant', content: 'The hall is dark.' }];
+		const { messages } = buildPrompt(CROWD, settings, context({ history }));
+		const last = messages[messages.length - 1].content;
+
+		expect(last).toContain('<reacting_to>');
+		// The multi-turn wording demotes everything above the target. With one turn in the
+		// window there is nothing above it, and saying otherwise invites the model to invent it.
+		expect(last).not.toContain('Every turn before it');
+	});
+});
+
+/**
+ * The window the crowd is shown.
+ *
+ * The rule worth guarding is the direction of the walk. Walking backwards for a user turn and
+ * then trimming to `contextDepth` again returns the window the walk started from, so the old
+ * rule was a no-op that read as though it worked.
+ */
+describe('historyWindow', () => {
+	const turns = (roles: string): { role: 'user' | 'assistant'; n: number }[] =>
+		[...roles].map((c, n) => ({ role: c === 'u' ? 'user' : 'assistant', n }));
+
+	test('with user input off, the crowd sees the reacted-to turn alone', () => {
+		const out = historyWindow(turns('uaua'), { includeUserInput: false, contextDepth: 4 });
+		expect(out).toEqual([{ role: 'assistant', n: 3 }]);
+	});
+
+	test('a window that already begins on a user turn is left alone', () => {
+		const out = historyWindow(turns('uauaua'), { includeUserInput: true, contextDepth: 4 });
+		expect(out.map((t) => t.n)).toEqual([2, 3, 4, 5]);
+	});
+
+	test('a window beginning mid-answer moves forward to the question', () => {
+		// depth 3 over u a u a lands on the assistant at index 1, whose user turn is outside
+		// the window: an answer to a question the crowd was never shown.
+		const out = historyWindow(turns('uaua'), { includeUserInput: true, contextDepth: 3 });
+		expect(out.map((t) => t.n)).toEqual([2, 3]);
+	});
+
+	test('contextDepth is a ceiling, never overshot to reach a question', () => {
+		const out = historyWindow(turns('uauaua'), { includeUserInput: true, contextDepth: 3 });
+		expect(out.length).toBeLessThanOrEqual(3);
+	});
+
+	test('a run with no user turn in the window keeps the last contextDepth turns', () => {
+		const out = historyWindow(turns('aaaaa'), { includeUserInput: true, contextDepth: 3 });
+		expect(out.map((t) => t.n)).toEqual([2, 3, 4]);
+	});
+
+	test('the window always ends on the turn being reacted to', () => {
+		for (const depth of [2, 3, 4, 5]) {
+			const out = historyWindow(turns('uauaua'), { includeUserInput: true, contextDepth: depth });
+			expect(out[out.length - 1].n).toBe(5);
+		}
+	});
+
+	test('an empty path asks for nothing', () => {
+		expect(historyWindow([], { includeUserInput: true, contextDepth: 4 })).toEqual([]);
 	});
 });
