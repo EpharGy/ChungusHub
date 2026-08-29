@@ -23,6 +23,12 @@ services:
       # reach the UI on first run without hand-editing allowlist.json. Never
       # written to file. Empty is legal: allowlist.json then governs alone.
       CHUNGUS_ALLOWLIST: "${CHUNGUS_ALLOWLIST:-}"
+      # Nothing here has a browser, and the image has no xdg-open to try with.
+      # A from-source launch that is not under `--watch` opens a tab now, not just
+      # a portable build (server/index.ts), and this container is exactly that: the
+      # spawn fails into a caught error and a line telling a headless NAS to visit
+      # localhost. The variable outranks the settings file, which is not in the image.
+      CHUNGUS_NO_OPEN: "1"
     volumes:
       - ./data:/data
       # The fast path: what changes often is mounted from this folder rather than
