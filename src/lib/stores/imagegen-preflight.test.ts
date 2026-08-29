@@ -12,11 +12,65 @@
  * does. Only `$state` is shimmed: growing a `$derived` or an `$effect` in this store fails
  * this file loudly rather than testing stale values.
  */
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test';
 
 import type { Message } from '$lib/types/chat';
 
-(globalThis as unknown as { $state: <T>(v?: T) => T | undefined }).$state = (v) => v;
+const runeIdentity = <T>(value?: T): T | undefined => value;
+// `.raw` alongside the call itself: the real modules captured below reach for it, and it is the
+// same identity shim either way.
+(globalThis as unknown as { $state: unknown }).$state = Object.assign(runeIdentity, {
+	raw: runeIdentity
+});
+
+/**
+ * Bun's module registry is process-wide and one run loads every test file into it, so a stub left
+ * standing here is served to every file that loads after this one, in whatever order the platform
+ * walks the tree. Each stub below is therefore a SPREAD of the real module, so no export an
+ * importer expects can go missing, and every one is put back in `afterAll` (architecture/testing.md;
+ * contracts.test.ts fails this file if one is left standing).
+ *
+ * `$derived` is shimmed for the captures only and put back to whatever it was before, so growing a
+ * `$derived` in the store under test still fails this file loudly, and no other file's shim is
+ * disturbed by ours.
+ */
+const priorDerived = (globalThis as unknown as { $derived?: unknown }).$derived;
+(globalThis as unknown as { $derived: unknown }).$derived = Object.assign(runeIdentity, {
+	by: <T>(fn: () => T): T => fn()
+});
+
+const realImagegenService = { ...(await import('$lib/services/imagegenService')) };
+const realSyncedSetting = { ...(await import('$lib/services/syncedSetting')) };
+const realToast = { ...(await import('$lib/stores/toast.svelte')) };
+const realDatabase = { ...(await import('$lib/services/database')) };
+const realTransport = { ...(await import('$lib/services/transport')) };
+const realMemory = { ...(await import('$lib/memory/store.svelte')) };
+let realChat: Record<string, unknown> = {};
+
+// Registered before the first stub goes in, so a throw anywhere in the setup below
+// cannot leave one standing.
+afterAll(() => {
+	mock.module('$lib/services/imagegenService', () => realImagegenService);
+	mock.module('$lib/services/syncedSetting', () => realSyncedSetting);
+	mock.module('$lib/stores/toast.svelte', () => realToast);
+	mock.module('$lib/services/database', () => realDatabase);
+	mock.module('$lib/services/transport', () => realTransport);
+	mock.module('$lib/memory/store.svelte', () => realMemory);
+	mock.module('$lib/stores/chat.svelte', () => realChat);
+});
+
+/**
+ * `chat.svelte` cannot be imported while its own import cycle is still live: chatPersona.svelte.ts
+ * builds its store at module scope, and under the shims above its `$derived` class fields evaluate
+ * eagerly and reach `chatStore` before chat.svelte has finished initialising. Stubbing these three
+ * with spreads of themselves materialises that path and changes no behaviour - the same three, for
+ * the same reason, that transcript-refresh.test.ts stubs. The real module is what gets restored.
+ */
+mock.module('$lib/services/database', () => ({ ...realDatabase }));
+mock.module('$lib/services/transport', () => ({ ...realTransport }));
+mock.module('$lib/memory/store.svelte', () => ({ ...realMemory }));
+realChat = { ...(await import('$lib/stores/chat.svelte')) };
+(globalThis as unknown as { $derived?: unknown }).$derived = priorDerived;
 
 let pingResult = true;
 let generateResult: 'ok' | 'throw' = 'ok';
@@ -26,6 +80,7 @@ const generateCalls: unknown[] = [];
 const warnings: string[] = [];
 
 mock.module('$lib/services/imagegenService', () => ({
+	...realImagegenService,
 	pingComfy: async (host: string) => {
 		pingCalls.push(host);
 		return pingResult;
@@ -41,12 +96,14 @@ mock.module('$lib/services/imagegenService', () => ({
 }));
 
 mock.module('$lib/services/syncedSetting', () => ({
+	...realSyncedSetting,
 	readSetting: async () => null,
 	writeSetting: () => undefined,
 	registerSettingsReload: () => undefined
 }));
 
 mock.module('$lib/stores/toast.svelte', () => ({
+	...realToast,
 	toastStore: {
 		warning: (m: string) => warnings.push(m),
 		failed: () => undefined,
@@ -59,6 +116,7 @@ mock.module('$lib/stores/toast.svelte', () => ({
 let message: Message;
 
 mock.module('$lib/stores/chat.svelte', () => ({
+	...realChat,
 	chatStore: {
 		get currentChatState() {
 			return { chat: { id: 'c1' }, allMessages: [message], activePath: [message] };
@@ -68,6 +126,7 @@ mock.module('$lib/stores/chat.svelte', () => ({
 }));
 
 mock.module('$lib/services/database', () => ({
+	...realDatabase,
 	db: {
 		updateMessageAttachments: async () => undefined
 	}
