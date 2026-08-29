@@ -12,17 +12,83 @@
  * does. Only `$state` is shimmed: growing a `$derived` or an `$effect` in this store fails
  * this file loudly rather than testing stale values.
  */
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test';
 
 import type { Message } from '$lib/types/chat';
 
-(globalThis as unknown as { $state: <T>(v?: T) => T | undefined }).$state = (v) => v;
+const runeIdentity = <T>(value?: T): T | undefined => value;
+// `.raw` alongside the call itself: the real modules captured below reach for it, and it is the
+// same identity shim either way.
+(globalThis as unknown as { $state: unknown }).$state = Object.assign(runeIdentity, {
+	raw: runeIdentity
+});
+
+/**
+ * Bun's module registry is process-wide and one run loads every test file into it, so a stub left
+ * standing here is served to every file that loads after this one, in whatever order the platform
+ * walks the tree. Each stub below is therefore a SPREAD of the real module, so no export an
+ * importer expects can go missing, and every one is put back in `afterAll` (architecture/testing.md;
+ * contracts.test.ts fails this file if one is left standing).
+ *
+ * `$derived` is shimmed for the captures only and put back to whatever it was before, so growing a
+ * `$derived` in the store under test still fails this file loudly, and no other file's shim is
+ * disturbed by ours.
+ */
+const priorDerived = (globalThis as unknown as { $derived?: unknown }).$derived;
+(globalThis as unknown as { $derived: unknown }).$derived = Object.assign(runeIdentity, {
+	by: <T>(fn: () => T): T => fn()
+});
+
+const realProvider = { ...(await import('$lib/services/llm/provider')) };
+const realCharacterLibrary = { ...(await import('$lib/stores/characterLibrary.svelte')) };
+const realPersona = { ...(await import('$lib/stores/persona.svelte')) };
+const realLorebook = { ...(await import('$lib/lorebook/store.svelte')) };
+const realSyncedSetting = { ...(await import('$lib/services/syncedSetting')) };
+const realToast = { ...(await import('$lib/stores/toast.svelte')) };
+const realEchoChamberSettings = { ...(await import('$lib/echochamber/settings.svelte')) };
+const realDatabase = { ...(await import('$lib/services/database')) };
+const realTransport = { ...(await import('$lib/services/transport')) };
+const realMemory = { ...(await import('$lib/memory/store.svelte')) };
+let realChat: Record<string, unknown> = {};
+let realLiveMacroContext: Record<string, unknown> = {};
+
+// Registered before the first stub goes in, so a throw anywhere in the setup below
+// cannot leave one standing.
+afterAll(() => {
+	mock.module('$lib/services/llm/provider', () => realProvider);
+	mock.module('$lib/stores/characterLibrary.svelte', () => realCharacterLibrary);
+	mock.module('$lib/stores/persona.svelte', () => realPersona);
+	mock.module('$lib/lorebook/store.svelte', () => realLorebook);
+	mock.module('$lib/services/syncedSetting', () => realSyncedSetting);
+	mock.module('$lib/stores/toast.svelte', () => realToast);
+	mock.module('$lib/echochamber/settings.svelte', () => realEchoChamberSettings);
+	mock.module('$lib/services/database', () => realDatabase);
+	mock.module('$lib/services/transport', () => realTransport);
+	mock.module('$lib/memory/store.svelte', () => realMemory);
+	mock.module('$lib/stores/chat.svelte', () => realChat);
+	mock.module('$lib/utils/live-macro-context', () => realLiveMacroContext);
+});
+
+/**
+ * `chat.svelte` cannot be imported while its own import cycle is still live: chatPersona.svelte.ts
+ * builds its store at module scope, and under the shims above its `$derived` class fields evaluate
+ * eagerly and reach `chatStore` before chat.svelte has finished initialising. Stubbing these three
+ * with spreads of themselves materialises that path and changes no behaviour - the same three, for
+ * the same reason, that transcript-refresh.test.ts stubs. The real module is what gets restored.
+ */
+mock.module('$lib/services/database', () => ({ ...realDatabase }));
+mock.module('$lib/services/transport', () => ({ ...realTransport }));
+mock.module('$lib/memory/store.svelte', () => ({ ...realMemory }));
+realChat = { ...(await import('$lib/stores/chat.svelte')) };
+realLiveMacroContext = { ...(await import('$lib/utils/live-macro-context')) };
+(globalThis as unknown as { $derived?: unknown }).$derived = priorDerived;
 
 let completeResult: 'ok' | 'throw' | 'unreadable' = 'ok';
 const completeCalls: unknown[] = [];
 const errors: string[] = [];
 
 mock.module('$lib/services/llm/provider', () => ({
+	...realProvider,
 	llmService: {
 		complete: async (_engine: unknown, req: unknown) => {
 			completeCalls.push(req);
@@ -38,6 +104,7 @@ let feedState: { feeds: Record<string, unknown> } = { feeds: {} };
 let messages: Message[] = [];
 
 mock.module('$lib/stores/chat.svelte', () => ({
+	...realChat,
 	chatStore: {
 		get currentChatState() {
 			return { chat: { id: 'c1', characterId: null }, allMessages: messages, activePath: messages };
@@ -49,21 +116,23 @@ mock.module('$lib/stores/chat.svelte', () => ({
 	}
 }));
 
-mock.module('$lib/stores/characterLibrary.svelte', () => ({ characterLibraryStore: { entries: [] } }));
-mock.module('$lib/stores/persona.svelte', () => ({ personaStore: { activeEntry: null } }));
-mock.module('$lib/lorebook/store.svelte', () => ({ lorebookStore: { books: [] } }));
-mock.module('$lib/memory/store.svelte', () => ({ memoryStore: { recall: '' } }));
+mock.module('$lib/stores/characterLibrary.svelte', () => ({ ...realCharacterLibrary, characterLibraryStore: { entries: [] } }));
+mock.module('$lib/stores/persona.svelte', () => ({ ...realPersona, personaStore: { activeEntry: null } }));
+mock.module('$lib/lorebook/store.svelte', () => ({ ...realLorebook, lorebookStore: { books: [] } }));
+mock.module('$lib/memory/store.svelte', () => ({ ...realMemory, memoryStore: { recall: '' } }));
 // `$lib/macros` is deliberately NOT mocked. A module mock is process-wide and outlives the
 // file that declares it, and the real `expandMacros` is what prompt-assembly.test.ts asserts
 // against - stubbing it here turned that file red from across the suite. Only the live
 // context, which would otherwise reach half the app's stores, is replaced.
-mock.module('$lib/utils/live-macro-context', () => ({ buildLiveMacroContext: () => ({}) }));
+mock.module('$lib/utils/live-macro-context', () => ({ ...realLiveMacroContext, buildLiveMacroContext: () => ({}) }));
 mock.module('$lib/services/syncedSetting', () => ({
+	...realSyncedSetting,
 	readSetting: async () => null,
 	writeSetting: () => undefined,
 	registerSettingsReload: () => undefined
 }));
 mock.module('$lib/stores/toast.svelte', () => ({
+	...realToast,
 	toastStore: {
 		error: (m: string) => errors.push(m),
 		warning: () => undefined,
@@ -89,6 +158,7 @@ const settings = {
 };
 
 mock.module('$lib/echochamber/settings.svelte', () => ({
+	...realEchoChamberSettings,
 	echoChamberSettings: {
 		current: settings,
 		initialize: async () => undefined,
