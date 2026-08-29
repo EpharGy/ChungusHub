@@ -18,7 +18,7 @@ is the one thing that will not work.
 |---|---|---|
 | EchoChamber | `feature/echochamber` | A floating audience that reacts to each turn as it lands. Its own engine, settings page and authorable styles; feeds ride the chat row, so deleting a chat reaps them. See `architecture/echochamber.md`. |
 | Image generation | `feature/comfy-inject` | `[[IMG: ...]]` markers in a reply become pictures, drawn by a ComfyUI server the backend dials directly. Settings page for host, workflow, sampler and framing. See `architecture/imagegen.md`. |
-| Per-chat persona | `feature/per-chat-persona` | A chat, or a character card, can play as its own persona instead of the one app-wide "you". Resolves global then character then chat; a Settings page states what is in force and which layer owns it. See `architecture/library.md`. |
+| Per-chat overrides | `feature/per-chat-persona` | A chat, or a character card, can carry its own persona, connection and prompt preset instead of the app-wide ones. Resolves global then character then chat by one pure rule that the generation path runs too, so the token meter and the prompt on the wire cannot disagree; a Settings page states what is in force and which layer owns each. See `architecture/library.md`. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 
 ## Running it
