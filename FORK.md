@@ -20,6 +20,7 @@ is the one thing that will not work.
 | Image generation | `feature/comfy-inject` | `[[IMG: ...]]` markers in a reply become pictures, drawn by a ComfyUI server the backend dials directly. Settings page for host, workflow, sampler and framing. See `architecture/imagegen.md`. |
 | Per-chat overrides | `feature/per-chat-persona` | A chat, or a character card, can carry its own persona, connection and prompt preset instead of the app-wide ones. Resolves global then character then chat by one pure rule that the generation path runs too, so the token meter and the prompt on the wire cannot disagree; a Settings page states what is in force and which layer owns each. See `architecture/library.md`. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
+| Memory defaults | `feature/memory-defaults` | App-wide starting values for Chat Memory's five tunables, on Settings → Engines → Chat Memory. Copied into a chat when memory is switched on for it and never read again, so the layer caps cannot move under a story already summarised against them. See `architecture/memory.md`. |
 
 ## Running it
 
