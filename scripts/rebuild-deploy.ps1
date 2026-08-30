@@ -53,10 +53,20 @@ $Topics = @(
     'fork/deploy-tooling',
     'feature/comfy-inject',
     'feature/docker',
-    'feature/echochamber',
-    'feature/per-chat-persona',
+    # 'feature/echochamber' - HELD OUT of the rebuild while a suspected bug is checked. The
+    # branch is alive and rebased onto main like every other topic; put this line back to
+    # ship it again. It is not retired and nothing about it has been superseded.
     'feature/memory-defaults'
 )
+
+# `feature/per-chat-persona` was here until upstream built the same job itself (main's
+# ChatSetupChip, utils/chat-setup.ts and the library's New Chat Defaults card, which cover
+# persona, connection and preset as ours did plus the version pin). Ours was offered as
+# PR #39 and CLOSED unmerged, so this is supersession by reimplementation rather than by
+# adoption: the two store the SAME feature_state keys in different shapes, ours an object
+# ({ follows, id }) and upstream's a plain id string, so neither reads the other's data.
+# The branch is deliberately kept, un-rebased, until upstream's version has been tested,
+# because it is the only description of what the old blobs meant.
 
 function Fail($message) {
     Write-Host "[rebuild-deploy] $message" -ForegroundColor Red
