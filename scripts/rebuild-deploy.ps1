@@ -53,9 +53,7 @@ $Topics = @(
     'fork/deploy-tooling',
     'feature/comfy-inject',
     'feature/docker',
-    # 'feature/echochamber' - HELD OUT of the rebuild while a suspected bug is checked. The
-    # branch is alive and rebased onto main like every other topic; put this line back to
-    # ship it again. It is not retired and nothing about it has been superseded.
+    'feature/echochamber',
     'feature/memory-defaults'
 )
 
