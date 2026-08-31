@@ -18,7 +18,7 @@
 
 import { chatStore } from '$lib/stores/chat.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
-import { personaStore } from '$lib/stores/persona.svelte';
+import { chatPersonaEntry } from '$lib/utils/chat-setup';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { memoryStore } from '$lib/memory/store.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -403,14 +403,27 @@ class EchoChamberStore {
 		const history = this.historyFor(ancestry);
 		if (history.length === 0) return null;
 
-		const persona = personaStore.activeEntry;
+		// The persona THIS CHAT plays as, not whatever is in the app-wide slot. Everything
+		// that asks "who is the user in this story" resolves through chat-setup, and the
+		// crowd is reacting to a reply the story prompt already built from that answer, so
+		// reading the app-wide entry would describe a different person than the turn did.
+		const persona = chatPersonaEntry(state.chat);
 		const character = state.chat.characterId
 			? (characterLibraryStore.entries.find((e) => e.id === state.chat.characterId) ?? null)
 			: null;
+		// The variant this chat is PINNED to, not the library's currently active one, the same
+		// resolver the prompt, the meters and the memory store go through. A dangling pin
+		// throws here exactly as it does there rather than quietly serving another variant;
+		// the caller's catch turns that into the same "repin it" toast every other surface
+		// gives, and the failure guard stops it being asked again.
+		const characterData = character
+			? characterLibraryStore.dataForVersion(character, state.chat.characterVersionId ?? null)
+			: null;
 
-		const characterDescriptions = character
-			? [{ name: character.identity.name, description: describe(character.data.traits) }]
-			: [];
+		const characterDescriptions =
+			character && characterData
+				? [{ name: character.identity.name, description: describe(characterData.traits) }]
+				: [];
 
 		const pastReactions = this.settings.includePastReactions
 			? pastReactionsFor(history, messageId, (id) => this.feedFor(id))
