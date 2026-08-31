@@ -166,6 +166,25 @@ slightly more than that turn's model had. That is accepted rather than fixed: th
 case is the newest reply, where the two agree exactly, and the alternative is re-deriving
 coverage per message for a decoration.
 
+**The cast is resolved per chat, through the app's own resolvers, for the same reason.** The
+crowd is reacting to a reply the story prompt already built, so it has to be told about the
+same two people that prompt was built from:
+
+- **Persona** is `chatPersonaEntry(state.chat)` (`utils/chat-setup.ts`), never
+  `personaStore.activeEntry`. A chat can play as a persona that is not the app-wide one, and
+  reading the app-wide slot hands the crowd whoever the last chat left there. It is invisible
+  in a chat with a real cast and real lore, and glaring in one without: the foreign persona
+  becomes the only thing in the world description.
+- **Character** is `characterLibraryStore.dataForVersion(entry, chat.characterVersionId)`,
+  never `entry.data`. A chat pinned to a variant plays against that variant's sheet, and the
+  live entry is whichever one the library happens to have active. This is the same call
+  `live-macro-context.ts`, `memory/store.svelte.ts` and the generation path all make.
+
+Both resolvers are upstream API and take what they resolve as an argument, so neither closes
+an import cycle and neither is fork-only. A dangling version pin **throws**, exactly as it
+does on the story path; `generate`'s catch turns it into the same "repin it" toast, and the
+failure guard stops the same turn asking again.
+
 ## What the panel shows
 
 **The newest feed that EXISTS on the path, not the feed of the newest turn**
