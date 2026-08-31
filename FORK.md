@@ -21,10 +21,11 @@ is the one thing that will not work.
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 | Memory defaults | `feature/memory-defaults` | App-wide starting values for Chat Memory's five tunables, on Settings → Engines → Chat Memory. Copied into a chat when memory is switched on for it and never read again, so the layer caps cannot move under a story already summarised against them. See `architecture/memory.md`. |
 
-Per-chat overrides used to be here. Upstream now implements the same thing itself, so the
-branch has been dropped from the build rather than carried alongside it. The two store their
-decisions in different shapes, so a chat set up under the old one is not read by the new one
-and has to be set again from the chat's own setup chip.
+Per-chat overrides used to be here. Upstream implements the same thing itself now, so the
+branch has been retired and deleted rather than carried alongside it. The two stored their
+decisions in different shapes, so a chat set up under the old one was not read by the new one
+and had to be set again from the chat's own setup chip; that is done, and nothing carries the
+old shape any more.
 
 ## Running it
 
