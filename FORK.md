@@ -16,17 +16,15 @@ is the one thing that will not work.
 
 | Feature | Branch | What it does |
 |---|---|---|
-| EchoChamber *(not in the current build)* | `feature/echochamber` | A floating audience that reacts to each turn as it lands. Its own engine, settings page and authorable styles; feeds ride the chat row, so deleting a chat reaps them. See `architecture/echochamber.md`. |
+| EchoChamber | `feature/echochamber` | A floating audience that reacts to each turn as it lands. Its own engine, settings page and authorable styles; feeds ride the chat row, so deleting a chat reaps them. The crowd is told the persona and card version *this chat* plays as, so it never describes someone the reply was not built from. See `architecture/echochamber.md`. |
 | Image generation | `feature/comfy-inject` | `[[IMG: ...]]` markers in a reply become pictures, drawn by a ComfyUI server the backend dials directly. Settings page for host, workflow, sampler and framing. See `architecture/imagegen.md`. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 | Memory defaults | `feature/memory-defaults` | App-wide starting values for Chat Memory's five tunables, on Settings → Engines → Chat Memory. Copied into a chat when memory is switched on for it and never read again, so the layer caps cannot move under a story already summarised against them. See `architecture/memory.md`. |
 
-EchoChamber is temporarily out of the current `deploy` while a suspected bug is checked. Its
-branch is unchanged and rebased onto `main` like every other; it returns by restoring one line
-to `$Topics` in `scripts/rebuild-deploy.ps1`.
-
 Per-chat overrides used to be here. Upstream now implements the same thing itself, so the
-branch has been dropped from the build rather than carried alongside it.
+branch has been dropped from the build rather than carried alongside it. The two store their
+decisions in different shapes, so a chat set up under the old one is not read by the new one
+and has to be set again from the chat's own setup chip.
 
 ## Running it
 
