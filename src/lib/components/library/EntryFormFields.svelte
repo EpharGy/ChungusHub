@@ -690,7 +690,12 @@
 		<div class="space-y-3">
 			{@render sectionHeading('gallery', 'Gallery', 'image', galleryOpen)}
 			{#if galleryOpen}
-				<CharacterGallery {gallery} onAdd={onGalleryAdd} onRemove={onGalleryRemove} />
+				<CharacterGallery
+					{gallery}
+					characterName={name}
+					onAdd={onGalleryAdd}
+					onRemove={onGalleryRemove}
+				/>
 			{/if}
 		</div>
 

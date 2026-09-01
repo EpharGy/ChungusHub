@@ -4,6 +4,7 @@
 	import AssistantFloatingWidget from '$lib/components/assistant/AssistantFloatingWidget.svelte';
 	import WelcomeDialog, { openWelcomeDialog } from '$lib/components/layout/WelcomeDialog.svelte';
 	import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
+	import ImagePopoutWindow from '$lib/components/ui/ImagePopoutWindow.svelte';
 	import DataAheadBar, { setDataAhead } from '$lib/components/layout/DataAheadBar.svelte';
 	import ConnectionBar from '$lib/components/layout/ConnectionBar.svelte';
 	import DeleteGuardBar from '$lib/components/layout/DeleteGuardBar.svelte';
@@ -341,6 +342,16 @@
 		     its own open flag, and there is nothing to greet anyone about while a boot
 		     state card is still on screen. -->
 		<WelcomeDialog />
+		<!-- The popped-out image, floating on the same terms as the Assistant and mounted at
+		     the shell for the same stacking reason. It lives here rather than beside the
+		     gallery that opens it because that gallery is inside the library editor: parented
+		     there, the window would die the moment the editor closed, which is the first
+		     thing the reader does after popping a picture out. It draws nothing until an
+		     image is popped out. Placed after WelcomeDialog rather than beside the Assistant
+		     deliberately: sibling order means nothing to a fixed-position element, and the
+		     line above the Assistant's is where every other floating panel this fork carries
+		     wants to insert itself, so keeping off it is a rebuild conflict not had. -->
+		<ImagePopoutWindow />
 	{/if}
 </div>
 
