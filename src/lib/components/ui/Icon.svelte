@@ -42,6 +42,7 @@
 		| 'minimize'
 		| 'maximize'
 		| 'restore'
+		| 'pictureInPicture'
 		| 'sparkles'
 		| 'pin'
 		| 'x'
@@ -269,6 +270,12 @@
 		},
 		restore: {
 			paths: ['M8 4h12v12M4 8h12v12H4z']
+		},
+		// A frame with a smaller frame inside its lower-right: the standard picture-in-picture
+		// glyph. The outer path is open on the side the inner one occupies, so the two read as
+		// one window rather than two rectangles at 20px.
+		pictureInPicture: {
+			paths: ['M21 12V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h5', 'M12 13h9v6h-9z']
 		},
 		sparkles: {
 			paths: [
