@@ -53,7 +53,8 @@ $Topics = @(
     'fork/deploy-tooling',
     'feature/comfy-inject',
     'feature/docker',
-    'feature/echochamber'
+    'feature/echochamber',
+    'feature/corrections'
 )
 
 # `feature/memory-defaults` was here until upstream MERGED it: ours went up as PR #49 and is
