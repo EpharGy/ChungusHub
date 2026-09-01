@@ -14,6 +14,7 @@
 	import Icon from './Icon.svelte';
 	import { focusTrap } from '$lib/actions/focusTrap';
 	import { fileUrl } from '$lib/services/transport';
+	import { viewport } from '$lib/stores/viewport.svelte';
 
 	interface Props {
 		/** Server-relative image paths (images/<category>/<file>), in the order the surface
@@ -30,10 +31,23 @@
 		/** Word the counter leads with, where the position already has a name the reader
 		 *  knows (the assistant's "attachment 3"). Bare "3 / 7" without it. */
 		countLabel?: string;
+		/** Opt in to the "open in a pop-out window" button, and say what it does with the
+		 *  current image. Opt-in rather than always-on because the pop-out keeps a SNAPSHOT
+		 *  of the set: that is right for a gallery, which changes only when the reader edits
+		 *  it, and wrong for a set the app is still writing to. A surface offers the button
+		 *  once its set is settled enough to outlive the viewer. */
+		onPopout?: (index: number) => void;
 		onClose: () => void;
 	}
 
-	let { images, index = $bindable(), alt = 'Image', countLabel, onClose }: Props = $props();
+	let {
+		images,
+		index = $bindable(),
+		alt = 'Image',
+		countLabel,
+		onPopout,
+		onClose
+	}: Props = $props();
 
 	let portalEl: HTMLDivElement | null = $state(null);
 	let path = $derived(index === null ? null : (images[index] ?? null));
@@ -136,6 +150,21 @@
 				<a class="lightbox-btn" href={src} download={filename} title="Download" aria-label="Download image">
 					<Icon name="download" class="w-5 h-5" strokeWidth={1.8} />
 				</a>
+				{#if onPopout && !viewport.isMobile}
+					<!-- Desktop only: the pop-out is a floating window, and a phone has nowhere
+					     to float it that is not already this viewer. -->
+					<button
+						type="button"
+						class="lightbox-btn"
+						onclick={() => {
+							if (index !== null) onPopout(index);
+						}}
+						title="Open in a pop-out window"
+						aria-label="Open in a pop-out window"
+					>
+						<Icon name="pictureInPicture" class="w-5 h-5" strokeWidth={1.8} />
+					</button>
+				{/if}
 				<a class="lightbox-btn" href={src} target="_blank" rel="noopener" title="Open original in a new tab" aria-label="Open original in a new tab">
 					<Icon name="maximize" class="w-5 h-5" strokeWidth={1.8} />
 				</a>
