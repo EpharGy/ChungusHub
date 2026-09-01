@@ -20,18 +20,6 @@ is the one thing that will not work.
 | Image generation | `feature/comfy-inject` | `[[IMG: ...]]` markers in a reply become pictures, drawn by a ComfyUI server the backend dials directly. Settings page for host, workflow, sampler and framing. See `architecture/imagegen.md`. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 
-Memory defaults used to be here too. Upstream took ours as it stood: it went up as a pull
-request, was merged, and is now part of `main`, so there is nothing left for this fork to
-carry. It has grown two things since that this fork never had: a slider reset that falls
-through to your starting numbers, and a star marking any tunable that has left the value
-below it.
-
-Per-chat overrides used to be here. Upstream implements the same thing itself now, so the
-branch has been retired and deleted rather than carried alongside it. The two stored their
-decisions in different shapes, so a chat set up under the old one was not read by the new one
-and had to be set again from the chat's own setup chip; that is done, and nothing carries the
-old shape any more.
-
 ## Running it
 
 Docker needs two addresses specific to the machine it runs on, so they are not committed.
