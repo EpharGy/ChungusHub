@@ -53,10 +53,15 @@ $Topics = @(
     'fork/deploy-tooling',
     'feature/comfy-inject',
     'feature/docker',
-    'feature/echochamber',
-    'feature/memory-defaults'
+    'feature/echochamber'
 )
 
+# `feature/memory-defaults` was here until upstream MERGED it: ours went up as PR #49 and is
+# now main's own `891400f`, with two follow-ups on top of it (a double-click reset that falls
+# through to the card, and a star on any tunable that has left the value below it). This is
+# supersession by adoption rather than by reimplementation, so there is nothing to keep: the
+# code in `main` IS ours, and carrying the branch would merge the same patch twice.
+#
 # `feature/per-chat-persona` was here until upstream built the same job itself (main's
 # ChatSetupChip, utils/chat-setup.ts and the library's New Chat Defaults card, which cover
 # persona, connection and preset as ours did plus the version pin). Ours was offered as
