@@ -21,6 +21,14 @@ The pop-out puts **both** its halves in `localStorage` and is right to: what it 
 
 **The record of which chats have a window is a bare list of ids**, most-recent-first, capped at twenty. Presence is the whole record: unlike the pop-out's, which needs the gallery its picture came from, there is no second field, because the notes are found by the chat id the window already has.
 
+## Deleting a chat leaves nothing behind
+
+The split above does most of the work by itself. **The notes need no cleanup at all**: they are a column on the chat row, so deleting the chat takes them, on every device at once, with no code here involved. And the **window** is already handled, because deleting the chat you are in routes you somewhere else, which changes the loaded chat, which is exactly the edge the window follows.
+
+What would be left is this device's memory of whether a window was standing. The cap bounds it, so it can never grow, but a bound is not the same as being clean: twenty ids belonging to twenty deleted chats is within the cap and is still twenty rows of nothing. So the window **prunes** the record against the live chat list. It can, because it is mounted for the app's whole life and the list is loaded long before it mounts, and it writes only when something actually goes, so the ordinary case costs a read.
+
+Driving it off the list rather than out of `deleteChat` and `deleteChats` is deliberate on three counts: one row, a batch, and a delete arriving from another device become the same event; no delete path has to know this feature exists; and `chat.svelte.ts` is not touched, which for a fork means this branch and the pop-out's do not both edit the same lines of an upstream file and re-fight it on every rebuild. The pop-out sweeps its own record the same way, for the same reasons.
+
 ## The cap is not about the reader's patience
 
 `getAllChats` is `SELECT * FROM chats`, and the client's `chats` array holds every row, blob included. So one chat's notepad is part of what **every** chat-list fetch carries, for every chat, on every device. An unbounded field there turns a list load into a download of everything ever typed into any story.
