@@ -28,6 +28,7 @@ import { NOTEPAD_LIMIT, normalizeChatFeatureState } from '$lib/types/chat';
 import {
 	forgetNotepadOpen,
 	isNotepadOpenFor,
+	pruneNotepadMemory,
 	rememberNotepadOpen
 } from '$lib/utils/notepad-memory';
 
@@ -127,6 +128,20 @@ class NotepadStore {
 	followChat(chatId: string | null): void {
 		void this.flush();
 		this.open = chatId ? isNotepadOpenFor(chatId) : false;
+	}
+
+	/**
+	 * Drop the standing-window record for stories that no longer exist.
+	 *
+	 * The notes themselves need no sweep at all: they are a column on the chat row, so
+	 * deleting the chat takes them, on every device at once. What is left behind is this
+	 * device's memory of whether a window was up, and a deleted chat's id would sit in it
+	 * until the cap pushed it out. Driven from the window's own effect off the live chat
+	 * list, so one row, a batch, and a delete arriving from another device are all the same
+	 * event, and no delete path has to know this feature exists.
+	 */
+	pruneTo(liveChatIds: ReadonlySet<string>): void {
+		pruneNotepadMemory(liveChatIds);
 	}
 
 	/** Replace the open chat's notes, clamped. The only door text comes in by. */

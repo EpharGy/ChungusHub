@@ -23,8 +23,12 @@ const MEMORY_KEY = 'notepad-open-chats';
 /**
  * How many chats are remembered. A cap rather than a prune-against-the-chat-list, because
  * this file is read before the chat store loads and a bound that needs another store is not
- * a bound. A chat deleted while its id sits here costs nothing: the id is simply never asked
- * about again, and ages out.
+ * a bound. It is the guarantee this record can never grow: it is enforced on write, by a
+ * file that needs nothing else to be working.
+ *
+ * `pruneIn` below is the tighter sweep, run once the chat list is actually known. The cap
+ * makes the record BOUNDED; the prune is what keeps it honest, because twenty ids belonging
+ * to twenty deleted chats is within the cap and is still twenty rows of nothing.
  */
 export const MEMORY_LIMIT = 20;
 
@@ -46,6 +50,17 @@ export function rememberIn(list: NotepadMemory, chatId: string, limit = MEMORY_L
 /** `list` without `chatId`. A new array either way, so callers never mutate a read. */
 export function forgetIn(list: NotepadMemory, chatId: string): NotepadMemory {
 	return list.filter((id) => id !== chatId);
+}
+
+/**
+ * `list` with every id whose chat no longer exists dropped.
+ *
+ * Deleting a chat is what makes an id here unreachable: nothing can return to that story and
+ * ask whether its window should be standing, so nobody is owed a notice and the id simply
+ * goes. The notes it referred to went with the chat row, since that is where they lived.
+ */
+export function pruneIn(list: NotepadMemory, liveChatIds: ReadonlySet<string>): NotepadMemory {
+	return list.filter((id) => liveChatIds.has(id));
 }
 
 /** Every well-formed id of the stored record, or an empty one when it is unreadable. */
@@ -80,4 +95,17 @@ export function rememberNotepadOpen(chatId: string): void {
 
 export function forgetNotepadOpen(chatId: string): void {
 	writeNotepadMemory(forgetIn(readNotepadMemory(), chatId));
+}
+
+/**
+ * Drop every id whose chat is gone. Called with the live chat list, which is why it lives
+ * here rather than running on read: this file is read before the chat store loads.
+ *
+ * Writes only when something actually goes, so the ordinary case (nothing to sweep) does
+ * not touch storage on every chat-list change.
+ */
+export function pruneNotepadMemory(liveChatIds: ReadonlySet<string>): void {
+	const before = readNotepadMemory();
+	const after = pruneIn(before, liveChatIds);
+	if (after.length !== before.length) writeNotepadMemory(after);
 }

@@ -7,8 +7,9 @@
 	 * bar's button. The button only toggles; everything about whose notes these are, when the
 	 * window goes away and when it comes back lives in the store.
 	 *
-	 * This is also where the window is told the reader has moved to another story, because it
-	 * is the one part of the feature mounted for the app's whole life. See the effect.
+	 * This is also where the window is told the reader has moved to another story, and which
+	 * stories still exist, because it is the one part of the feature mounted for the app's
+	 * whole life. See the effects.
 	 *
 	 * It shares its shell with the image pop-out (`FloatingWindow`) and differs from it in one
 	 * way that matters: the notepad has a launcher, so closing is reversible and the X is not
@@ -61,6 +62,16 @@
 		if (chatId === lastChatId) return;
 		lastChatId = chatId;
 		if (!viewport.isMobile) untrack(() => notepadStore.followChat(chatId));
+	});
+
+	// Sweep the standing-window record for stories that no longer exist. The notes need no
+	// sweep of their own: they are a column on the chat row and went with it. Driven off the
+	// live chat list rather than out of the delete paths, so one row, a batch, and a delete
+	// arriving from another device are all the same event here, and no caller has to know
+	// this feature exists. Cheap: it writes only when something actually goes.
+	$effect(() => {
+		const live = new Set(chatStore.chats.map((c) => c.id));
+		untrack(() => notepadStore.pruneTo(live));
 	});
 
 	// The debounce's last end. A reload or a tab close is the one exit that does not pass
