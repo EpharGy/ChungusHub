@@ -399,7 +399,6 @@
 					traits={data.traits}
 					alternateGreetings={data.alternateGreetings}
 					gallery={data.gallery}
-					characterId={entry?.type === 'character' ? entryId : undefined}
 					sprites={data.sprites}
 					defaultSprite={data.defaultSprite}
 					entityId={entryId}
