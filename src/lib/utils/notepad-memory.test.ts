@@ -13,6 +13,8 @@ import {
 	forgetIn,
 	forgetNotepadOpen,
 	isNotepadOpenFor,
+	pruneIn,
+	pruneNotepadMemory,
 	readNotepadMemory,
 	rememberIn,
 	rememberNotepadOpen,
@@ -63,15 +65,45 @@ describe('forgetIn', () => {
 	});
 });
 
+describe('pruneIn', () => {
+	test('drops ids whose chat is gone', () => {
+		expect(pruneIn(['a', 'b', 'c'], new Set(['a', 'c']))).toEqual(['a', 'c']);
+	});
+
+	test('keeps every id whose chat is still there', () => {
+		expect(pruneIn(['a', 'b'], new Set(['a', 'b']))).toEqual(['a', 'b']);
+	});
+
+	test('keeps the recency order of what survives', () => {
+		// The order IS the record: sweeping must not quietly re-age what it leaves behind.
+		expect(pruneIn(['a', 'b', 'c'], new Set(['c', 'a']))).toEqual(['a', 'c']);
+	});
+
+	test('an empty chat list drops everything', () => {
+		expect(pruneIn(['a'], new Set())).toEqual([]);
+	});
+
+	test('leaves the source list alone', () => {
+		const before: NotepadMemory = ['a', 'b'];
+		pruneIn(before, new Set(['a']));
+		expect(before).toEqual(['a', 'b']);
+	});
+});
+
 describe('storage', () => {
 	let store: Map<string, string>;
+	let writes: number;
 	const original = (globalThis as { localStorage?: Storage }).localStorage;
 
 	beforeEach(() => {
 		store = new Map();
+		writes = 0;
 		(globalThis as { localStorage?: unknown }).localStorage = {
 			getItem: (k: string) => store.get(k) ?? null,
-			setItem: (k: string, v: string) => void store.set(k, v),
+			setItem: (k: string, v: string) => {
+				writes++;
+				store.set(k, v);
+			},
 			removeItem: (k: string) => void store.delete(k)
 		};
 	});
@@ -116,5 +148,23 @@ describe('storage', () => {
 	test('junk entries are dropped and the good ones kept', () => {
 		store.set('notepad-open-chats', JSON.stringify(['chat-1', '', 3, null, 'chat-2']));
 		expect(readNotepadMemory()).toEqual(['chat-1', 'chat-2']);
+	});
+
+	describe('pruneNotepadMemory', () => {
+		test('drops ids for chats that are gone', () => {
+			rememberNotepadOpen('chat-1');
+			rememberNotepadOpen('chat-2');
+			pruneNotepadMemory(new Set(['chat-2']));
+			expect(readNotepadMemory()).toEqual(['chat-2']);
+		});
+
+		test('does not write when there is nothing to sweep', () => {
+			// It runs off the live chat list, so it fires on every change to that list. The
+			// ordinary case has to cost nothing.
+			rememberNotepadOpen('chat-1');
+			const before = writes;
+			pruneNotepadMemory(new Set(['chat-1']));
+			expect(writes).toBe(before);
+		});
 	});
 });
