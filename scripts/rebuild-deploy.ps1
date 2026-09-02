@@ -55,11 +55,17 @@ $Topics = @(
     'feature/docker',
     'feature/echochamber',
     'feature/corrections',
+    # The floating window shell, and the two features built on it. All three are cut from
+    # main; the two consumers are cut from the shell, which makes them SIBLINGS rather than
+    # a stack. Retiring either consumer is still a one-line edit here and leaves the other
+    # standing. The shell must be merged before both, which is the only ordering constraint
+    # in this list that is a real dependency rather than a habit.
+    #
+    # A change to how those windows drag, dock or resize belongs on feature/floating-window,
+    # never on a consumer: a copy on one of them is a copy the other cannot see, and the two
+    # would then disagree about the same component on every rebuild.
+    'feature/floating-window',
     'feature/image-popout',
-    # Stacked ON feature/image-popout, not cut from main: it reuses that branch's
-    # FloatingWindow shell. It must stay AFTER the pop-out in this list, and retiring the
-    # pop-out would take the notepad with it. See architecture/notepad.md for the repair
-    # if that day comes (extract the shell into its own branch cut from main).
     'feature/notepad'
 )
 
