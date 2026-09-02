@@ -9,7 +9,7 @@
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
-	import { imagePopoutStore } from '$lib/stores/imagePopout.svelte';
+	import { imagePopoutStore, galleryLabel } from '$lib/stores/imagePopout.svelte';
 	import { imageService, imageRejectionReason } from '$lib/services/imageService';
 
 	interface Props {
@@ -17,16 +17,20 @@
 		/** Names the pop-out window, so a picture kept on screen still says whose it is once
 		 *  the editor behind it is closed. */
 		characterName?: string;
+		/** The library entry this gallery belongs to, when it is a character's. The pop-out
+		 *  binds to it: a window follows that character's chats and comes back when one is
+		 *  reopened. Undefined for a persona, whose gallery no chat is reading. */
+		characterId?: string;
 		onAdd: (files: File[]) => Promise<void>;
 		onRemove: (path: string) => Promise<void>;
 	}
 
-	let { gallery, characterName, onAdd, onRemove }: Props = $props();
+	let { gallery, characterName, characterId, onAdd, onRemove }: Props = $props();
 
 	/** Hand the picture to the floating window and get out of its way: leaving the
 	 *  full-screen viewer open would cover the window it just made. */
 	function popOut(at: number) {
-		imagePopoutStore.show(images, at, characterName ? `${characterName} gallery` : 'Gallery image');
+		imagePopoutStore.show(images, at, { label: galleryLabel(characterName), ownerId: characterId });
 		viewerIndex = null;
 	}
 
