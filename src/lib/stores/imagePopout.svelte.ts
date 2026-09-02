@@ -12,13 +12,17 @@
  * takes over the window, and says so, so the reader is never left wondering which of two
  * clicks the window is showing.
  *
- * The window is also a fixture of the STORY being read, not of the picture. See
- * `followCharacter`.
+ * The window is also a fixture of the CHAT being read, not of the picture. See `followChat`.
  */
 import { toastStore } from './toast.svelte';
 import { chatStore } from './chat.svelte';
 import { characterLibraryStore } from './characterLibrary.svelte';
-import { forgetPopout, readPopoutMemory, rememberPopout } from '$lib/utils/popout-memory';
+import {
+	forgetPopout,
+	prunePopoutMemory,
+	readPopoutMemory,
+	rememberPopout
+} from '$lib/utils/popout-memory';
 
 /** The window's accessible name for an entry's gallery. One recipe, two callers: the grid
  *  that pops a picture out, and the reopen that has only an id to work from. */
@@ -36,18 +40,21 @@ class ImagePopoutStore {
 	open = $state(false);
 
 	/**
-	 * The character whose chat was open when this window was made: who the window belongs
-	 * to, and the only thing that decides when it goes away and comes back.
+	 * The chat that was on screen when this window was made: the story it belongs to, and
+	 * the only thing that decides when it goes away and comes back.
 	 *
-	 * Deliberately NOT the picture's owner. A reader who opens character A's art while
-	 * reading character B's story wants that picture for as long as they are reading B, and
-	 * wants it gone the moment they leave, INCLUDING when they leave to read A. The window
-	 * is furniture of the story; the picture in it is only what got put on the shelf.
+	 * Deliberately NOT the picture's owner, and deliberately not that chat's CHARACTER
+	 * either. A reader who opens character A's art while reading a story about B wants that
+	 * picture for as long as they are reading that story, and wants it gone the moment they
+	 * leave it, including when they leave for another of B's own chats, because a character
+	 * with six stories running is six separate rooms and a reference pinned up in one of them
+	 * is not a fact about all six. The window is furniture of the story; the picture in it is
+	 * only what got put on the shelf.
 	 *
 	 * Null when the pop-out was made with no chat open, which is a window belonging to
 	 * nobody: the next story to open takes the shelf away and nothing brings it back.
 	 */
-	boundCharacterId = $state<string | null>(null);
+	boundChatId = $state<string | null>(null);
 
 	/** The library entry whose gallery this set came from, which may be anybody, a persona
 	 *  included. Kept because it is the only way to rebuild the set on the way back in. */
@@ -66,8 +73,11 @@ class ImagePopoutStore {
 	 * The cost is that the window does not follow later edits to the gallery, which is why
 	 * the image element has a missing-file state.
 	 *
-	 * Who the window belongs to is read from the open chat HERE rather than passed in, so no
-	 * call site can get it wrong and no surface offering a pop-out has to know chats exist.
+	 * Which story the window belongs to is read from the open chat HERE rather than passed
+	 * in, so no call site can get it wrong and no surface offering a pop-out has to know
+	 * chats exist. It reads the LOADED chat rather than the one being navigated to, matching
+	 * what the window's own effect watches: keyed on anything else, the two would disagree
+	 * for the couple of hundred milliseconds a chat takes to arrive.
 	 */
 	show(images: string[], index: number, options: { label?: string; sourceId?: string } = {}): void {
 		if (images.length === 0) return;
@@ -76,7 +86,7 @@ class ImagePopoutStore {
 		this.index = Math.min(Math.max(index, 0), images.length - 1);
 		if (options.label) this.label = options.label;
 		this.sourceId = options.sourceId ?? null;
-		this.boundCharacterId = chatStore.activeChat?.characterId ?? null;
+		this.boundChatId = chatStore.currentChatState?.chat.id ?? null;
 		this.open = true;
 		this.remember();
 		// Only on a genuine takeover. Saying it on the first open would be explaining a
@@ -97,13 +107,13 @@ class ImagePopoutStore {
 	 * `suspend` below, which is the app closing the window on the reader's behalf.
 	 */
 	close(): void {
-		if (this.boundCharacterId) forgetPopout(this.boundCharacterId);
+		if (this.boundChatId) forgetPopout(this.boundChatId);
 		this.reset();
 	}
 
 	/**
 	 * The reader moved to another story, so the window goes but the picture is kept: coming
-	 * back to this one reopens it. Called only by `followCharacter`.
+	 * back to this one reopens it. Called only by `followChat`.
 	 */
 	private suspend(): void {
 		this.reset();
@@ -115,7 +125,7 @@ class ImagePopoutStore {
 		// the paths would keep a deleted image's name alive for no one to read.
 		this.images = [];
 		this.index = 0;
-		this.boundCharacterId = null;
+		this.boundChatId = null;
 		this.sourceId = null;
 	}
 
@@ -123,37 +133,37 @@ class ImagePopoutStore {
 	 *  again. Both halves are needed: without the source there is no set to rebuild. */
 	private remember(): void {
 		const path = this.currentPath;
-		if (this.boundCharacterId && this.sourceId && path) {
-			rememberPopout(this.boundCharacterId, { path, sourceId: this.sourceId });
+		if (this.boundChatId && this.sourceId && path) {
+			rememberPopout(this.boundChatId, { path, sourceId: this.sourceId });
 		}
 	}
 
 	/**
 	 * Put the window where the newly opened chat says it should be: gone if it was made
-	 * while reading somebody else, back if this story had one open.
+	 * while reading another story, back if this one had one open.
 	 *
-	 * Called ONLY when the active chat's character actually changes, never as a reactive
-	 * invariant. The difference is load-bearing: the gallery is in the library, which is
-	 * reachable while any chat is open, so popping a picture out there is an ordinary thing
-	 * to do and an invariant would shut the window in the frame it opened. A window is only
-	 * wrong once the reader *moves*, which is exactly this event.
+	 * Called ONLY when the loaded chat actually changes, never as a reactive invariant. The
+	 * difference is load-bearing: the gallery is in the library, which is reachable while any
+	 * chat is open, so popping a picture out there is an ordinary thing to do and an
+	 * invariant would shut the window in the frame it opened. A window is only wrong once the
+	 * reader *moves*, which is exactly this event.
 	 *
 	 * `null` (the welcome screen, a deleted chat) suspends without reopening anything.
 	 */
-	followCharacter(characterId: string | null): void {
-		if (this.open && this.boundCharacterId === characterId) return;
+	followChat(chatId: string | null): void {
+		if (this.open && this.boundChatId === chatId) return;
 		if (this.open) this.suspend();
-		if (characterId) this.reopenFor(characterId);
+		if (chatId) this.reopenFor(chatId);
 	}
 
 	/**
 	 * Reopen the picture this story was left on, read back out of its SOURCE entry's live
 	 * gallery rather than out of any stored set: a path deleted since is then a miss to
 	 * report rather than a broken image to render. The source is whoever the picture came
-	 * from, which is routinely not the character being reopened for.
+	 * from, which is routinely nobody in this chat.
 	 */
-	private reopenFor(characterId: string): void {
-		const remembered = readPopoutMemory()[characterId];
+	private reopenFor(chatId: string): void {
+		const remembered = readPopoutMemory()[chatId];
 		if (!remembered) return;
 
 		const source = characterLibraryStore.entries.find((e) => e.id === remembered.sourceId);
@@ -163,17 +173,50 @@ class ImagePopoutStore {
 			// Said out loud rather than passed over in silence: the reader left a window open
 			// and is owed a reason it is not there. Forgotten at the same time, so the notice
 			// is once and not on every visit.
-			forgetPopout(characterId);
+			forgetPopout(chatId);
 			toastStore.info('The image left popped out here is no longer in its gallery.');
 			return;
 		}
 
-		// `show` reads the bound character off the open chat, which the caller has already
-		// moved to `characterId`: this runs on the edge, after the switch.
+		// `show` reads the bound chat off the loaded chat, which the caller has already moved
+		// to `chatId`: this runs on the edge, after the switch.
 		this.show(gallery, at, {
 			label: galleryLabel(source?.identity.name),
 			sourceId: remembered.sourceId
 		});
+	}
+
+	/**
+	 * The library entry this window's set came from has been deleted, taking its image files
+	 * with it. Close the window and say so.
+	 *
+	 * This is the one thing a chat-keyed binding cannot notice on its own: deleting a
+	 * character happens *inside* the story you are reading, so the chat never changes and the
+	 * edge above never fires. Without this the window sits there showing files the delete
+	 * already swept, and the only thing that ever tells the reader is a missing-file panel.
+	 *
+	 * Closes rather than suspends, because the picture is not coming back: returning to this
+	 * story must not try to reopen it. Records for OTHER chats that sourced the same entry
+	 * are deliberately left alone: each of those chats can still be walked back into, and
+	 * `reopenFor` gives its reader the same notice at the moment it is worth hearing.
+	 */
+	forgetEntry(entryId: string): void {
+		if (!this.open || this.sourceId !== entryId) return;
+		this.close();
+		toastStore.info('The popped-out image was deleted with its gallery.');
+	}
+
+	/**
+	 * Drop remembered pictures for stories that no longer exist.
+	 *
+	 * The record is capped, so it can never grow without bound; this is what stops it going
+	 * STALE, which the cap alone does not: twenty pictures pinned to twenty deleted chats is
+	 * within the cap and is still twenty rows of nothing. Driven from the window's own effect
+	 * off the live chat list, so a delete anywhere (one row, a batch, another device) is
+	 * swept without every delete path having to know this feature exists.
+	 */
+	pruneTo(liveChatIds: ReadonlySet<string>): void {
+		prunePopoutMemory(liveChatIds);
 	}
 }
 
