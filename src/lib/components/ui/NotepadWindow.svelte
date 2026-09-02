@@ -20,7 +20,6 @@
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import { notepadStore } from '$lib/stores/notepad.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
-	import { viewport } from '$lib/stores/viewport.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 
 	let chat = $derived(chatStore.currentChatState?.chat ?? null);
@@ -53,14 +52,15 @@
 	// is never undone in the frame it happened. Re-asserting "the window matches the record"
 	// every tick would fight the button.
 	//
-	// Skipped on mobile, where the window is unreachable by design: `FloatingWindow` renders
-	// nothing there and the title bar's button is hidden, so restoring one would mean state
-	// nobody can see or close.
+	// It runs on every width now. This used to be skipped on mobile, where the window was
+	// unreachable by design: the shell rendered nothing there and the title bar's button was
+	// hidden, so restoring one meant state nobody could see or close. Both halves of that are
+	// gone, so a phone reopens the notes it left standing exactly as a desktop does.
 	$effect(() => {
 		const chatId = chat?.id ?? null;
 		if (chatId === lastChatId) return;
 		lastChatId = chatId;
-		if (!viewport.isMobile) untrack(() => notepadStore.followChat(chatId));
+		untrack(() => notepadStore.followChat(chatId));
 	});
 
 	// The debounce's last end. A reload or a tab close is the one exit that does not pass
