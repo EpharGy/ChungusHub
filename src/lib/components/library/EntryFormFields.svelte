@@ -37,16 +37,12 @@
 		alternateGreetings: string[] | undefined;
 		/** Extra image paths shown in the gallery section. */
 		gallery: string[] | undefined;
-		/** The entry's id when it is a character's, which is what a popped-out gallery image
-		 *  binds itself to. Undefined for a persona: no chat reads a persona's gallery, so a
-		 *  window bound to one could never be brought back. Separate from `entityId` above,
-		 *  which happens to be the same value but means "unique enough for a DOM id". */
-		characterId?: string;
 		/** The character's sprites: their own image set, shown in their own section. */
 		sprites: CharacterSprite[] | undefined;
 		defaultSprite: string | undefined;
 
-		// Unique id for form element IDs
+		// The library entry's id: unique per form, so it is what every form element id is
+		// built from, and it is also the entry the gallery below belongs to.
 		entityId: string;
 
 		/** Rendered at the foot of the identity pane: beside the portrait on wide screens, and
@@ -78,7 +74,6 @@
 		traits,
 		alternateGreetings,
 		gallery,
-		characterId,
 		sprites,
 		defaultSprite,
 		entityId,
@@ -699,7 +694,7 @@
 				<CharacterGallery
 					{gallery}
 					characterName={name}
-					{characterId}
+					entryId={entityId}
 					onAdd={onGalleryAdd}
 					onRemove={onGalleryRemove}
 				/>
