@@ -8,6 +8,9 @@ Each item is a branch of its own, cut from `main`, so any of them can be taken o
 sent upstream as a pull request. **Items are removed from this list once upstream implements
 them or they stop being needed**, so a short list is a good sign, not a stalled one.
 
+One exception, marked in the table: the notepad is stacked on the image pop-out, because it
+reuses that branch's floating-window shell. Taking the notepad means taking the pop-out too.
+
 `deploy` is rebuilt from those branches rather than committed to, which means it is **force
 pushed** and does not fast-forward. Clone it or `git reset --hard origin/deploy`; `git pull`
 is the one thing that will not work.
@@ -20,6 +23,7 @@ is the one thing that will not work.
 | Image generation | `feature/comfy-inject` | `[[IMG: ...]]` markers in a reply become pictures, drawn by a ComfyUI server the backend dials directly. Settings page for host, workflow, sampler and framing. See `architecture/imagegen.md`. |
 | Corrections | `feature/corrections` | Rewrites a reply you have already read, to a direction you type. Two extra rows in that reply's Retry menu: replace it, or keep it and write the correction as a branch. It reuses the retry's own prompt, so the rewrite sees the history, lorebooks and memory the original saw. Its own engine, with an editable prompt in Settings → Engines. |
 | Image pop-out | `feature/image-popout` | Pops a picture out of a character's gallery into a small floating window that stays on screen while you work elsewhere in the app. Drag it anywhere, resize it, or drop it against an edge or corner to dock it, the way the Chungus Assistant's panel already does; two header buttons page through the rest of that character's gallery. Desktop only. See `architecture/image-popout.md`. |
+| Notepad | `feature/notepad` (on `feature/image-popout`) | A page of your own notes about one chat, in a floating window raised from the title bar beside Preset Controls and Story Map. Per chat, not per character, so a character with six stories running has six sets of notes. The notes ride the chat row, so duplicating a chat copies them and deleting it reaps them; the window's size, place and dock are per device. Jump to the end, export as `.txt`, clear behind a confirmation. Nothing in it is ever sent to the model. Desktop only. See `architecture/notepad.md`. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 
 ## Running it
