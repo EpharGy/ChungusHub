@@ -1,6 +1,6 @@
 # The image pop-out window: architecture
 
-A **pop-out** is one picture in a floating, dockable window that stays on screen while the reader works somewhere else in the app. It is opened from the full-screen viewer's toolbar, pages through the set it was opened from, and can be dragged to an edge to dock like the Chungus Assistant. Three files: [`ImagePopoutWindow.svelte`](../src/lib/components/ui/ImagePopoutWindow.svelte) (what is in the window), [`imagePopout.svelte.ts`](../src/lib/stores/imagePopout.svelte.ts) (which picture, and whether there is a window at all) and [`FloatingWindow.svelte`](../src/lib/components/ui/FloatingWindow.svelte) (where the window is and how it moves).
+A **pop-out** is one picture in a floating, dockable window that stays on screen while the reader works somewhere else in the app. It is opened from the full-screen viewer's toolbar, pages through the set it was opened from, and can be dragged to an edge to dock like the Chungus Assistant. Two files of its own: [`ImagePopoutWindow.svelte`](../src/lib/components/ui/ImagePopoutWindow.svelte) (what is in the window) and [`imagePopout.svelte.ts`](../src/lib/stores/imagePopout.svelte.ts) (which picture, and whether there is a window at all). Where the window is and how it moves is [`FloatingWindow`](../src/lib/components/ui/FloatingWindow.svelte), which is shared and documented in [`floating-window.md`](floating-window.md).
 
 It exists because the viewer is modal and a reference picture is not. Looking at a character's art while editing their description meant closing the viewer, and the viewer is the only thing in the app that shows a picture at full size.
 
@@ -32,15 +32,13 @@ The **rectangle needs no work at all**: `FloatingWindow` re-reads its saved plac
 
 The record ([`popout-memory.ts`](../src/lib/utils/popout-memory.ts)) is capped at twenty characters, most-recent-first. A prune against the library would be tighter, but this file is read before the library store loads, and a bound that needs another store is not a bound.
 
-## The floating shell is a port of the Assistant's, not a refactor of it
+## The floating shell is not this feature's
 
-`FloatingWindow` is the Assistant's widget maths (drag, seven-zone snap, eight-handle resize, tear-off-restores-free-size, persisted placement) lifted into a component that takes a header and a body. The geometry underneath it is pure and lives in [`floating-window.ts`](../src/lib/utils/floating-window.ts), tested in [`floating-window.test.ts`](../src/lib/utils/floating-window.test.ts).
+Dragging, docking, resizing and remembering where the window was left are all [`FloatingWindow`](../src/lib/components/ui/FloatingWindow.svelte), which has its own branch and its own note: [`floating-window.md`](floating-window.md). It arrived with this feature and was extracted once a second one wanted it, so that neither can be sent upstream carrying the other.
 
-[`AssistantFloatingWidget.svelte`](../src/lib/components/assistant/AssistantFloatingWidget.svelte) is deliberately **untouched**. Refactoring it to consume this would be a rewrite of a 946-line file for no behaviour, and it would put a permanent conflict on every future change to it. The duplication is the price, and extracting the maths into a module at least means the next floating window costs a header and a body rather than another 500 lines. The same trade is written down in EchoChamber's widget, which made the same call and kept its copy inline; this one is the version that can be shared.
+What is left here is what this window puts IN that shell, and one thing worth repeating from the other note because it shows up as a bug report about pictures: the snap anchors belong to the Assistant, so a missing one leaves the window free-floating rather than throwing. A picture is not worth a crash.
 
-**Docking measures the real layout rather than recomputing the CSS.** `snapRegion` is handed the rectangles of `[data-assistant-snap-workspace]` and `[data-assistant-snap-column]`, anchors Workspace and TitleBar already place for the Assistant, so a docked window tracks the chat column through zoom, a width change and a breakpoint flip with no responsive arithmetic duplicated anywhere. Those anchors belong to the Assistant, so the lookup **fails soft**: a missing one leaves the window free-floating rather than throwing, because a picture is not worth a crash. The Assistant throws on the same condition, which is right for the feature that owns the contract.
-
-**A snapped rectangle skips the viewport clamp** on a re-fit, so the floating minimums can never push a dock off its own boundaries, and **the drag itself is unclamped** so the header can actually reach an edge; release either docks it or pulls it back. A saved placement records its dock as well as its rectangle, or reopening would silently demote a docked window to a free one wearing the dock's dimensions.
+A change to how the window moves belongs on `feature/floating-window`, not here.
 
 ## Two deliberate omissions
 
