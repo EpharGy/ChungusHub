@@ -7,6 +7,7 @@
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
+	import { notepadStore } from '$lib/stores/notepad.svelte';
 
 	let activeOverlay = $derived(uiStore.activeOverlay);
 	let settingsOpen = $derived(uiStore.settingsOpen);
@@ -26,27 +27,63 @@
 		uiStore.toggleOverlay(overlay, flush);
 	}
 
-	// The centred navigation cluster: each opens a chat-area overlay. Characters, Personas
-	// and Lorebooks all moved into the merged Library dock (the right pill, which reopens on
-	// the shelf you left it on); Chats is reached from the composer's hamburger menu.
+	// The centred navigation cluster. Characters, Personas and Lorebooks all moved into the
+	// merged Library dock (the right pill, which reopens on the shelf you left it on); Chats
+	// is reached from the composer's hamburger menu.
+	//
+	// Every entry but the notepad raises a chat-area overlay, which is what `id` discriminates
+	// on: the notepad is a floating window on the Assistant's shell rather than a panel in the
+	// chat column, so it has no OverlayType and `uiStore` knows nothing about it. It sits in
+	// this row anyway because this is where the reader looks for the things belonging to the
+	// story they are in, and a launcher pinned to the workspace edge is the third permanent
+	// button the image pop-out deliberately refused to add.
 	type NavItem = {
-		overlay: OverlayType;
-		icon: 'sliders' | 'sitemap' | 'brain';
+		/** Stable key, and the discriminant: everything except 'notepad' names an overlay. */
+		id: OverlayType | 'notepad';
+		icon: 'sliders' | 'sitemap' | 'brain' | 'notepad';
 		label: string;
 		title: string;
 	};
 
 	const NAV: NavItem[] = [
-		{ overlay: 'presetControls', icon: 'sliders', label: 'Preset Controls', title: 'Preset Controls' },
-		{ overlay: 'storymap', icon: 'sitemap', label: 'Story Map', title: 'Story Map' },
-		{ overlay: 'memory', icon: 'brain', label: 'Memory', title: 'Memory' }
+		{ id: 'presetControls', icon: 'sliders', label: 'Preset Controls', title: 'Preset Controls' },
+		{ id: 'storymap', icon: 'sitemap', label: 'Story Map', title: 'Story Map' },
+		{ id: 'memory', icon: 'brain', label: 'Memory', title: 'Memory' },
+		{ id: 'notepad', icon: 'notepad', label: 'Notepad', title: 'Notepad' }
 	];
 
-	// One entry a setting can retire: with the Chat Memory engine globally off the panel
-	// has nothing to run, so the button is filtered out rather than opening a dead surface.
+	// Two entries that can be absent, for two different reasons:
+	//
+	// - Memory is retired by a SETTING: with the Chat Memory engine globally off the panel has
+	//   nothing to run, so the button goes rather than opening a dead surface.
+	// - The notepad is retired by the VIEWPORT: `FloatingWindow` renders nothing on a phone, so
+	//   the button would toggle a flag with nothing on screen to show for it. Same rule the
+	//   image pop-out follows, and the reason both are desktop-only rather than merely awkward
+	//   there.
 	let nav = $derived(
-		NAV.filter((item) => item.overlay !== 'memory' || featurePromptsStore.memoryEnabled)
+		NAV.filter((item) => {
+			if (item.id === 'memory') return featurePromptsStore.memoryEnabled;
+			if (item.id === 'notepad') return !viewport.isMobile;
+			return true;
+		})
 	);
+
+	/** Whether this button's thing is on screen right now. */
+	function isActive(item: NavItem): boolean {
+		return item.id === 'notepad' ? notepadStore.open : activeOverlay === item.id;
+	}
+
+	// The notepad needs a story to be notes ABOUT, so on the welcome screen its button is
+	// disabled rather than hidden: hiding it would shift the whole cluster sideways the moment
+	// a chat opens, and a disabled button that says why is the cheaper explanation.
+	function isDisabled(item: NavItem): boolean {
+		return item.id === 'notepad' && !notepadStore.canScope;
+	}
+
+	function activate(item: NavItem): void {
+		if (item.id === 'notepad') notepadStore.toggle();
+		else handleToggleOverlay(item.id);
+	}
 
 	// Whether the buttons carry their labels is decided against ONE width: the dock
 	// regime's column at the current window width (`--chat-col-docked`, measured off
@@ -64,12 +101,17 @@
 	// clips is the failure this exists to prevent. In rem, against the live root
 	// font size, so browser zoom keeps working.
 	//
+	// The threshold covers the widest the row can get, so it grew with the fourth nav label
+	// ('Notepad', present only at desktop widths, which is where this rule decides anything).
+	// Raised from 40 by more than that button measures, so the original slack is kept: erring
+	// high drops the labels a little early, and early is the safe side.
+	//
 	// The verdict is stamped on <html> inside the observer callback, synchronously
 	// before paint, and app.css's `.overlay-title` reads the same attribute: the
 	// panels these buttons raise name themselves exactly while the buttons are bare
 	// icons, off one writer, with nothing to keep in step. contracts.test.ts pins
 	// the attribute's name and the probe's variable.
-	const NAV_LABELS_MIN_REM = 40;
+	const NAV_LABELS_MIN_REM = 46;
 	let navRoomProbe: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
@@ -100,7 +142,15 @@
 	// with the button's own name, so the visible word stays part of the accessible one.
 	let memoryStanding = $derived(memoryStore.standing);
 	function titleFor(item: NavItem): string {
-		if (item.overlay !== 'memory' || memoryStanding.kind === 'idle') return item.title;
+		// The notepad says the three things its plain name cannot: that there is nothing to
+		// take notes on yet, that notes are already waiting behind a closed window, and that
+		// closing keeps them. Only the first of those is visible on the button itself.
+		if (item.id === 'notepad') {
+			if (!notepadStore.canScope) return 'Notepad · open a chat to take notes';
+			if (notepadStore.open) return 'Close the notepad (the notes are kept)';
+			return notepadStore.hasNotes ? 'Notepad · this chat has notes' : 'Notepad';
+		}
+		if (item.id !== 'memory' || memoryStanding.kind === 'idle') return item.title;
 		return `${item.title} · ${memoryStanding.label}`;
 	}
 </script>
@@ -136,16 +186,18 @@
 		</div>
 
 		<div class="nav-cluster">
-			{#each nav as item (item.overlay)}
+			{#each nav as item (item.id)}
 				<button
 					type="button"
 					class="overlay-btn"
-					class:is-active-tint={activeOverlay === item.overlay}
+					class:is-active-tint={isActive(item)}
+					class:has-notes={item.id === 'notepad' && !notepadStore.open && notepadStore.hasNotes}
+					disabled={isDisabled(item)}
 					title={titleFor(item)}
-					aria-label={item.overlay === 'memory' ? titleFor(item) : undefined}
-					onclick={() => handleToggleOverlay(item.overlay)}
+					aria-label={item.id === 'memory' || item.id === 'notepad' ? titleFor(item) : undefined}
+					onclick={() => activate(item)}
 				>
-					{#if item.overlay === 'memory'}
+					{#if item.id === 'memory'}
 						<MemoryNavStatus icon={item.icon} />
 					{:else}
 						<Icon name={item.icon} class="w-3.5 h-3.5" />
@@ -268,9 +320,30 @@
 		-webkit-app-region: no-drag;
 	}
 
-	.overlay-btn:hover {
+	.overlay-btn:hover:not(:disabled) {
 		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
 		color: var(--color-text-primary);
+	}
+
+	.overlay-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	/* A closed notepad holding a page of notes is otherwise indistinguishable from an empty
+	   one, so notes written last week are notes nobody is reminded of again. A dot rather than
+	   the active tint, which means "this is on screen right now" everywhere else in the row.
+	   Positioned against .overlay-btn, already relative for Memory's indicator, and at the
+	   corner rather than beside the label because the label is absent at most widths. */
+	.overlay-btn.has-notes::after {
+		content: '';
+		position: absolute;
+		top: 0.3rem;
+		right: 0.3rem;
+		width: 0.32rem;
+		height: 0.32rem;
+		border-radius: 50%;
+		background: var(--color-accent);
 	}
 
 	/* Scoped active tint: the canonical .is-active-tint recipe is in a cascade layer,
