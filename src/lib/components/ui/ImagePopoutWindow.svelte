@@ -10,14 +10,16 @@
 	 * would have to know whether this window or the composer had the reader's attention, and
 	 * getting that wrong steals the arrow keys from typing. Two buttons cannot be wrong.
 	 *
-	 * This is also where the window is told the reader has moved to another story, because
-	 * it is the one part of the feature mounted for the app's whole life. See the effect.
+	 * This is also where the window is told the reader has moved to another story, that its
+	 * picture's gallery has been deleted, and which stories still exist, because it is the
+	 * one part of the feature mounted for the app's whole life. See the three effects.
 	 */
 	import { untrack } from 'svelte';
 	import Icon from './Icon.svelte';
 	import FloatingWindow from './FloatingWindow.svelte';
 	import { imagePopoutStore } from '$lib/stores/imagePopout.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
+	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { fileUrl } from '$lib/services/transport';
 
@@ -31,26 +33,60 @@
 	 *  the set, so an image deleted from the gallery meanwhile lands here. */
 	let missing = $state<string | null>(null);
 
-	/** The character whose chat was open last time the effect below ran. Held as a plain
-	 *  variable rather than a rune on purpose: it is the effect's own bookkeeping and
-	 *  nothing renders it. `undefined` is "not yet run", which is distinct from the `null`
-	 *  of the welcome screen. */
-	let lastCharacterId: string | null | undefined = undefined;
+	/** The chat this effect last saw loaded. Held as a plain variable rather than a rune on
+	 *  purpose: it is the effect's own bookkeeping and nothing renders it. `undefined` is
+	 *  "not yet run", which is distinct from the `null` of the welcome screen. */
+	let lastChatId: string | null | undefined = undefined;
 
-	// Hand the window over to whichever character the reader is now reading. Deliberately an
-	// EDGE, not an invariant: it acts only when the active chat's character actually changes,
-	// so popping out character B's picture from the library while chat A is on screen is left
-	// alone. Re-asserting "the window must belong to the open chat" on every tick would shut
-	// that window the instant it opened, and the library is reachable from inside any chat.
+	// Hand the window over to whichever story the reader is now in. Deliberately an EDGE, not
+	// an invariant: it acts only when the loaded chat actually changes, so popping a picture
+	// out of the library while a chat is on screen is left alone. Re-asserting "the window
+	// must belong to the open chat" on every tick would shut that window the instant it
+	// opened, and the library is reachable from inside any chat.
+	//
+	// The LOADED chat, not the active id: the id is claimed the moment a row is clicked and
+	// the rows land a couple of hundred milliseconds later, so keying on it would swap the
+	// window out from under a story still on screen. Same reasoning, same choice, as the
+	// notepad's twin.
 	//
 	// Skipped on mobile, where the window is unreachable by design: `FloatingWindow` renders
 	// nothing there and the toolbar button that opens it is hidden, so restoring one would
 	// mean state nobody can see or close.
 	$effect(() => {
-		const characterId = chatStore.activeChat?.characterId ?? null;
-		if (characterId === lastCharacterId) return;
-		lastCharacterId = characterId;
-		if (!viewport.isMobile) untrack(() => imagePopoutStore.followCharacter(characterId));
+		const chatId = chatStore.currentChatState?.chat.id ?? null;
+		if (chatId === lastChatId) return;
+		lastChatId = chatId;
+		if (!viewport.isMobile) untrack(() => imagePopoutStore.followChat(chatId));
+	});
+
+	// Close the window when the library entry its picture came from is deleted, which sweeps
+	// that entry's image files with it.
+	//
+	// This one IS an invariant, and the distinction from the edge above is the whole reason
+	// it is allowed to be. That edge cannot be re-asserted continuously because "the window
+	// belongs to the story on screen" is legitimately false for a frame: a picture is popped
+	// out from the library, and the library is opened from inside a chat. "The picture's
+	// gallery still exists" is never legitimately false, since nothing can pop a picture out
+	// of an entry that is not there, so asserting it every tick fights nothing.
+	//
+	// It is also the only thing that can notice: deleting a character happens inside the
+	// story you are reading, so the chat never changes and the edge above never fires.
+	// Guarded on `initialized` so a library that has not loaded yet never reads as a library
+	// with everything deleted out of it.
+	$effect(() => {
+		const sourceId = imagePopoutStore.open ? imagePopoutStore.sourceId : null;
+		if (!sourceId || !characterLibraryStore.initialized) return;
+		if (characterLibraryStore.entries.some((e) => e.id === sourceId)) return;
+		untrack(() => imagePopoutStore.forgetEntry(sourceId));
+	});
+
+	// Sweep remembered pictures for stories that no longer exist. Driven off the live chat
+	// list rather than out of the delete paths, so one row, a batch, and a delete arriving
+	// from another device are all the same event here and no caller has to know this feature
+	// exists. Cheap: it writes only when something actually goes.
+	$effect(() => {
+		const live = new Set(chatStore.chats.map((c) => c.id));
+		untrack(() => imagePopoutStore.pruneTo(live));
 	});
 </script>
 
