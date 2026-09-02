@@ -11,6 +11,7 @@ import { describe, expect, test } from 'bun:test';
 import { effectSetting } from './ambient';
 import {
 	DEFAULT_CHAT_FEATURE_STATE,
+	NOTEPAD_LIMIT,
 	normalizeChatFeatureState,
 	pushSteeringHistoryEntry,
 	withLorebookClaim,
@@ -49,6 +50,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
 			scene: null,
+			notepad: '',
 			connection: null,
 			persona: null,
 			preset: null,
@@ -62,6 +64,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['x'],
 			impersonatePerspective: 'second' as const,
 			scene: null,
+			notepad: '',
 			connection: null,
 			persona: null,
 			preset: null,
@@ -84,6 +87,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
 			scene: null,
+			notepad: '',
 			connection: null,
 			persona: null,
 			preset: null,
@@ -312,6 +316,48 @@ describe('the two lorebook transforms, together', () => {
 			lorebooks: [],
 			mutedLorebooks: ['a']
 		});
+	});
+});
+
+describe('normalizeChatFeatureState: notepad', () => {
+	test('a chat nobody has written notes for reads as empty', () => {
+		expect(normalizeChatFeatureState({}).notepad).toBe('');
+		expect(normalizeChatFeatureState({ notepad: null }).notepad).toBe('');
+	});
+
+	test('every blob written before chats could carry notes still reads fine', () => {
+		// The whole reason the absent value is '' rather than null: nothing migrates these,
+		// and a normalizer that needed a migration would have to run against every stored row.
+		const legacy = JSON.stringify({ steeringHistory: ['x'], impersonatePerspective: 'third' });
+		expect(normalizeChatFeatureState(legacy).notepad).toBe('');
+	});
+
+	test('text survives the round trip verbatim, newlines included', () => {
+		const notes = 'Owes Mira a favour.\n\nThe knife is still in the study.';
+		expect(normalizeChatFeatureState({ notepad: notes }).notepad).toBe(notes);
+	});
+
+	test('a non-string reads as empty rather than being coerced', () => {
+		expect(normalizeChatFeatureState({ notepad: 42 }).notepad).toBe('');
+		expect(normalizeChatFeatureState({ notepad: ['a'] }).notepad).toBe('');
+		expect(normalizeChatFeatureState({ notepad: { text: 'a' } }).notepad).toBe('');
+	});
+
+	test('an oversized note is clamped on the way OUT, not only on the way in', () => {
+		// This is the load-bearing one. The cap protects the chat-list fetch, which reads
+		// every chat's blob, so a row that arrived oversized (hand-edited, written by a
+		// future version, or restored from a backup) must not be re-saved at its own length.
+		const huge = 'x'.repeat(NOTEPAD_LIMIT + 500);
+		expect(normalizeChatFeatureState({ notepad: huge }).notepad).toHaveLength(NOTEPAD_LIMIT);
+	});
+
+	test('a note exactly at the cap is left alone', () => {
+		const exact = 'y'.repeat(NOTEPAD_LIMIT);
+		expect(normalizeChatFeatureState({ notepad: exact }).notepad).toBe(exact);
+	});
+
+	test('the default state carries no notes', () => {
+		expect(DEFAULT_CHAT_FEATURE_STATE.notepad).toBe('');
 	});
 });
 
