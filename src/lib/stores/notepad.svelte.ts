@@ -24,6 +24,7 @@
  */
 
 import { chatStore } from '$lib/stores/chat.svelte';
+import { registerFloatingPanel } from '$lib/stores/floating-panels.svelte';
 import { NOTEPAD_LIMIT, normalizeChatFeatureState } from '$lib/types/chat';
 import {
 	forgetNotepadOpen,
@@ -173,3 +174,33 @@ class NotepadStore {
 }
 
 export const notepadStore = new NotepadStore();
+
+/**
+ * The notepad's entry in the title bar.
+ *
+ * Sited here rather than in a shared table for the reason the registry's own note gives:
+ * a panel arrives on its own topic branch, and a table is a line every branch adds in the
+ * same place. It also puts the entry beside the state it describes, so the three things
+ * the plain name cannot say are written next to the fields they are read from.
+ *
+ * `disabled` rather than `available` on the welcome screen: hiding the button would shift
+ * the whole centred cluster sideways the moment a chat opened, and a greyed button that
+ * says why is the cheaper explanation.
+ */
+registerFloatingPanel({
+	id: 'notepad',
+	order: 10,
+	label: 'Notepad',
+	icon: 'notepad',
+	isOpen: () => notepadStore.open,
+	toggle: () => notepadStore.toggle(),
+	disabled: () => !notepadStore.canScope,
+	// A closed notepad holding a page of notes is otherwise indistinguishable from an empty
+	// one, so notes written last week are notes nobody is reminded of again.
+	badge: () => notepadStore.hasNotes,
+	tooltip: () => {
+		if (!notepadStore.canScope) return 'Notepad · open a chat to take notes';
+		if (notepadStore.open) return 'Close the notepad (the notes are kept)';
+		return notepadStore.hasNotes ? 'Notepad · this chat has notes' : 'Notepad';
+	}
+});
