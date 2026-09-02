@@ -55,7 +55,12 @@ $Topics = @(
     'feature/docker',
     'feature/echochamber',
     'feature/corrections',
-    'feature/image-popout'
+    'feature/image-popout',
+    # Stacked ON feature/image-popout, not cut from main: it reuses that branch's
+    # FloatingWindow shell. It must stay AFTER the pop-out in this list, and retiring the
+    # pop-out would take the notepad with it. See architecture/notepad.md for the repair
+    # if that day comes (extract the shell into its own branch cut from main).
+    'feature/notepad'
 )
 
 # `feature/memory-defaults` was here until upstream MERGED it: ours went up as PR #49 and is
