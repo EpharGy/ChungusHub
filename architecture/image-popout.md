@@ -12,6 +12,20 @@ This is the load-bearing decision and it is the one that looks like over-enginee
 
 **There is exactly one window.** A second needs a z-order between the two, a placement key each, and an answer to which one the arrows belong to. None of that is worth it for a picture you are keeping on screen while you work. Opening another image takes the window over and toasts, so a reader who clicked twice is never left wondering which of the two clicks they are looking at.
 
+## The window belongs to a character, and follows the reader
+
+A gallery hangs off a library entry, so a popped-out picture is a character's, not the app's. The window records which entry it came from (`ownerId`, threaded down from [`LibraryEntryEditor.svelte`](../src/lib/components/library/LibraryEntryEditor.svelte) and undefined for a persona, whose gallery no chat reads) and the path it is showing goes into a per-character record in localStorage, [`popout-memory.ts`](../src/lib/utils/popout-memory.ts). Opening a chat for that character brings the picture back; opening somebody else's takes it away.
+
+**It is an edge, not an invariant.** The effect in [`ImagePopoutWindow.svelte`](../src/lib/components/ui/ImagePopoutWindow.svelte) acts only when the active chat's character *changes*. Re-asserting "the window must belong to the open chat" continuously would be simpler to write and wrong: the library is reachable from inside any chat, so popping out character B's picture while chat A is on screen is ordinary, and an invariant would shut that window in the same frame it opened. A window whose character is not the one being read is only wrong once the reader moves.
+
+**Closing and being closed are different acts, and the record is where they differ.** The X button forgets the picture, because the reader deciding they are done with it should not be undone by walking to another story and back. A character switch suspends instead: same closed window, record kept, and reopening that character's chat puts it back. One store method each, so no caller has to remember which it wanted.
+
+**Only the path is stored, never the set.** The set is re-read from the character's live gallery on the way in, which is what turns a picture deleted in the meantime into a miss that can be reported (a toast, and the record dropped so the notice comes once) rather than a broken image rendered out of a stale snapshot. It is the same reasoning as the snapshot's missing-file state, arriving at the opposite answer because a reopen has somewhere live to look and a paging window does not.
+
+The **rectangle needs no work at all**: `FloatingWindow` re-reads its saved placement every time it opens, dock included, so a reopened picture is already the size and place the reader left it. The two records are per-device for the same reason: a rectangle means nothing on another machine's screen, and splitting the pair across the settings spine would let the halves disagree.
+
+The record is capped at twenty characters, most-recent-first. A prune against the library would be tighter, but this file is read before the library store loads, and a bound that needs another store is not a bound.
+
 ## The floating shell is a port of the Assistant's, not a refactor of it
 
 `FloatingWindow` is the Assistant's widget maths (drag, seven-zone snap, eight-handle resize, tear-off-restores-free-size, persisted placement) lifted into a component that takes a header and a body. The geometry underneath it is pure and lives in [`floating-window.ts`](../src/lib/utils/floating-window.ts), tested in [`floating-window.test.ts`](../src/lib/utils/floating-window.test.ts).

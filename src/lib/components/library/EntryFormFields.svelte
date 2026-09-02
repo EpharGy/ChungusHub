@@ -37,6 +37,11 @@
 		alternateGreetings: string[] | undefined;
 		/** Extra image paths shown in the gallery section. */
 		gallery: string[] | undefined;
+		/** The entry's id when it is a character's, which is what a popped-out gallery image
+		 *  binds itself to. Undefined for a persona: no chat reads a persona's gallery, so a
+		 *  window bound to one could never be brought back. Separate from `entityId` above,
+		 *  which happens to be the same value but means "unique enough for a DOM id". */
+		characterId?: string;
 		/** The character's sprites: their own image set, shown in their own section. */
 		sprites: CharacterSprite[] | undefined;
 		defaultSprite: string | undefined;
@@ -73,6 +78,7 @@
 		traits,
 		alternateGreetings,
 		gallery,
+		characterId,
 		sprites,
 		defaultSprite,
 		entityId,
@@ -693,6 +699,7 @@
 				<CharacterGallery
 					{gallery}
 					characterName={name}
+					{characterId}
 					onAdd={onGalleryAdd}
 					onRemove={onGalleryRemove}
 				/>
