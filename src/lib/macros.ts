@@ -29,13 +29,20 @@ import { formatControlForPrompt } from '$lib/utils/prompt-controls';
 // ============================================================================
 
 /** Display buckets for the macro reference, in the order the reference panel shows them. */
-export type MacroGroup = 'names' | 'context' | 'time' | 'character-field' | 'memory';
+export type MacroGroup =
+	| 'names'
+	| 'context'
+	| 'time'
+	| 'random'
+	| 'character-field'
+	| 'memory';
 
 /** Ordered group metadata for the macro reference UIs. */
 export const MACRO_GROUPS: readonly { id: MacroGroup; label: string; hint: string }[] = [
 	{ id: 'names', label: 'Names', hint: 'inline name references' },
 	{ id: 'context', label: 'Story & context', hint: 'profiles, world info, history, memory' },
 	{ id: 'time', label: 'Date & time', hint: "the reader's own clock, read as the prompt is built" },
+	{ id: 'random', label: 'Randomness', hint: 'rolled fresh on every resolution, so the token meter and the send can differ' },
 	{ id: 'character-field', label: 'Character fields', hint: 'one card field at a time' },
 	{ id: 'memory', label: 'Memory pipeline', hint: 'filled while the memory engine runs, literal anywhere else' }
 ];
@@ -60,11 +67,18 @@ export interface MacroDef {
 	engine?: boolean;
 	/**
 	 * The registered name is a SHAPE, not a resolvable name: the author writes the numbered
-	 * form ({{chatHistoryLast20}}) and a parser turns it into a value. Kept out of
-	 * SYSTEM_MACROS so the lint warns on the placeholder, which resolves to nothing, rather
-	 * than on the spelling that works.
+	 * form ({{chatHistoryLast20}}) or the argument form ({{roll::1d20}}) and a parser turns
+	 * it into a value. Kept out of SYSTEM_MACROS so the lint warns on the placeholder, which
+	 * resolves to nothing, rather than on the spelling that works.
 	 */
 	parameterized?: boolean;
+	/**
+	 * A spelling that actually resolves, for the macro reference to show and copy. Only
+	 * meaningful on a `parameterized` entry, where the bare registered name is a shape that
+	 * resolves to nothing: copying `{{roll}}` would hand the author something inert. The
+	 * reference falls back to `{{name}}` when this is absent.
+	 */
+	sample?: string;
 }
 
 /**
@@ -84,7 +98,7 @@ export const MACROS: readonly MacroDef[] = [
 	{ name: 'lorebook', description: 'Lorebook entries, keyword-matched against recent messages.', engine: true, group: 'context' },
 	{ name: 'memory', description: 'Chat-memory recall block (episode summaries).', engine: true, group: 'context' },
 	{ name: 'chatHistory', description: 'Every turn, as native-role messages. Prompt items only: anywhere else it resolves to nothing.', engine: true, structural: true, group: 'context' },
-	{ name: 'chatHistoryLastN', description: 'Only the newest N turns, as a plain transcript. Write the number: {{chatHistoryLast20}}.', engine: true, parameterized: true, group: 'context' },
+	{ name: 'chatHistoryLastN', description: 'Only the newest N turns, as a plain transcript. Write the number: {{chatHistoryLast20}}.', engine: true, parameterized: true, sample: '{{chatHistoryLast20}}', group: 'context' },
 	{ name: 'lastMessage', description: 'The newest turn, as inline text. A copy: the turn itself still rides {{chatHistory}}.', engine: true, group: 'context' },
 	{ name: 'lastUserMessage', description: 'The newest user turn, as inline text.', engine: true, group: 'context' },
 	{ name: 'lastCharMessage', description: 'The newest character turn, as inline text.', engine: true, group: 'context' },
@@ -94,6 +108,27 @@ export const MACROS: readonly MacroDef[] = [
 	{ name: 'weekday', description: 'Current day of the week, e.g. Saturday.', engine: true, group: 'time' },
 	{ name: 'isotime', description: 'Current local time as 24-hour HH:MM.', engine: true, group: 'time' },
 	{ name: 'isodate', description: 'Current local date as YYYY-MM-DD.', engine: true, group: 'time' },
+
+	// ----- Randomness (SillyTavern's {{random}} and {{roll}}, argument macros) -----
+	// Both are `parameterized`: the bare name is a shape and resolves to nothing, so the
+	// Prompt Builder's lint flags `{{random}}` written on its own, which is what an author
+	// who forgot the list has actually written.
+	{
+		name: 'random',
+		description: 'Picks one of the listed options at random. Separate with :: (or commas). Re-rolled on every resolution.',
+		engine: true,
+		parameterized: true,
+		sample: '{{random::red::green::blue}}',
+		group: 'random'
+	},
+	{
+		name: 'roll',
+		description: 'Rolls dice, NdM with an optional +/- modifier: {{roll::1d20}}, {{roll::3d6+4}}. A bare number means one die of that many sides. Re-rolled on every resolution.',
+		engine: true,
+		parameterized: true,
+		sample: '{{roll::1d20}}',
+		group: 'random'
+	},
 
 	// ----- Per-field character macros (place one card field individually) -----
 	{ name: 'description', description: "The character's description field, on its own.", engine: true, group: 'character-field' },
@@ -141,6 +176,43 @@ export const STRUCTURAL_MACROS: readonly string[] = MACROS.filter((m) => m.struc
 /** Matches {{name}} and {{name.sub}}, the one macro shape used everywhere. */
 export const MACRO_REGEX = /\{\{(\w+(?:\.\w+)?)\}\}/g;
 
+/**
+ * The argument-taking macros, the ONE exception to the name-shaped form above:
+ * {{random::a::b}} and {{roll::1d20}}, borrowed from SillyTavern so a preset written there
+ * keeps working when it is imported here.
+ *
+ * The separator alternation is what buys that import compatibility. SillyTavern's own two
+ * regexes disagree about it, and its default (non-experimental) engine matches `roll` with
+ * `[ : ]` -- a class of exactly ONE character -- so `{{roll::1d20}}` captures `:1d20` there,
+ * fails validation and silently disappears. Accepting `::`, `:` and whitespace for BOTH
+ * macros takes every spelling either SillyTavern engine accepts, and fixes that one on the
+ * way in rather than reproducing it.
+ *
+ * `[^{}]` rather than SillyTavern's `[^}]`: a nested `{{...}}` inside the argument is not
+ * supported (it is not really supported there either), and excluding the brace keeps such a
+ * write-up literal instead of half-matched.
+ */
+const ARG_MACRO_REGEX = /\{\{(random|roll)(?:::|:|\s)\s*([^{}]+?)\s*\}\}/gi;
+
+/** Does this text carry an argument macro? The regex above is global and therefore carries a
+ *  `lastIndex` between calls, so `.test` on it would answer differently on alternate calls;
+ *  this non-global twin is derived from the same source and is safe to ask repeatedly. */
+const ARG_MACRO_TEST = new RegExp(ARG_MACRO_REGEX.source, 'i');
+
+/**
+ * The one pattern `substitute` scans with: both shapes in a single alternation, derived from
+ * the two sources above so they can never drift apart. Single-pass is the point -- running
+ * the argument macros as a second `replace` would re-scan the values the first pass injected,
+ * and a lorebook entry or a piece of story text containing the literal `{{random::a::b}}`
+ * would then be rolled as if the author had written it.
+ *
+ * Capture groups, in order: 1 = argument macro name, 2 = its raw argument, 3 = a plain name.
+ * The `i` flag is SillyTavern's (its macro regexes are all `/gi`) and only reaches the
+ * argument names in practice: `\w+` already matched any case, and the lookup below is by the
+ * captured text, so plain macros stay exactly as case-sensitive as they have always been.
+ */
+const SUBSTITUTION_REGEX = new RegExp(`${ARG_MACRO_REGEX.source}|${MACRO_REGEX.source}`, 'gi');
+
 /** Heads each example-dialogue block when the preset names no `exampleSeparator` of its own
  *  (SillyTavern's <START> marker becomes this). An empty separator is a real choice, meaning
  *  no header line at all, so this is only ever the fallback for an ABSENT one. */
@@ -151,12 +223,107 @@ export const DEFAULT_EXAMPLE_SEPARATOR = '***';
  * a value containing {{...}} is never re-scanned, and through a function replacement so
  * literal $-sequences in a value aren't treated as replacement patterns.
  * Macros with no entry in `values` are left literal (so typos surface instead of vanishing).
+ *
+ * FORK DIVERGENCE. Upstream states in architecture/macros.md that this stays "a pure
+ * name -> string map", because that is what lets a token meter and the send that follows it
+ * resolve the same text and agree. The argument macros below break that on purpose, and the
+ * cost is real and visible: a meter prices one roll and the send makes another. It is the
+ * same trade the clock macros already took, and it is taken here for SillyTavern import
+ * compatibility. See architecture/random-roll-macros.md for the whole argument.
+ *
+ * That decision is upstream's own and predates this (patcireamo, the initial commit), so
+ * this is a divergence rather than a gap to be filled: it must not go up as a fait accompli.
+ * Raise it as an issue and let the owner rule on the trade before opening a PR.
+ *
+ * Argument macros resolve HERE, at match time, rather than through `values`. That is not a
+ * shortcut, it is the requirement: `values` is keyed by macro NAME and `extractMacroNames`
+ * dedupes through a Set, so two `{{roll::1d20}}` in one template would share one key, one
+ * lookup and therefore one number. Resolving inside the replace callback is what makes every
+ * occurrence roll independently.
  */
 export function substitute(template: string, values: Record<string, string>): string {
 	if (!template) return '';
-	return template.replace(MACRO_REGEX, (match, name: string) =>
-		name in values ? values[name] : match
+	return template.replace(
+		SUBSTITUTION_REGEX,
+		(
+			match: string,
+			argName: string | undefined,
+			argBody: string | undefined,
+			name: string | undefined
+		) => {
+			if (argName !== undefined) {
+				// undefined means "not resolvable" (an empty list, a formula droll's grammar
+				// rejects), and stays literal like every other unresolvable macro here.
+				return resolveArgMacro(argName, argBody ?? '') ?? match;
+			}
+			return name !== undefined && name in values ? values[name] : match;
+		}
 	);
+}
+
+/**
+ * Resolve one argument macro, or undefined to leave it literal.
+ *
+ * SillyTavern returns an empty string for a formula it cannot parse and logs to the console.
+ * This returns undefined instead, so `{{roll::2d6+1d4}}` (valid-looking, but outside droll's
+ * grammar) lands in the prompt where the author can see it. That is this file's own rule for
+ * every other unresolvable macro, and it is the only behavioural difference from ST on input
+ * ST itself considers malformed -- the syntax accepted is a strict superset of ST's.
+ */
+function resolveArgMacro(name: string, body: string): string | undefined {
+	const arg = body.trim();
+	if (!arg) return undefined;
+	return name.toLowerCase() === 'random' ? pickRandom(arg) : rollDice(arg);
+}
+
+/**
+ * Split a {{random}} argument into its options, by SillyTavern's rule: `::` wins outright
+ * when present, otherwise commas, with `\,` escaping a literal one. The lookbehind is what
+ * honours that escape; ST swaps in a placeholder string and swaps it back, which does the
+ * same job with a sentinel that can collide.
+ *
+ * Items are trimmed on BOTH paths. ST's two engines disagree here -- its legacy regex path
+ * trims the comma list but not the `::` one, while its newer registry engine trims both --
+ * so this follows the newer one. It only ever differs for `{{random:: a :: b }}`, where the
+ * spaces are plainly formatting rather than part of the option.
+ */
+function splitMacroList(body: string): string[] {
+	if (body.includes('::')) return body.split('::').map((item) => item.trim());
+	return body.split(/(?<!\\),/).map((item) => item.trim().replace(/\\,/g, ','));
+}
+
+/** One option from a {{random}} list. `splitMacroList` always yields at least one entry, and
+ *  an empty option is a legitimate pick (ST allows it, e.g. `{{random::a::}}`). */
+function pickRandom(body: string): string {
+	const options = splitMacroList(body);
+	return options[Math.floor(Math.random() * options.length)];
+}
+
+/** droll's entire grammar, restated: an optional count, `d`, the sides, an optional +/-
+ *  modifier. No leading zeros, no multi-term formulas (`2d6+1d4`), no keep-highest (`4d6kh3`).
+ *  Pinned to droll's own regex so an imported ST preset accepts and rejects identically. */
+const DICE_FORMULA = /^([1-9]\d*)?d([1-9]\d*)([+-]\d+)?$/i;
+
+/** Dice-count ceiling droll does not have. Its grammar allows `9999999999d6`, which is a
+ *  browser hang from one typo; past this the macro stays literal instead. */
+const MAX_DICE = 1000;
+
+/**
+ * Roll a droll formula, or undefined when it is not one. Carries ST's bare-number shorthand,
+ * where `{{roll::6}}` means one six-sided die.
+ */
+function rollDice(formula: string): string | undefined {
+	const parsed = DICE_FORMULA.exec(/^\d+$/.test(formula) ? `1d${formula}` : formula);
+	if (!parsed) return undefined;
+	const count = parsed[1] ? Number(parsed[1]) : 1;
+	if (count > MAX_DICE) return undefined;
+	const sides = Number(parsed[2]);
+	// Math.random rather than ST's seedrandom: ST seeds a fresh generator per call with added
+	// entropy, which is a roundabout way of asking for an unseeded roll. Nothing here is
+	// reproducible by design, so there is no seed to carry.
+	let total = parsed[3] ? Number(parsed[3]) : 0;
+	for (let i = 0; i < count; i++) total += 1 + Math.floor(Math.random() * sides);
+	return String(total);
 }
 
 /** Parses a {{chatHistoryLastN}} macro name into N, or undefined for any other name.
@@ -220,6 +387,9 @@ interface PruneLevel {
 	directMacros: string[];
 	/** Child blocks kept at this level. */
 	survivingChildren: number;
+	/** True when this level's own text, or a surviving child's, carries an argument macro
+	 *  ({{random}}, {{roll}}). Those always produce text, so they veto pruning outright. */
+	hasArgMacro: boolean;
 }
 
 /** Index right after the close tag matching an open `<name>` whose content starts at `from`,
@@ -238,6 +408,11 @@ function findMatchingClose(text: string, name: string, from: number): number {
 
 function shouldPrune(block: PruneLevel, values: Record<string, string>): boolean {
 	if (!block.dynamic) return false;
+	// An argument macro always produces text -- a roll, a chosen option, or its own literal
+	// self when the argument is malformed -- so a block carrying one is neither empty nor pure
+	// framing, whatever its other macros resolved to. Checked BEFORE the substitute below,
+	// which would otherwise roll dice purely to measure emptiness and discard the result.
+	if (block.hasArgMacro) return false;
 	// Emptied out entirely. Unknown macros stay literal in `substitute`, so a typo'd name
 	// keeps the block non-empty and visible rather than silently pruned.
 	if (!substitute(block.out, values).trim()) return true;
@@ -256,6 +431,7 @@ function pruneLevel(text: string, values: Record<string, string>): PruneLevel {
 	let ownText = '';
 	let dynamic = false;
 	let survivingChildren = 0;
+	let hasArgMacro = false;
 	let pos = 0;
 
 	let match: RegExpExecArray | null;
@@ -275,6 +451,7 @@ function pruneLevel(text: string, values: Record<string, string>): PruneLevel {
 		} else {
 			out += `<${name}>${child.out}</${name}>`;
 			dynamic = dynamic || child.dynamic;
+			hasArgMacro = hasArgMacro || child.hasArgMacro;
 			survivingChildren++;
 		}
 		pos = closeAt + name.length + 3; // past `</name>`
@@ -285,7 +462,13 @@ function pruneLevel(text: string, values: Record<string, string>): PruneLevel {
 	ownText += rest;
 
 	const directMacros = extractMacroNames(ownText);
-	return { out, dynamic: dynamic || directMacros.length > 0, directMacros, survivingChildren };
+	return {
+		out,
+		dynamic: dynamic || directMacros.length > 0,
+		directMacros,
+		survivingChildren,
+		hasArgMacro: hasArgMacro || ARG_MACRO_TEST.test(ownText)
+	};
 }
 
 /**

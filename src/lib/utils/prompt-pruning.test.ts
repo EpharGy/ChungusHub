@@ -86,6 +86,41 @@ describe('pruneEmptyTagBlocks: core rules', () => {
 	});
 });
 
+describe('pruneEmptyTagBlocks: argument macros always hold their block open', () => {
+	// {{random}} and {{roll}} always produce text -- a pick, a roll, or their own literal self
+	// when the argument is malformed -- so they can never be the empty half of a framing pair.
+	// Unlike every other macro here they resolve at match time rather than through `values`,
+	// so pruning cannot see them in the map and has to recognise them by shape.
+	test('a block holding only an argument macro is never pruned', () => {
+		const text = '<tone>{{random::tense::calm}}</tone>';
+		expect(pruneEmptyTagBlocks(text, {})).toBe(text);
+		const dice = '<check>{{roll::1d20}}</check>';
+		expect(pruneEmptyTagBlocks(dice, {})).toBe(dice);
+	});
+
+	test('an argument macro vetoes the framing rule for an empty neighbour', () => {
+		// Without the veto {{memory}} being empty would carry the whole block off, taking a
+		// tone line that had real content in it.
+		const text = '<scene>Tone: {{random::tense::calm}}. {{memory}}</scene>';
+		expect(pruneEmptyTagBlocks(text, { memory: '' })).toBe(text);
+	});
+
+	test('a malformed formula still holds its block open, staying visible', () => {
+		const text = '<check>{{roll::4d6kh3}}</check>';
+		expect(pruneEmptyTagBlocks(text, {})).toBe(text);
+	});
+
+	test('the veto travels up from a surviving child', () => {
+		const text = '<outer><inner>{{roll::1d20}}</inner>{{a}}</outer>';
+		expect(pruneEmptyTagBlocks(text, { a: '' })).toBe(text);
+	});
+
+	test('a block with no argument macro still prunes normally', () => {
+		// The guard is a veto, not an amnesty: nothing else changed.
+		expect(pruneEmptyTagBlocks('<x>{{a}}</x>', { a: '' })).toBe('');
+	});
+});
+
 describe('pruneEmptyTagBlocks: nesting and cascade', () => {
 	const BIBLE =
 		'<story_bible>\n\n<character>\n{{character}}\n</character>\n\n<protagonist>\n{{persona}}\n</protagonist>\n\n</story_bible>';
