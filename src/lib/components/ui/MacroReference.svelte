@@ -22,33 +22,37 @@
 		macros: MACROS.filter((m) => m.group === g.id)
 	})).filter((g) => g.macros.length > 0);
 
-	// Click-to-copy feedback: the macro name most recently copied, cleared after a beat.
+	// Click-to-copy feedback: the macro token most recently copied, cleared after a beat.
 	// It waits for the copy, so the tick never stands in for a clipboard that stayed empty.
+	// Keyed on the whole token rather than the name: a `sample` spelling is what the chip
+	// shows and copies, and `{{roll}}` is not what the reader clicked.
 	let copiedMacro = $state<string | null>(null);
 	let copyTimer: ReturnType<typeof setTimeout> | null = null;
-	async function copyMacro(name: string) {
+	async function copyMacro(token: string) {
 		try {
-			await copyText(`{{${name}}}`);
+			await copyText(token);
 		} catch {
 			toastStore.error('Copy failed. Type the macro out instead.');
 			return;
 		}
-		copiedMacro = name;
+		copiedMacro = token;
 		if (copyTimer) clearTimeout(copyTimer);
 		copyTimer = setTimeout(() => (copiedMacro = null), 1300);
 	}
 </script>
 
-<!-- One clickable macro tile: shows the token + description, copies {{name}} on click. -->
-{#snippet macroChip(name: string, description: string, tag?: string)}
+<!-- One clickable macro tile: shows the token + description, copies that token on click.
+     `token` is the whole `{{...}}` spelling, so a parameterized macro can advertise one that
+     actually resolves ({{roll::1d20}}) rather than the inert registered name. -->
+{#snippet macroChip(token: string, description: string, tag?: string)}
 	<button
 		type="button"
-		onclick={() => copyMacro(name)}
-		title={`Click to copy {{${name}}}`}
+		onclick={() => copyMacro(token)}
+		title={`Click to copy ${token}`}
 		class="group/chip relative flex flex-col items-start gap-1 text-left pl-2.5 pr-7 py-2 rounded-[var(--radius-md)] border border-border-subtle bg-bg-secondary/40 hover:border-accent/50 hover:bg-bg-secondary transition-colors"
 	>
 		<span class="flex items-center gap-1.5 flex-wrap">
-			<code class="text-[11px] font-mono text-accent break-all">{`{{${name}}}`}</code>
+			<code class="text-[11px] font-mono text-accent break-all">{token}</code>
 			{#if tag}
 				<span class="shrink-0 text-[9px] uppercase tracking-wide font-ui font-semibold px-1 py-px rounded bg-bg-tertiary text-text-muted">
 					{tag}
@@ -57,13 +61,13 @@
 		</span>
 		<span class="text-[11px] font-ui text-text-muted leading-snug">{description}</span>
 		<span
-			class="absolute top-2 right-2 transition-opacity {copiedMacro === name
+			class="absolute top-2 right-2 transition-opacity {copiedMacro === token
 				? 'opacity-100'
 				: 'opacity-0 group-hover/chip:opacity-100'}"
 		>
 			<Icon
-				name={copiedMacro === name ? 'check' : 'copy'}
-				class="w-3 h-3 {copiedMacro === name ? 'text-success' : 'text-text-muted'}"
+				name={copiedMacro === token ? 'check' : 'copy'}
+				class="w-3 h-3 {copiedMacro === token ? 'text-success' : 'text-text-muted'}"
 			/>
 		</span>
 	</button>
@@ -97,7 +101,7 @@
 				<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
 					{#each group.macros as macro (macro.name)}
 						{@render macroChip(
-							macro.name,
+							macro.sample ?? `{{${macro.name}}}`,
 							macro.description,
 							macro.structural ? 'structural' : undefined
 						)}
@@ -119,7 +123,7 @@
 				{#if controls.length > 0}
 					<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
 						{#each controls as control (control.name)}
-							{@render macroChip(control.name, control.description, 'control')}
+							{@render macroChip(`{{${control.name}}}`, control.description, 'control')}
 						{/each}
 					</div>
 				{:else}
