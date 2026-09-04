@@ -56,6 +56,7 @@ $Topics = @(
     'feature/echochamber',
     'feature/corrections',
     'feature/random-roll-macros',
+    'fix/menu-anchor',
     # The floating window shell, and the two features built on it. All three are cut from
     # main; the two consumers are cut from the shell, which makes them SIBLINGS rather than
     # a stack. Retiring either consumer is still a one-line edit here and leaves the other
