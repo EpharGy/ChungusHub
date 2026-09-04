@@ -29,15 +29,6 @@ is the one thing that will not work.
 | Random & dice macros | `feature/random-roll-macros` | `{{random::red::green::blue}}` picks one of the options and `{{roll::1d20}}` rolls dice, anywhere a macro resolves: preset items, lorebook entries, character fields. SillyTavern's own syntax and its whole spelling surface, so a preset imported from there works unchanged, including `{{roll::1d20}}` itself, which SillyTavern's default engine silently drops. Every occurrence rolls separately. Note that a roll is made fresh on each resolution, so the token meter and the message actually sent can differ by one pick. See `architecture/random-roll-macros.md`. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 
-## Fixes
-
-Upstream bugs fixed here while the change is in flight. Each one is a candidate to retire
-the moment upstream carries it.
-
-| Fix | Branch | What it does |
-|---|---|---|
-| Message menu anchoring | `fix/menu-anchor` | The delete and regenerate menus open from the message column's edge rather than the toolbar's, so they stay on screen on a phone. They were anchored to the small actions pill and picked their side from the speaker, which put them off the left edge for a user turn in the Flat, Portraits and Manuscript styles, and off the right edge for any turn carrying the branch pager. |
-
 ## Running it
 
 Docker needs two addresses specific to the machine it runs on, so they are not committed.
