@@ -56,7 +56,6 @@ $Topics = @(
     'feature/echochamber',
     'feature/corrections',
     'feature/random-roll-macros',
-    'fix/menu-anchor',
     # The floating window shell, and the two features built on it. All three are cut from
     # main; the two consumers are cut from the shell, which makes them SIBLINGS rather than
     # a stack. Retiring either consumer is still a one-line edit here and leaves the other
@@ -71,6 +70,13 @@ $Topics = @(
     'feature/notepad'
 )
 
+# `fix/menu-anchor` was here until upstream MERGED it: ours went up as PR #63 and is now
+# main's own `33ecbaf`, with one follow-up on top of it (a `max-width: 100%` cap, because a
+# style that draws a portrait column can leave that column narrower than the menu itself).
+# Supersession by adoption, as with `feature/memory-defaults` below: the tree at the branch
+# tip was byte-identical to upstream's commit, so carrying it would merge the same patch
+# twice.
+#
 # `feature/memory-defaults` was here until upstream MERGED it: ours went up as PR #49 and is
 # now main's own `891400f`, with two follow-ups on top of it (a double-click reset that falls
 # through to the card, and a star on any tunable that has left the value below it). This is
