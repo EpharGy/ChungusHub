@@ -41,7 +41,8 @@
 		sprites: CharacterSprite[] | undefined;
 		defaultSprite: string | undefined;
 
-		// Unique id for form element IDs
+		// The library entry's id: unique per form, so it is what every form element id is
+		// built from, and it is also the entry the gallery below belongs to.
 		entityId: string;
 
 		/** Rendered at the foot of the identity pane: beside the portrait on wide screens, and
@@ -690,7 +691,13 @@
 		<div class="space-y-3">
 			{@render sectionHeading('gallery', 'Gallery', 'image', galleryOpen)}
 			{#if galleryOpen}
-				<CharacterGallery {gallery} onAdd={onGalleryAdd} onRemove={onGalleryRemove} />
+				<CharacterGallery
+					{gallery}
+					characterName={name}
+					entryId={entityId}
+					onAdd={onGalleryAdd}
+					onRemove={onGalleryRemove}
+				/>
 			{/if}
 		</div>
 
