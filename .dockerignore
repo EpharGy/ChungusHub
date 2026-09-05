@@ -8,6 +8,13 @@ backups
 images
 docs
 
+# Subsystem notes, written for people and never read by the app. Every mention
+# of them under server/ and src/ is a prose citation in a comment or a
+# describe() string; nothing opens the folder. `COPY . .` was sealing 1.1 MB of
+# markdown into the image where no reader can reach it, while the copy that is
+# actually read sits in the checkout beside the container.
+architecture
+
 # The host's own addresses. Compose reads .env from the host at run time, so the
 # image never needs a copy, and an image layer is as copyable as a commit. Bun
 # also auto-loads .env from the working directory before it runs anything, and a
