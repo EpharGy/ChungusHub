@@ -23,6 +23,7 @@ import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
 import { memoryStore } from '$lib/memory/store.svelte';
 import { spriteStore } from './sprites.svelte';
 import { imagegenStore } from './imagegen.svelte';
+import { echoChamberStore } from './echochamber.svelte';
 import { steeringStore } from './steering.svelte';
 import { steeringTargetForChat } from '$lib/types/steering';
 import type { LorebookTrigger } from '$lib/lorebook/types';
@@ -212,6 +213,7 @@ class MessageStore {
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(chatId);
 			this.triggerImageGeneration(result.committedMessageId);
+			this.triggerEchoChamber(result.committedMessageId);
 			return result.committedMessageId;
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
@@ -853,6 +855,7 @@ class MessageStore {
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
 			this.triggerImageGeneration(target.id);
+			this.triggerEchoChamber(target.id);
 		} catch (error) {
 			// A stop the server never answered: nothing streamed back, so the stored turn
 			// stays untouched (the kept-tail case resolves normally above).
@@ -989,6 +992,7 @@ class MessageStore {
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
 			this.triggerImageGeneration(result.committedMessageId);
+			this.triggerEchoChamber(result.committedMessageId);
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
@@ -1083,6 +1087,22 @@ class MessageStore {
 	 */
 	private triggerImageGeneration(messageId: string): void {
 		void imagegenStore.ensureForMessage(messageId);
+	}
+
+	/**
+	 * Fire-and-forget audience reactions for the turn named. A sidecar beside memory, on the
+	 * same terms: never blocks generation, never rolled back, and a no-op when the engine or
+	 * its auto-generate switch is off.
+	 *
+	 * Named rather than searched for. A scan of the open path answers "whatever turn is
+	 * newest right now", which is the same thing as "the turn that just landed" only while
+	 * the reader stays put: walk to another branch or another chat while the reply is being
+	 * written and the scan files this reply's reactions against a turn nobody generated.
+	 * Each caller passes the row it just wrote, and a row that is not in the open chat
+	 * resolves to nothing.
+	 */
+	private triggerEchoChamber(messageId: string): void {
+		void echoChamberStore.ensureForMessage(messageId);
 	}
 
 	private async createMessage(
