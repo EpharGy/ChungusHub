@@ -118,6 +118,27 @@ export interface ChatFeatureState {
 	impersonatePerspective: ImpersonatePerspective;
 	/** Null while this chat has never been given a scene of its own. */
 	scene: ChatScene | null;
+	/** The reader's own notes about this story, kept beside it and shown in a floating
+	 *  window (architecture/notepad.md). Plain text, empty for a chat nobody has written
+	 *  notes for, and capped at NOTEPAD_LIMIT characters.
+	 *
+	 *  **It reaches no prompt.** This is the reader's paper, not the story's: the model-facing
+	 *  places for standing text are the memory engine, steering notes and lorebooks, each of
+	 *  which is budgeted and traceable. A field that quietly joined every request would be
+	 *  none of those things.
+	 *
+	 *  It lives on the chat row rather than in localStorage, unlike the pop-out geometry it
+	 *  shares a window shell with, because a rectangle is per-device and a paragraph the
+	 *  reader typed is not: notes have to survive a cleared browser and show up on the phone.
+	 *  The cap is the price of that home: `getAllChats` selects whole rows, so every chat's
+	 *  blob rides in the chat-list fetch, and an uncapped notepad would make that list grow
+	 *  with everything ever typed into one.
+	 *
+	 *  Sits beside `scene` rather than after the claim lists below, and deliberately: those
+	 *  are claims on library entries, this is furniture of the chat itself. The placement
+	 *  also keeps this branch's three hunks clear of EchoChamber's, which append at the end
+	 *  of the same three blocks, so the two do not re-fight one conflict on every rebuild. */
+	notepad: string;
 	/** The connection this story sends on, claimed from the composer's setup chip. A plain
 	 *  connection id, or null to follow whatever the Connections page routes Primary to.
 	 *  It covers the story's own calls and nothing else: the assistant and every engine
@@ -159,6 +180,7 @@ function defaultChatFeatureState(): ChatFeatureState {
 		steeringHistory: [],
 		impersonatePerspective: 'first',
 		scene: null,
+		notepad: '',
 		connection: null,
 		persona: null,
 		preset: null,
@@ -190,6 +212,26 @@ function normalizeClaimedId(raw: unknown): string | null {
 function normalizeClaimedIds(raw: unknown): string[] {
 	if (!Array.isArray(raw)) return [];
 	return raw.filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+/**
+ * How much of one chat's notepad is kept. A cap rather than a warning, because the ceiling
+ * is not the reader's patience: `getAllChats` selects whole chat rows, so this string is
+ * part of what every chat-list fetch carries for EVERY chat, and an unbounded one turns a
+ * list load into a download of everything ever typed into any story.
+ *
+ * Twenty thousand characters is several pages of notes, which is far past what the window
+ * it is read in can comfortably hold, so the clamp is a backstop rather than a limit anyone
+ * writes up against. The window says how much room is left once it is close.
+ */
+export const NOTEPAD_LIMIT = 20000;
+
+/** Plain text, clamped. Absent in every blob written before a chat could carry notes, which
+ *  is why this needs no migration: missing reads as empty, and empty is "no notes". The
+ *  clamp is applied on the way IN as well as on the way out, so a blob that arrived
+ *  oversized (hand-edited, or written by a future version) cannot be re-saved oversized. */
+function normalizeNotepad(raw: unknown): string {
+	return typeof raw === 'string' ? raw.slice(0, NOTEPAD_LIMIT) : '';
 }
 
 /** A chat with no scene of its own reads as null, which is what "follows the app's" is.
@@ -228,6 +270,7 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
 		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
 		scene: normalizeChatScene(obj.scene),
+		notepad: normalizeNotepad(obj.notepad),
 		connection: normalizeClaimedId(obj.connection),
 		persona: normalizeClaimedId(obj.persona),
 		preset: normalizeClaimedId(obj.preset),

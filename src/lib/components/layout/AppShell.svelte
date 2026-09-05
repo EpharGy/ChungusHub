@@ -10,6 +10,7 @@
 	import ConnectionBar from '$lib/components/layout/ConnectionBar.svelte';
 	import DeleteGuardBar from '$lib/components/layout/DeleteGuardBar.svelte';
 	import ImportBar from '$lib/components/layout/ImportBar.svelte';
+	import NotepadWindow from '$lib/components/ui/NotepadWindow.svelte';
 	import { deleteGuard } from '$lib/stores/delete-guard.svelte';
 	import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
@@ -344,6 +345,15 @@
 		<div class="app-main">
 			<Workspace />
 		</div>
+		<!-- The chat notepad, on FloatingWindow and mounted at the shell for the two reasons
+		     every caller of that shell shares: it is fixed-positioned and has to paint above
+		     the workspace's isolated stacking context, and it has to outlive every surface it
+		     can be raised over. It draws nothing until the title bar's button opens it.
+		     Sibling order means nothing to a fixed-position element, so this sits ABOVE the
+		     Assistant purely to keep off the line below WelcomeDialog, which is where the
+		     other floating panels this fork carries insert themselves. A conflict on every
+		     rebuild is a poor price for an ordering that changes nothing on screen. -->
+		<NotepadWindow />
 		<!-- The Chungus Assistant lives here, at the shell's top level, so its fixed
 		     floating widget/launcher paints above the title bar and the workspace's
 		     isolated stacking context. -->
