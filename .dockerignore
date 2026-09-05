@@ -1,0 +1,41 @@
+.git
+node_modules
+build
+dist
+user-data
+data
+backups
+images
+docs
+
+# Subsystem notes, written for people and never read by the app. Every mention
+# of them under server/ and src/ is a prose citation in a comment or a
+# describe() string; nothing opens the folder. `COPY . .` was sealing 1.1 MB of
+# markdown into the image where no reader can reach it, while the copy that is
+# actually read sits in the checkout beside the container.
+architecture
+
+# The host's own addresses. Compose reads .env from the host at run time, so the
+# image never needs a copy, and an image layer is as copyable as a commit. Bun
+# also auto-loads .env from the working directory before it runs anything, and a
+# baked-in copy stopped it dead: `bun` exited 1 with no output at all, which took
+# the client build down with it.
+.env
+.env.*
+
+# This install's own port and folders, written beside the app on its first run.
+# Compose sets CHUNGUS_HOST and CHUNGUS_DATA_DIR, which outrank the file, but
+# nothing sets CHUNGUS_PORT - so a baked-in copy is the one thing left that can
+# move the listener, and under host networking there is no port mapping to
+# correct it. The container writes its own on first start; that is the copy that
+# should win.
+chungushub.config.json
+
+# This checkout's own notes and tooling. CLAUDE.md says of itself that it never
+# deploys, and `COPY . .` was quietly making that false.
+CLAUDE.md
+.claude
+
+# `svelte-kit sync` runs inside the image, so a host-generated copy is never read
+# - and one generated on Windows carries absolute host paths.
+.svelte-kit
