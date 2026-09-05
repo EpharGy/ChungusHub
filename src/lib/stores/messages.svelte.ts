@@ -22,6 +22,7 @@ import { resolveMacroValues, substitute } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
 import { memoryStore } from '$lib/memory/store.svelte';
 import { spriteStore } from './sprites.svelte';
+import { imagegenStore } from './imagegen.svelte';
 import { steeringStore } from './steering.svelte';
 import { steeringTargetForChat } from '$lib/types/steering';
 import type { LorebookTrigger } from '$lib/lorebook/types';
@@ -210,6 +211,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(chatId);
+			this.triggerImageGeneration(result.committedMessageId);
 			return result.committedMessageId;
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
@@ -850,6 +852,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
+			this.triggerImageGeneration(target.id);
 		} catch (error) {
 			// A stop the server never answered: nothing streamed back, so the stored turn
 			// stays untouched (the kept-tail case resolves normally above).
@@ -985,6 +988,7 @@ class MessageStore {
 
 			// Fire the memory sidecar in background (don't await).
 			this.triggerMemoryMaintenance(state.chat.id);
+			this.triggerImageGeneration(result.committedMessageId);
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
@@ -1057,6 +1061,28 @@ class MessageStore {
 			lorebookIds: chatLorebookClaim(state.chat),
 			mutedLorebookIds: chatMutedLorebookClaim(state.chat)
 		});
+	}
+
+	/**
+	 * Fire-and-forget image generation for the reply that just landed: every `[[IMG: … ]]`
+	 * marker in it that has no picture yet, in order. Sits beside the memory sidecar above
+	 * and follows the same rules - never blocks generation, never rolled back, no-op when the
+	 * engine or its auto-generate switch is off.
+	 *
+	 * Named rather than searched for. A scan of the open path answers "whatever turn is
+	 * newest right now", which is the same thing as "the turn that just landed" only while
+	 * the reader stays put: walk to another branch or another chat while the reply is being
+	 * written and the scan hangs one turn's markers on another turn's row. Each caller passes
+	 * the row it just wrote, and a row that is not in the open chat resolves to nothing.
+	 *
+	 * Resolving to nothing is not the end of it: a reader who walked away mid-reply would
+	 * otherwise come back to markers with no pictures and no way to know why, since this fires
+	 * once per generation and never again. Arriving at the chat re-asks about its newest reply
+	 * (`imagegenStore.ensureForNewestReply`, called from ChatContainer the way SpriteLayer calls
+	 * `ensureRead`), which is what actually makes those pictures.
+	 */
+	private triggerImageGeneration(messageId: string): void {
+		void imagegenStore.ensureForMessage(messageId);
 	}
 
 	private async createMessage(

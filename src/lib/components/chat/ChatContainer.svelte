@@ -5,6 +5,7 @@
 	import SpriteLayer from './SpriteLayer.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
+	import { imagegenStore } from '$lib/stores/imagegen.svelte';
 	import { messageStore } from '$lib/stores/messages.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
@@ -32,6 +33,14 @@
 	let busy = $derived(messageStore.isStreaming);
 	let activePath = $derived(chatState?.activePath ?? []);
 	let allMessages = $derived(chatState?.allMessages ?? []);
+
+	// Ask on every change; the store decides whether that means a call. Same contract as
+	// SpriteLayer's, and here for the same reason: a reply committed while the reader was in
+	// another chat had its markers passed over, and the trigger that would have made them only
+	// ever runs once, from the generation that placed the row.
+	$effect(() => {
+		imagegenStore.ensureForNewestReply();
+	});
 
 	// Chats are only born from the New chat flow (character + persona picked
 	// through the Library), so this hands off to it rather than creating anything here.
