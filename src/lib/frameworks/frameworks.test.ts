@@ -76,10 +76,10 @@ describe('marker grammar', () => {
 	test('a subject key is a NAME, so it may contain spaces', () => {
 		// The rule was a slug once, which rejected this and, because a malformed marker is
 		// stripped, took the line out of the prompt with nothing on screen to say why.
-		const [marker] = findMarkers('@season[Ada Lovelace, len=27, start=12]');
+		const [marker] = findMarkers('@season[Ada Lovelace, len=90, start=14]');
 		expect(marker.error).toBeNull();
 		expect(marker.key).toBe('ada lovelace');
-		expect(marker.fields).toEqual({ len: '27', start: '12' });
+		expect(marker.fields).toEqual({ len: '90', start: '14' });
 	});
 
 	test('names outside the Latin alphabet work too', () => {
@@ -96,14 +96,14 @@ describe('marker grammar', () => {
 	test('the author’s own spelling is kept beside the folded key', () => {
 		// The folded key decides identity; this is what a framework prints. A status line read
 		// outside the entry it came from has nothing else to say who it is about.
-		const [marker] = findMarkers('@season[Ada Lovelace, len=27]');
+		const [marker] = findMarkers('@season[Ada Lovelace, len=90]');
 		expect(marker.key).toBe('ada lovelace');
 		expect(marker.subject).toBe('Ada Lovelace');
 	});
 
 	test('one subject written two ways folds to one key', () => {
 		const key = (text: string) => findMarkers(text)[0].key;
-		expect(key('@demo[Ada Lovelace]')).toBe(key('@demo[vale  vale]'));
+		expect(key('@demo[Ada Lovelace]')).toBe(key('@demo[ada  lovelace]'));
 		expect(key('@demo[  Ada Lovelace  ]')).toBe('ada lovelace');
 	});
 
