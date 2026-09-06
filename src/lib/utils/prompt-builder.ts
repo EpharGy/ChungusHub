@@ -9,6 +9,7 @@
 
 import type { CallTarget, LLMMessage } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
+import { normalizeChatFeatureState } from '$lib/types/chat';
 import { activeSteeringNotes, resolveSteeringForPrompt, steeringTargetForChat } from '$lib/types/steering';
 import type { PromptPreset } from '$lib/types/database';
 import type { Lorebook, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
@@ -173,7 +174,10 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		continuation: context.continuation,
 		steering: resolvedSteering.length
 			? { notes: resolvedSteering, wrapper: featurePromptsStore.promptFor('steeringWrapper') }
-			: undefined
+			: undefined,
+		// Read off the chat row that was just loaded, exactly as the meter reads it off the
+		// store's copy. Absent when there is no chat, which runs no framework at all.
+		frameworks: chat ? normalizeChatFeatureState(chat.featureState).frameworks : undefined
 	});
 
 	return { messages, target: promptTarget.target, lorebook, continuationSent, oneShotSteering };
