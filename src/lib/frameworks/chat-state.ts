@@ -23,6 +23,7 @@
  *
  * See architecture/frameworks.md.
  */
+import { normalizeSubjectKey } from './marker';
 
 /** Farthest a story day may sit from zero. A story numbering its days is not counting to a
  *  million, and a value past this arrived corrupt or hand-edited. */
@@ -68,14 +69,16 @@ function normalizeDay(raw: unknown): number {
 	return Math.max(-MAX_STORY_DAY, Math.min(MAX_STORY_DAY, Math.trunc(raw)));
 }
 
-/** Lowercased and deduped, so a key written two ways in a stored blob cannot suppress a
- *  subject twice or fail to suppress it at all. */
+/** Folded through the marker parser's own key rule and deduped, so a key written two ways in
+ *  a stored blob cannot suppress a subject twice or fail to suppress it at all. It MUST be
+ *  the same folding: these keys are compared against what a marker parsed to, and a name with
+ *  a space folded one way here and another way there simply never matches. */
 function normalizeSuppressed(raw: unknown): string[] {
 	if (!Array.isArray(raw)) return [];
 	const seen = new Set<string>();
 	for (const value of raw) {
-		if (typeof value !== 'string' || !value) continue;
-		seen.add(value.toLowerCase());
+		if (typeof value !== 'string' || !value.trim()) continue;
+		seen.add(normalizeSubjectKey(value));
 		if (seen.size >= MAX_SUPPRESSED) break;
 	}
 	return [...seen];
