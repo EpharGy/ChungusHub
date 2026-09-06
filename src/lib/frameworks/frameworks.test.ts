@@ -12,6 +12,13 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import {
+	defaultChatFrameworkState,
+	MAX_FRAMEWORK_SLICES,
+	MAX_STORY_DAY,
+	MAX_SUPPRESSED,
+	normalizeChatFrameworkState
+} from './chat-state';
 import { applyFrameworks } from './dispatch';
 import { findMarkers, hasMarker } from './marker';
 import type { FrameworkComputeInput, FrameworkContext, FrameworkDef } from './types';
@@ -228,5 +235,91 @@ describe('the dispatcher', () => {
 	test('the same input twice gives the same answer, which the meter and the send rely on', () => {
 		const text = 'Status: @demo[rowan, len=27]';
 		expect(applyFrameworks(text, ctx()).text).toBe(applyFrameworks(text, ctx()).text);
+	});
+});
+
+describe('the per-chat blob', () => {
+	// The only thing frameworks store. Everything a framework knows about a CHARACTER lives
+	// in that character's lorebook entry, so what is here is the handful of facts that are
+	// true of one story and could not sit in a shared entry.
+
+	test('a chat that predates the feature reads as day 1 with nothing suppressed', () => {
+		expect(normalizeChatFrameworkState(undefined)).toEqual(defaultChatFrameworkState());
+		expect(normalizeChatFrameworkState(null)).toEqual(defaultChatFrameworkState());
+		expect(normalizeChatFrameworkState('nonsense')).toEqual(defaultChatFrameworkState());
+		expect(normalizeChatFrameworkState([])).toEqual(defaultChatFrameworkState());
+	});
+
+	test('a stored blob comes back as it went in', () => {
+		const stored = { day: 63, suppressed: ['rowan'], byFramework: { demo: { note: 'x' } } };
+		expect(normalizeChatFrameworkState(stored)).toEqual(stored);
+	});
+
+	describe('the day', () => {
+		test('a missing or unusable day is day 1, never NaN', () => {
+			for (const raw of [undefined, 'twelve', null, Number.NaN, Infinity]) {
+				expect(normalizeChatFrameworkState({ day: raw }).day).toBe(1);
+			}
+		});
+
+		test('is an integer, so a fractional day cannot land mid-cycle', () => {
+			expect(normalizeChatFrameworkState({ day: 12.7 }).day).toBe(12);
+		});
+
+		test('may be negative, because a story may number its days from anywhere', () => {
+			expect(normalizeChatFrameworkState({ day: -5 }).day).toBe(-5);
+		});
+
+		test('is clamped, because a blob that arrived oversized must not be re-saved that way', () => {
+			expect(normalizeChatFrameworkState({ day: 1e12 }).day).toBe(MAX_STORY_DAY);
+			expect(normalizeChatFrameworkState({ day: -1e12 }).day).toBe(-MAX_STORY_DAY);
+		});
+	});
+
+	describe('the suppression list', () => {
+		test('is lowercased, so it compares directly against a parsed marker key', () => {
+			expect(normalizeChatFrameworkState({ suppressed: ['Rowan'] }).suppressed).toEqual(['rowan']);
+		});
+
+		test('is deduped, so one subject cannot be listed twice under two spellings', () => {
+			expect(normalizeChatFrameworkState({ suppressed: ['a', 'A', 'a'] }).suppressed).toEqual(['a']);
+		});
+
+		test('drops anything that is not a usable key', () => {
+			expect(normalizeChatFrameworkState({ suppressed: ['a', '', 3, null, 'b'] }).suppressed).toEqual(['a', 'b']);
+		});
+
+		test('is capped', () => {
+			const many = Array.from({ length: MAX_SUPPRESSED + 50 }, (_, i) => `k${i}`);
+			expect(normalizeChatFrameworkState({ suppressed: many }).suppressed).toHaveLength(MAX_SUPPRESSED);
+		});
+	});
+
+	describe('the per-framework slices', () => {
+		test('a slice rides through untouched, because the base never reads inside one', () => {
+			const slice = { anchors: { rowan: 63 }, anything: [1, 2, 3] };
+			expect(normalizeChatFrameworkState({ byFramework: { demo: slice } }).byFramework.demo).toEqual(slice);
+		});
+
+		test('a value no framework could have written is dropped', () => {
+			const out = normalizeChatFrameworkState({
+				byFramework: { a: 'text', b: 7, c: null, d: [1], e: {} }
+			});
+			expect(Object.keys(out.byFramework)).toEqual(['e']);
+		});
+
+		test('ids are lowercased to match the framework ids markers parse to', () => {
+			const out = normalizeChatFrameworkState({ byFramework: { DEMO: { x: 1 } } });
+			expect(Object.keys(out.byFramework)).toEqual(['demo']);
+		});
+
+		test('is capped', () => {
+			const many = Object.fromEntries(
+				Array.from({ length: MAX_FRAMEWORK_SLICES + 10 }, (_, i) => [`f${i}`, { x: 1 }])
+			);
+			expect(Object.keys(normalizeChatFrameworkState({ byFramework: many }).byFramework)).toHaveLength(
+				MAX_FRAMEWORK_SLICES
+			);
+		});
 	});
 });
