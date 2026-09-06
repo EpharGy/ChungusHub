@@ -36,6 +36,10 @@ export interface ParsedMarker {
 	frameworkId: string;
 	/** The subject key, folded through {@link normalizeSubjectKey}. Null when malformed. */
 	key: string | null;
+	/** The key exactly as the author wrote it, capitals and all. Null when malformed.
+	 *  The folded `key` is what identity is decided on; this is what a framework prints,
+	 *  because "ada lovelace" is not how anyone writes her name. */
+	subject: string | null;
 	/** Named fields, verbatim (trimmed). Empty when the marker is malformed. */
 	fields: Record<string, string>;
 	/** Why this marker cannot be used, or null when it parsed cleanly. */
@@ -99,8 +103,13 @@ export function hasMarker(text: string): boolean {
  * is the only thing left that can tell the author their typo apart from a character who
  * is simply not tracked.
  */
-function parseBody(body: string): { key: string | null; fields: Record<string, string>; error: string | null } {
-	const fail = (error: string) => ({ key: null, fields: {}, error });
+function parseBody(body: string): {
+	key: string | null;
+	subject: string | null;
+	fields: Record<string, string>;
+	error: string | null;
+} {
+	const fail = (error: string) => ({ key: null, subject: null, fields: {}, error });
 	const parts = body.split(',').map((part) => part.trim());
 	const rawKey = parts.shift() ?? '';
 	if (!rawKey) return fail('no subject key');
@@ -121,7 +130,7 @@ function parseBody(body: string): { key: string | null; fields: Record<string, s
 		if (name in fields) return fail(`duplicate field "${name}"`);
 		fields[name] = value;
 	}
-	return { key: normalizeSubjectKey(rawKey), fields, error: null };
+	return { key: normalizeSubjectKey(rawKey), subject: rawKey.replace(/\s+/g, ' '), fields, error: null };
 }
 
 /**
