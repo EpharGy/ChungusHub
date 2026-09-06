@@ -13,6 +13,7 @@ import { llmStatus, stopGeneration } from '$lib/services/transport';
 import { findActivePath } from '$lib/utils/message-tree';
 import {
 	chatLorebookClaim,
+	chatFrameworkState,
 	chatMutedLorebookClaim,
 	chatPersonaClaim,
 	chatPresetClaim
@@ -500,7 +501,8 @@ class ChatStore {
 				personaId: chatPersonaClaim(chat),
 				presetId: chatPresetClaim(chat),
 				lorebookIds: chatLorebookClaim(chat),
-				mutedLorebookIds: chatMutedLorebookClaim(chat)
+				mutedLorebookIds: chatMutedLorebookClaim(chat),
+				frameworks: chatFrameworkState(chat)
 			});
 		} catch (e) {
 			console.error('[memory] refresh failed:', e);
