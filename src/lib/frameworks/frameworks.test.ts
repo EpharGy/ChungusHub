@@ -73,6 +73,36 @@ describe('marker grammar', () => {
 		expect(next.fields.var).toBe('3');
 	});
 
+	test('a subject key is a NAME, so it may contain spaces', () => {
+		// The rule was a slug once, which rejected this and, because a malformed marker is
+		// stripped, took the line out of the prompt with nothing on screen to say why.
+		const [marker] = findMarkers('@season[Ada Lovelace, len=27, start=12]');
+		expect(marker.error).toBeNull();
+		expect(marker.key).toBe('ada lovelace');
+		expect(marker.fields).toEqual({ len: '27', start: '12' });
+	});
+
+	test('names outside the Latin alphabet work too', () => {
+		expect(findMarkers('@demo[山田花子]')[0].key).toBe('山田花子');
+		expect(findMarkers('@demo[Ayşe Yılmaz]')[0].error).toBeNull();
+	});
+
+	test('the punctuation real names carry is allowed', () => {
+		for (const name of ["O'Brien", 'St. John', 'Anne-Marie', 'Ni_no']) {
+			expect(findMarkers(`@demo[${name}]`)[0].error).toBeNull();
+		}
+	});
+
+	test('one subject written two ways folds to one key', () => {
+		const key = (text: string) => findMarkers(text)[0].key;
+		expect(key('@demo[Ada Lovelace]')).toBe(key('@demo[vale  vale]'));
+		expect(key('@demo[  Ada Lovelace  ]')).toBe('ada lovelace');
+	});
+
+	test('a field NAME stays strict, because that vocabulary is not a person', () => {
+		expect(findMarkers('@demo[x, cycle len=27]')[0].error).toBe('invalid field name "cycle len"');
+	});
+
 	test('framework id, subject key and field names are lowercased', () => {
 		const [marker] = findMarkers('@DEMO[Rowan, LEN=27]');
 		expect(marker.frameworkId).toBe('demo');
@@ -284,6 +314,12 @@ describe('the per-chat blob', () => {
 	describe('the suppression list', () => {
 		test('is lowercased, so it compares directly against a parsed marker key', () => {
 			expect(normalizeChatFrameworkState({ suppressed: ['Rowan'] }).suppressed).toEqual(['rowan']);
+		});
+
+		test('folds a name exactly as a marker does, or it would never match one', () => {
+			// These keys are compared against what a marker parsed to. Fold them differently
+			// and suppressing "Ada Lovelace" silently stops suppressing anything.
+			expect(normalizeChatFrameworkState({ suppressed: ['Ada  Lovelace'] }).suppressed).toEqual(['ada lovelace']);
 		});
 
 		test('is deduped, so one subject cannot be listed twice under two spellings', () => {
