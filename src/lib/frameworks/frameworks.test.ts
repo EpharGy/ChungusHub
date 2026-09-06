@@ -93,6 +93,14 @@ describe('marker grammar', () => {
 		}
 	});
 
+	test('the author’s own spelling is kept beside the folded key', () => {
+		// The folded key decides identity; this is what a framework prints. A status line read
+		// outside the entry it came from has nothing else to say who it is about.
+		const [marker] = findMarkers('@season[Ada Lovelace, len=27]');
+		expect(marker.key).toBe('ada lovelace');
+		expect(marker.subject).toBe('Ada Lovelace');
+	});
+
 	test('one subject written two ways folds to one key', () => {
 		const key = (text: string) => findMarkers(text)[0].key;
 		expect(key('@demo[Ada Lovelace]')).toBe(key('@demo[vale  vale]'));
@@ -197,6 +205,7 @@ describe('the dispatcher', () => {
 		);
 		expect(seen).toEqual({
 			key: 'rowan',
+			subject: 'rowan',
 			fields: { len: '27' },
 			day: 63,
 			state: { note: 'mine' }

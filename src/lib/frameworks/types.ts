@@ -20,8 +20,12 @@
 
 /** What a framework is handed to compute one marker's line. */
 export interface FrameworkComputeInput {
-	/** The marker's subject key, already lowercased by the parser. */
+	/** The marker's subject key, folded by the parser. What identity is decided on: the
+	 *  per-chat suppression list and every state map key on this. */
 	key: string;
+	/** The same subject as the author wrote it. What a framework PRINTS, because a line
+	 *  read outside the entry it came from has nothing else to say who it is about. */
+	subject: string;
 	/**
 	 * The marker's named fields, verbatim strings. The base does not know what any of
 	 * them mean; parsing and validating them is the framework's own job, and a field it
