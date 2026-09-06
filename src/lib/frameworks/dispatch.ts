@@ -63,6 +63,7 @@ function resolveOne(
 
 	const out = framework.compute({
 		key,
+		subject: marker.subject as string,
 		fields: marker.fields,
 		day: ctx.day,
 		state: ctx.byFramework[framework.id]
