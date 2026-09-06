@@ -17,8 +17,13 @@ import {
 	MAX_FRAMEWORK_SLICES,
 	MAX_STORY_DAY,
 	MAX_SUPPRESSED,
-	normalizeChatFrameworkState
+	normalizeChatFrameworkState,
+	parseDayArg
 } from './chat-state';
+import { createEmptyLorebook, createEmptyLorebookEntry } from '$lib/lorebook/types';
+import { resolveLorebooks } from '$lib/lorebook/engine';
+
+import { frameworkDecorator } from './apply';
 import { applyFrameworks } from './dispatch';
 import { findMarkers, hasMarker } from './marker';
 import type { FrameworkComputeInput, FrameworkContext, FrameworkDef } from './types';
@@ -321,5 +326,68 @@ describe('the per-chat blob', () => {
 				MAX_FRAMEWORK_SLICES
 			);
 		});
+	});
+});
+
+describe('the /day argument', () => {
+	test('a bare number sets the day', () => {
+		expect(parseDayArg('42', 1)).toBe(42);
+		expect(parseDayArg('  42  ', 1)).toBe(42);
+	});
+
+	test('a signed number steps from the day the story is on', () => {
+		expect(parseDayArg('+1', 41)).toBe(42);
+		expect(parseDayArg('+7', 1)).toBe(8);
+		expect(parseDayArg('-1', 42)).toBe(41);
+	});
+
+	test('a leading minus always steps back, and never sets a negative day', () => {
+		// The ambiguity is real and it is settled in favour of the reading the sign has
+		// everywhere else. Rewinding a day is common; numbering a story from below zero is not.
+		expect(parseDayArg('-5', 100)).toBe(95);
+	});
+
+	test('stepping below zero is allowed, because a story may pass its own day one', () => {
+		expect(parseDayArg('-5', 2)).toBe(-3);
+	});
+
+	test('anything that is not a day is null, so the command can say so', () => {
+		for (const arg of ['', 'tomorrow', '4.5', '1 2', '+', '--1', '0x10']) {
+			expect(parseDayArg(arg, 1)).toBeNull();
+		}
+	});
+
+	test('the result is clamped exactly as a stored day is', () => {
+		expect(parseDayArg('+1', MAX_STORY_DAY)).toBe(MAX_STORY_DAY);
+		expect(parseDayArg('99999999999', 1)).toBe(MAX_STORY_DAY);
+	});
+});
+
+describe('the decorator the app actually builds', () => {
+	// The base's own end-to-end claim, and the reason this branch is provable without a
+	// framework existing: with none registered, a marker is recognised, claimed by nobody,
+	// and stripped before the prompt goes out.
+
+	function entryText(text: string, state: Parameters<typeof frameworkDecorator>[0]): string {
+		const book = createEmptyLorebook('Test');
+		book.entries = [{ ...createEmptyLorebookEntry(), content: text, constant: true }];
+		return resolveLorebooks({ books: [book], messages: [], decorate: frameworkDecorator(state) }).text;
+	}
+
+	test('with no framework registered, a marker never reaches the prompt', () => {
+		expect(entryText('Rowan, 24.\n@season[harbor, len=90, start=14]', defaultChatFrameworkState())).toBe(
+			'Rowan, 24.'
+		);
+	});
+
+	test('prose around a marker is untouched', () => {
+		expect(entryText('Red hair. Brusque.', defaultChatFrameworkState())).toBe('Red hair. Brusque.');
+	});
+
+	test('a surface with no story runs no framework at all, rather than assuming day 1', () => {
+		// A library meter or the prompt builder pricing a preset holds no chat. It must not
+		// invent one, and NO_DECORATION is what that looks like: the text is left exactly as
+		// stored, marker included, because nothing has been asked to resolve it.
+		expect(entryText('@season[rowan]', undefined)).toBe('@season[rowan]');
 	});
 });

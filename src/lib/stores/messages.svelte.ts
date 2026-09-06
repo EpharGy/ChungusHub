@@ -13,6 +13,7 @@ import { joinContinuation } from '$lib/utils/continuation';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import {
 	chatLorebookClaim,
+	chatFrameworkState,
 	chatMutedLorebookClaim,
 	chatPersonaClaim,
 	chatPersonaEntry,
@@ -1087,7 +1088,8 @@ class MessageStore {
 			personaId: chatPersonaClaim(state.chat),
 			presetId: chatPresetClaim(state.chat),
 			lorebookIds: chatLorebookClaim(state.chat),
-			mutedLorebookIds: chatMutedLorebookClaim(state.chat)
+			mutedLorebookIds: chatMutedLorebookClaim(state.chat),
+			frameworks: chatFrameworkState(state.chat)
 		});
 	}
 
