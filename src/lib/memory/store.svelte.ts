@@ -21,7 +21,9 @@ import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { personaEntryFor, presetForClaim, toPromptCharacter } from '$lib/utils/chat-setup';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
-import { NO_DECORATION, resolveLorebooks } from '$lib/lorebook/engine';
+import { resolveLorebooks } from '$lib/lorebook/engine';
+import { frameworkDecorator } from '$lib/frameworks/apply';
+import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
 import { lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -68,6 +70,10 @@ export interface ChatCtx {
 	 *  pin does. Null is "follow the app", which is what memory extracts against unless the
 	 *  chat named someone else. */
 	personaId: string | null;
+	/** The chat's framework state, travelling with the ctx for the reason the version pin
+	 *  does: this module can never import chatStore, and a summary built against an entry
+	 *  whose framework marker was left raw would disagree with the prompt that resolved it. */
+	frameworks: ChatFrameworkState;
 	/** The preset this chat claimed, travelling with the ctx for the same reason. It decides
 	 *  both whether {{memory}} is placed at all and the controls a template expands against,
 	 *  so reading the app's here would let the engine run for a chat whose own preset never
@@ -475,9 +481,10 @@ class MemoryStore {
 			fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
 			history: lorebookHistory(chatMessages),
 			settings: lorebookSettingsStore.settings,
-			// Frameworks are not wired in yet; this is the honest "nothing to add" answer
-			// rather than a field left off, which the required option exists to prevent.
-			decorate: NO_DECORATION,
+			// Memory analyses the same story the prompt does, through the same builder: an
+			// entry that reaches a summary with its marker resolved must not reach the prompt
+			// with it raw, or the two disagree about what the entry says.
+			decorate: frameworkDecorator(ctx.frameworks),
 			expand: (text) => expandMacros(text, base)
 		});
 		return { ...base, lorebook: lore.text, lorebookTrace: lore.trace };

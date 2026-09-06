@@ -22,7 +22,9 @@ import type { ResolvedSteeringNote, SteeringRole } from '$lib/types/steering';
 import type { PromptControl, PromptItem, PromptPreset } from '$lib/types/database';
 import type { Lorebook, LorebookGlobalSettings, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
 import { EMPTY_LOREBOOK_TRACE, lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
-import { NO_DECORATION, resolveLorebooks } from '$lib/lorebook/engine';
+import { resolveLorebooks } from '$lib/lorebook/engine';
+import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
+import { frameworkDecorator } from '$lib/frameworks/apply';
 import {
 	expandMacros,
 	expandSelfRefs,
@@ -110,6 +112,12 @@ export interface AssembleInput {
 	 *  standing prompt state, so the chat meter passes it too, under the same engine
 	 *  gate as prompt-builder, or the meter would price a block the send won't send. */
 	steering?: { notes: ResolvedSteeringNote[]; wrapper: string };
+	/** The chat's framework state: the story day, the subjects it holds out, and each
+	 *  framework's own slice. Frameworks rewrite the markers a lorebook entry carries, so
+	 *  this reaches the prompt through the entry that fired rather than as a block of its
+	 *  own. Absent = no story to compute against (a library meter, or the prompt builder
+	 *  pricing a preset), which runs no framework at all rather than assuming day 1. */
+	frameworks?: ChatFrameworkState;
 }
 
 /** One item's contribution to the final prompt, with tokens attributed by provenance:
@@ -209,9 +217,10 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 		// them against the branch it lives on rather than against the attempt it replaced.
 		history: lorebookHistory(chatMessages),
 		settings: input.lorebookSettings,
-		// Frameworks are not wired in yet; this is the honest "nothing to add" answer rather
-		// than a field left off, which the required option exists to prevent.
-		decorate: NO_DECORATION,
+		// Frameworks rewrite their markers inside each entry that fired, before the budget
+		// prices it. Built through the one shared builder so the meter and the send cannot
+		// decorate differently.
+		decorate: frameworkDecorator(input.frameworks),
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget
 	});

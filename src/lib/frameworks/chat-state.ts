@@ -106,3 +106,23 @@ export function normalizeChatFrameworkState(raw: unknown): ChatFrameworkState {
 		byFramework: normalizeByFramework(stored.byFramework)
 	};
 }
+
+/**
+ * Read a `/day` argument against the day a chat is on.
+ *
+ * `+N` and `-N` are relative, a bare number is absolute, and anything else is null so the
+ * caller can say so rather than silently landing on a day nobody asked for. The result is
+ * clamped exactly as a stored day is, so the command and the normalizer cannot disagree
+ * about what a legal day is.
+ *
+ * A consequence worth knowing: `-5` steps BACK five days and is never "set to day -5". A
+ * story numbering its days from below zero is vanishingly rare next to wanting to rewind
+ * one, and the relative reading is what the leading sign means everywhere else.
+ */
+export function parseDayArg(arg: string, current: number): number | null {
+	const text = arg.trim();
+	if (!/^[+-]?\d+$/.test(text)) return null;
+	const value = Number(text);
+	const next = text[0] === '+' || text[0] === '-' ? current + value : value;
+	return Math.max(-MAX_STORY_DAY, Math.min(MAX_STORY_DAY, next));
+}

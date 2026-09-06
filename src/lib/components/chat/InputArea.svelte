@@ -25,6 +25,7 @@
 	import { assemblePrompt } from '$lib/utils/prompt-assembly';
 	import {
 		chatLorebookClaim,
+		chatFrameworkState,
 		chatMutedLorebookClaim,
 		chatPersonaEntry,
 		chatPreset,
@@ -284,7 +285,11 @@
 					postProcessing: promptTarget.postProcessing,
 					contextBudget: promptTarget.contextBudget,
 					regexRules: regexRulesStore.effectiveFor(currentPreset),
-					steering: steeringForPrompt
+					steering: steeringForPrompt,
+					// Standing story state, like steering: the meter must price what a send will
+					// inject, and a framework line lands inside a lorebook entry that is already
+					// being counted here.
+					frameworks: chatFrameworkState(chatStore.activeChat)
 				})
 			: null
 	);
