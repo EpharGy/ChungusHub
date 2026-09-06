@@ -34,7 +34,7 @@ export interface ParsedMarker {
 	index: number;
 	/** The framework id, lowercased. */
 	frameworkId: string;
-	/** The subject key, lowercased. Null when the marker is malformed. */
+	/** The subject key, folded through {@link normalizeSubjectKey}. Null when malformed. */
 	key: string | null;
 	/** Named fields, verbatim (trimmed). Empty when the marker is malformed. */
 	fields: Record<string, string>;
@@ -51,10 +51,35 @@ export interface ParsedMarker {
  */
 const MARKER_RE = /@([a-z][a-z0-9-]*)\[([^\]\n]*)\]/gi;
 
-/** Framework ids and subject keys share one spelling rule, so neither can be typed in a
- *  way the other would reject. Lowercased on parse, which is what makes `Rowan` and
- *  `rowan` the same subject to the per-chat suppression and state maps. */
-const KEY_RE = /^[a-z0-9][a-z0-9_-]*$/i;
+/**
+ * What a subject key may be.
+ *
+ * **A subject key is a NAME, and names have spaces in them.** An earlier rule here was a
+ * slug (`[a-z0-9_-]`), which quietly rejected `Ada Lovelace` and, because a malformed marker
+ * is stripped, took her line out of the prompt with nothing on screen to say why. Anyone
+ * writing a marker types the character's name, so that is what this accepts.
+ *
+ * Letters and digits in any script, because a cast is not always Latin-alphabet, plus the
+ * punctuation that turns up inside real names. Deliberately NOT a comma (it separates
+ * fields), an equals sign (it separates a field's name from its value) or a bracket (it ends
+ * the marker).
+ */
+const SUBJECT_KEY_RE = /^[\p{L}\p{N}][\p{L}\p{N} '’._-]*$/u;
+
+/** Field names stay strict: they are a vocabulary this app defines (`len`, `start`), not
+ *  something anyone names, and a space in one is a typo rather than a person. */
+const FIELD_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/i;
+
+/**
+ * One spelling of a subject key, so the same person written two ways is the same subject.
+ *
+ * Lowercased, and internal runs of whitespace collapsed: `Ada  Lovelace` and `ada lovelace`
+ * both key the per-chat suppression and state maps identically. Those maps are keyed on this
+ * output, so anything that writes one must normalize the same way.
+ */
+export function normalizeSubjectKey(raw: string): string {
+	return raw.trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
 /** Does this text contain anything that looks like a marker? Cheap pre-check for callers
  *  that would otherwise parse every lorebook entry on every assembly. Uses its own
@@ -79,7 +104,7 @@ function parseBody(body: string): { key: string | null; fields: Record<string, s
 	const parts = body.split(',').map((part) => part.trim());
 	const rawKey = parts.shift() ?? '';
 	if (!rawKey) return fail('no subject key');
-	if (!KEY_RE.test(rawKey)) return fail(`invalid subject key "${rawKey}"`);
+	if (!SUBJECT_KEY_RE.test(rawKey)) return fail(`invalid subject key "${rawKey}"`);
 
 	const fields: Record<string, string> = {};
 	for (const part of parts) {
@@ -90,13 +115,13 @@ function parseBody(body: string): { key: string | null; fields: Record<string, s
 		if (eq < 1) return fail(`field "${part}" is not name=value`);
 		const name = part.slice(0, eq).trim().toLowerCase();
 		const value = part.slice(eq + 1).trim();
-		if (!KEY_RE.test(name)) return fail(`invalid field name "${name}"`);
+		if (!FIELD_NAME_RE.test(name)) return fail(`invalid field name "${name}"`);
 		// Last-wins on a duplicate is a silent trap: the author sees both and the parser
 		// obeys one. Rejecting says which line to fix.
 		if (name in fields) return fail(`duplicate field "${name}"`);
 		fields[name] = value;
 	}
-	return { key: rawKey.toLowerCase(), fields, error: null };
+	return { key: normalizeSubjectKey(rawKey), fields, error: null };
 }
 
 /**
