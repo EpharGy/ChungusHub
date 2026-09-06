@@ -22,7 +22,7 @@ import { steeringScanText, type ResolvedSteeringNote, type SteeringRole } from '
 import type { PromptControl, PromptItem, PromptPreset } from '$lib/types/database';
 import type { Lorebook, LorebookGlobalSettings, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
 import { EMPTY_LOREBOOK_TRACE, lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
-import { resolveLorebooks } from '$lib/lorebook/engine';
+import { NO_DECORATION, resolveLorebooks } from '$lib/lorebook/engine';
 import {
 	expandMacros,
 	expandSelfRefs,
@@ -238,6 +238,9 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 		// them against the branch it lives on rather than against the attempt it replaced.
 		history: lorebookHistory(chatMessages),
 		settings: input.lorebookSettings,
+		// Frameworks are not wired in yet; this is the honest "nothing to add" answer rather
+		// than a field left off, which the required option exists to prevent.
+		decorate: NO_DECORATION,
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget
 	});
