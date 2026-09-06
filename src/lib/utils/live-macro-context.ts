@@ -12,7 +12,7 @@
 
 import type { Message } from '$lib/types/chat';
 import { expandMacros, type MacroContext, type PromptCharacter } from '$lib/macros';
-import { resolveLorebooks } from '$lib/lorebook/engine';
+import { NO_DECORATION, resolveLorebooks } from '$lib/lorebook/engine';
 import { lorebookHistory, lorebookScanFields, type LorebookTrigger } from '$lib/lorebook/types';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -93,6 +93,9 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 		trigger: opts.lorebookTrigger,
 		history: lorebookHistory(chatMessages),
 		settings: lorebookSettings,
+		// Frameworks are not wired in yet; this is the honest "nothing to add" answer rather
+		// than a field left off, which the required option exists to prevent.
+		decorate: NO_DECORATION,
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget
 	});
