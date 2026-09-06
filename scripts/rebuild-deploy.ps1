@@ -28,7 +28,12 @@
 param(
     # Skip the test/build gate. For a rebuild you intend to inspect by hand, never for one
     # you intend to push.
-    [switch]$SkipVerify
+    [switch]$SkipVerify,
+
+    # Build the PRIVATE artifact instead: the same topics plus $PrivateTopics, landing on
+    # `deploy-full` rather than `deploy`. That branch is never pushed to origin; it goes to
+    # the NAS over Tailscale and nowhere else. See `Deploying` in CLAUDE.md.
+    [switch]$Full
 )
 
 # Deliberately NOT 'Stop'. Almost every step here is a native git call, and Windows
@@ -77,6 +82,21 @@ $Topics = @(
     'feature/notepad'
 )
 
+# Topics that exist on this machine and the NAS ONLY, merged after the list above when
+# -Full is given. They are absent from `deploy`, so nothing here can reach the public fork
+# by way of the artifact, which is the whole reason for a second list rather than a flag
+# on the first one.
+#
+# A branch listed here has no `origin` copy, so the stale-branch check cannot cover it and
+# there is no off-machine backup of it. That is a deliberate trade, and its price is that
+# this PC and the NAS are the only two places that work exists.
+$PrivateTopics = @(
+    'feature/framework-private'
+)
+
+$targetBranch = if ($Full) { 'deploy-full' } else { 'deploy' }
+if ($Full) { $Topics += $PrivateTopics }
+
 # `fix/menu-anchor` was here until upstream MERGED it: ours went up as PR #63 and is now
 # main's own `33ecbaf`, with one follow-up on top of it (a `max-width: 100%` cap, because a
 # style that draws a portrait column can leave that column narrower than the menu itself).
@@ -118,8 +138,8 @@ if (git status --porcelain) {
 }
 
 $current = (git rev-parse --abbrev-ref HEAD).Trim()
-if ($current -eq 'deploy') {
-    Fail 'Run this from any branch except `deploy`; the last step moves that branch.'
+if ($current -eq $targetBranch) {
+    Fail "Run this from any branch except ``$targetBranch``; the last step moves that branch."
 }
 
 foreach ($topic in $Topics) {
@@ -234,13 +254,18 @@ finally {
     }
 }
 
-git branch -f deploy $built
-if ($LASTEXITCODE -ne 0) { Fail "Could not move deploy. It is still where it was; the build is $built." }
+git branch -f $targetBranch $built
+if ($LASTEXITCODE -ne 0) { Fail "Could not move $targetBranch. It is still where it was; the build is $built." }
 Remove-BranchIfPresent $buildBranch
 
 Write-Host ''
-Write-Host "[rebuild-deploy] deploy is now $($built.Substring(0,7)), verified." -ForegroundColor Green
+Write-Host "[rebuild-deploy] $targetBranch is now $($built.Substring(0,7)), verified." -ForegroundColor Green
 Write-Host '  Publish it with:' -ForegroundColor Green
-Write-Host '      git push --force-with-lease origin deploy' -ForegroundColor Green
+if ($Full) {
+    Write-Host '      git push --force-with-lease nas deploy-full' -ForegroundColor Green
+    Write-Host '  `nas`, never `origin`: deploy-full carries the private topics.' -ForegroundColor DarkGray
+} else {
+    Write-Host '      git push --force-with-lease origin deploy' -ForegroundColor Green
+}
 Write-Host '  --force-with-lease, never plain --force: deploy is force pushed by design,' -ForegroundColor DarkGray
 Write-Host '  and the lease is what still refuses if someone else moved it meanwhile.' -ForegroundColor DarkGray
