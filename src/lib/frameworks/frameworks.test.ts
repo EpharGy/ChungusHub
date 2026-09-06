@@ -374,8 +374,11 @@ describe('the decorator the app actually builds', () => {
 		return resolveLorebooks({ books: [book], messages: [], decorate: frameworkDecorator(state) }).text;
 	}
 
-	test('with no framework registered, a marker never reaches the prompt', () => {
-		expect(entryText('Rowan, 24.\n@season[harbor, len=90, start=14]', defaultChatFrameworkState())).toBe(
+	test('a marker no framework claims never reaches the prompt', () => {
+		// Named for a framework that will never exist, deliberately: this asserts the base's
+		// own promise rather than the registry happening to be empty, so it stays true on a
+		// branch that registers one, and needs no edit when the first framework arrives.
+		expect(entryText('Rowan, 24.\n@nosuchframework[rowan, len=27]', defaultChatFrameworkState())).toBe(
 			'Rowan, 24.'
 		);
 	});
@@ -388,6 +391,6 @@ describe('the decorator the app actually builds', () => {
 		// A library meter or the prompt builder pricing a preset holds no chat. It must not
 		// invent one, and NO_DECORATION is what that looks like: the text is left exactly as
 		// stored, marker included, because nothing has been asked to resolve it.
-		expect(entryText('@season[rowan]', undefined)).toBe('@season[rowan]');
+		expect(entryText('@nosuchframework[rowan]', undefined)).toBe('@nosuchframework[rowan]');
 	});
 });
