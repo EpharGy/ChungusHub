@@ -56,6 +56,13 @@ $Topics = @(
     'feature/echochamber',
     'feature/corrections',
     'feature/random-roll-macros',
+    # The frameworks base. A framework is a deterministic calculation over story state
+    # that rewrites a marker inside a lorebook entry as that entry reaches the prompt.
+    # This branch holds the base and no framework at all, so with nothing registered a
+    # marker is recognised, claimed by nobody, and stripped before the prompt goes out.
+    # The base may not know what any framework is about, which is what keeps it reusable
+    # and what makes it the half that could go upstream.
+    'feature/frameworks',
     # The floating window shell, and the two features built on it. All three are cut from
     # main; the two consumers are cut from the shell, which makes them SIBLINGS rather than
     # a stack. Retiring either consumer is still a one-line edit here and leaves the other
