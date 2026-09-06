@@ -21,7 +21,7 @@ import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { personaEntryFor, presetForClaim, toPromptCharacter } from '$lib/utils/chat-setup';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
-import { resolveLorebooks } from '$lib/lorebook/engine';
+import { NO_DECORATION, resolveLorebooks } from '$lib/lorebook/engine';
 import { lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 import { steeringStore } from '$lib/stores/steering.svelte';
@@ -494,6 +494,9 @@ class MemoryStore {
 			),
 			history: lorebookHistory(chatMessages),
 			settings: lorebookSettingsStore.settings,
+			// Frameworks are not wired in yet; this is the honest "nothing to add" answer
+			// rather than a field left off, which the required option exists to prevent.
+			decorate: NO_DECORATION,
 			expand: (text) => expandMacros(text, base)
 		});
 		return { ...base, lorebook: lore.text, lorebookTrace: lore.trace };
