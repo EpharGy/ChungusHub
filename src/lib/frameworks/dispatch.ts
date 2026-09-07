@@ -40,7 +40,12 @@ function resolveOne(
 	ctx: FrameworkContext,
 	byId: Map<string, FrameworkDef>
 ): Resolution {
-	const base = { raw: marker.raw, frameworkId: marker.frameworkId, key: marker.key };
+	const base = {
+		raw: marker.raw,
+		frameworkId: marker.frameworkId,
+		key: marker.key,
+		subject: marker.subject
+	};
 
 	if (marker.error) {
 		return { replacement: '', record: { ...base, status: 'malformed', reason: marker.error } };
