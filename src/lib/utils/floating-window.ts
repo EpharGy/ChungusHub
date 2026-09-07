@@ -41,17 +41,32 @@ export function isSnapZone(value: unknown): value is SnapZone {
 }
 
 /**
- * Fit a rectangle inside the viewport at no smaller than `min`.
+ * Fit a rectangle inside `bounds` at no smaller than `min`.
+ *
+ * `bounds` is the WORKSPACE, not the viewport, whenever the caller can measure it. A
+ * floating window paints on a rung inside the workspace's stacking context, so the title
+ * bar and the notification rows above it draw over one rather than under it: a window
+ * allowed to settle at the top of the screen would tuck its own header, which is its only
+ * drag handle, behind the title bar and become unmovable. Bounding it by the region it can
+ * actually be seen in is what makes that unreachable instead of merely unlikely. The
+ * viewport is the fallback, and on the shapes this app has it differs only along the top.
  *
  * The minimum wins over the margin: on a viewport too small to hold both, the window keeps
  * its usable size and overhangs rather than collapsing to a sliver.
  */
-export function clampRect(r: Rect, min: Size, viewport: Size): Rect {
-	const w = Math.min(Math.max(r.w, min.w), Math.max(viewport.w - MARGIN * 2, min.w));
-	const h = Math.min(Math.max(r.h, min.h), Math.max(viewport.h - MARGIN * 2, min.h));
-	const x = Math.min(Math.max(r.x, MARGIN), Math.max(viewport.w - w - MARGIN, MARGIN));
-	const y = Math.min(Math.max(r.y, MARGIN), Math.max(viewport.h - h - MARGIN, MARGIN));
+export function clampRect(r: Rect, min: Size, bounds: Rect): Rect {
+	const w = Math.min(Math.max(r.w, min.w), Math.max(bounds.w - MARGIN * 2, min.w));
+	const h = Math.min(Math.max(r.h, min.h), Math.max(bounds.h - MARGIN * 2, min.h));
+	const minX = bounds.x + MARGIN;
+	const minY = bounds.y + MARGIN;
+	const x = Math.min(Math.max(r.x, minX), Math.max(bounds.x + bounds.w - w - MARGIN, minX));
+	const y = Math.min(Math.max(r.y, minY), Math.max(bounds.y + bounds.h - h - MARGIN, minY));
 	return { x, y, w, h };
+}
+
+/** The whole viewport as a `Rect`: what bounds a window when the workspace cannot be read. */
+export function viewportBounds(viewport: Size): Rect {
+	return { x: 0, y: 0, w: viewport.w, h: viewport.h };
 }
 
 /** Which dock, if any, a pointer at (px, py) is asking for. Corners beat edges. */
@@ -172,13 +187,20 @@ export function writePlacement(key: string, placement: Placement): void {
 	}
 }
 
-/** Centre a window of `size` in the viewport, clamped. The opening placement when nothing
- *  has been saved: a window that appears under the pointer would land on the thumbnail the
- *  reader just clicked, and one pinned to a corner fights whichever widget already lives there. */
-export function centeredRect(size: Size, min: Size, viewport: Size): Rect {
+/** Centre a window of `size` in `bounds`, clamped. The opening placement when nothing has
+ *  been saved: a window that appears under the pointer would land on the thumbnail the
+ *  reader just clicked, and one pinned to a corner fights whichever widget already lives
+ *  there. Centred on the workspace rather than the screen, so it opens over the chat it is
+ *  about instead of riding up under the title bar. */
+export function centeredRect(size: Size, min: Size, bounds: Rect): Rect {
 	return clampRect(
-		{ w: size.w, h: size.h, x: (viewport.w - size.w) / 2, y: (viewport.h - size.h) / 2 },
+		{
+			w: size.w,
+			h: size.h,
+			x: bounds.x + (bounds.w - size.w) / 2,
+			y: bounds.y + (bounds.h - size.h) / 2
+		},
 		min,
-		viewport
+		bounds
 	);
 }
