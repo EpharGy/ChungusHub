@@ -35,7 +35,7 @@
 		type SnapAnchors,
 		type SnapZone
 	} from '$lib/utils/floating-window';
-	import { STACK_BASE, bringToFront } from '$lib/utils/floating-window-stack';
+	import { UNRAISED, bringToFront } from '$lib/utils/floating-window-stack';
 
 	interface Props {
 		open: boolean;
@@ -81,7 +81,7 @@
 	/** This window's rung on the shared front-to-back ladder (`floating-window-stack`).
 	 *  It carries no app-wide meaning: the layer this portals into is its own stacking
 	 *  context, so these numbers are only ever compared with other floating windows'. */
-	let stackZ = $state(STACK_BASE);
+	let stackZ = $state(UNRAISED);
 	/** The node the portal effect moves. Also what the raise handlers hang off, so a press
 	 *  anywhere in the window (header, body, a resize handle) counts as touching it. */
 	let portalEl: HTMLDivElement | null = $state(null);

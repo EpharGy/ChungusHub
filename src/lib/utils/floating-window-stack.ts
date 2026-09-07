@@ -19,19 +19,30 @@
  * tests, which would otherwise inherit each other's counter.
  */
 
-/** First rung. Above 0 so a window is never level with an un-raised sibling. */
-export const STACK_BASE = 1;
+/**
+ * The rung a window holds before anything has raised it: behind every real rung, and
+ * never the top one, not even at boot when nothing has been raised at all.
+ *
+ * That last clause is load-bearing and was once wrong. The counter used to start on the
+ * same rung every window starts on, so `isTop` answered true for a window nobody had
+ * touched, `bringToFront` short-circuited, and no window ever left the opening rung. Every
+ * window then carried one identical z-index and clicking between them did nothing
+ * whatsoever, with the visible order falling back to the order they were mounted in.
+ */
+export const UNRAISED = 0;
 
-let top = STACK_BASE;
+let top = UNRAISED;
 
 /** Take the top rung, and report which one it is. */
 export function raiseToTop(): number {
 	return ++top;
 }
 
-/** True when `z` is already the frontmost rung handed out. */
+/** True when `z` is already the frontmost rung handed out. A window that has never been
+ *  raised never is, even while it is the only one open: in front of nothing is not
+ *  in front. */
 export function isTop(z: number): boolean {
-	return z === top;
+	return z !== UNRAISED && z === top;
 }
 
 /**
@@ -47,5 +58,5 @@ export function bringToFront(z: number): number {
 
 /** Test seam: the counter is module state and would otherwise leak between cases. */
 export function resetStack(): void {
-	top = STACK_BASE;
+	top = UNRAISED;
 }
