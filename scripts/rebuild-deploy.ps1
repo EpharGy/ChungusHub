@@ -1,4 +1,4 @@
-# Rebuild `deploy` from `main` and the fork's topic branches.
+﻿# Rebuild `deploy` from `main` and the fork's topic branches.
 #
 # `deploy` is a BUILD ARTIFACT, not a branch anyone commits to. It is `main` plus every
 # branch in $Topics below, merged in order, and it is regenerated rather than added to.
@@ -68,11 +68,18 @@ $Topics = @(
     # The base may not know what any framework is about, which is what keeps it reusable
     # and what makes it the half that could go upstream.
     'feature/frameworks',
-    # The floating window shell, and the two features built on it. All three are cut from
-    # main; the two consumers are cut from the shell, which makes them SIBLINGS rather than
-    # a stack. Retiring either consumer is still a one-line edit here and leaves the other
-    # standing. The shell must be merged before both, which is the only ordering constraint
-    # in this list that is a real dependency rather than a habit.
+    # The floating window shell, and the features built on it. All are cut from main; the
+    # consumers are cut from the shell, which makes them SIBLINGS rather than a stack.
+    # Retiring any consumer is still a one-line edit here and leaves the others standing.
+    # The shell must be merged before all of them, which is the only ordering constraint in
+    # this list that is a real dependency rather than a habit.
+    #
+    # That constraint now REACHES ACROSS THE TWO LISTS: the frameworks panel is a third
+    # consumer and it lives in $PrivateTopics, which is appended after this list and so is
+    # ordered correctly for free. The trap is removal, not ordering. Dropping the shell from
+    # here would leave `deploy` building perfectly and `deploy-full` failing to compile, and
+    # the gate would report it as a private problem. Retire the shell only once nothing in
+    # EITHER list imports it.
     #
     # A change to how those windows drag, dock or resize belongs on feature/floating-window,
     # never on a consumer: a copy on one of them is a copy the other cannot see, and the two
