@@ -24,6 +24,7 @@ import { createEmptyLorebook, createEmptyLorebookEntry } from '$lib/lorebook/typ
 import { resolveLorebooks } from '$lib/lorebook/engine';
 
 import { frameworkDecorator } from './apply';
+import { resolveDay, serialOf } from './day';
 import { applyFrameworks } from './dispatch';
 import { findMarkers, hasMarker } from './marker';
 import type { FrameworkComputeInput, FrameworkContext, FrameworkDef } from './types';
@@ -416,7 +417,7 @@ describe('the decorator the app actually builds', () => {
 	function entryText(text: string, state: Parameters<typeof frameworkDecorator>[0]): string {
 		const book = createEmptyLorebook('Test');
 		book.entries = [{ ...createEmptyLorebookEntry(), content: text, constant: true }];
-		return resolveLorebooks({ books: [book], messages: [], decorate: frameworkDecorator(state) }).text;
+		return resolveLorebooks({ books: [book], messages: [], decorate: frameworkDecorator(state, []) }).text;
 	}
 
 	test('a marker no framework claims never reaches the prompt', () => {
@@ -425,6 +426,30 @@ describe('the decorator the app actually builds', () => {
 		// branch that registers one, and needs no edit when the first framework arrives.
 		expect(entryText('Rowan, 24.\n@nosuchframework[rowan, len=27]', defaultChatFrameworkState())).toBe(
 			'Rowan, 24.'
+		);
+	});
+
+	test('the day the framework sees follows the story, not just the stored number', () => {
+		// The ladder in day.ts, reached the way the app reaches it. A fake framework prints the
+		// day it was handed, so this asserts what a real one would compute against.
+		const book = createEmptyLorebook('T');
+		book.entries = [{ ...createEmptyLorebookEntry(), constant: true, content: '@demo[x]' }];
+		const state = { ...defaultChatFrameworkState(), day: 3 };
+		const seen = (path: string[]) =>
+			resolveLorebooks({
+				books: [book],
+				messages: path,
+				decorate: (entry, text) =>
+					applyFrameworks(text, ctx({ frameworks: [fake(({ day }) => `day ${day}`)], day: resolveDay(path, state.day).day })).text
+			}).text;
+
+		expect(seen(['they talked'])).toBe('day 3');
+		expect(seen(['they talked', '<Day 8>'])).toBe('day 8');
+		// A dated turn resolves to a serial against a fixed epoch, so what is asserted is the
+		// difference: nothing may depend on how far back the path happens to reach.
+		expect(seen(['<Time: 9:00 AM, September 8, 2026>'])).toBe(`day ${serialOf(2026, 8, 8)}`);
+		expect(seen(['<Time: 9:00 AM, September 6, 2026>', '<Time: 9:00 AM, September 8, 2026>'])).toBe(
+			`day ${serialOf(2026, 8, 8)}`
 		);
 	});
 

@@ -204,13 +204,16 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 	// The lorebook is scanned and rendered once, here, against a context that has no lore in it
 	// yet: that is what makes a stray {{lorebook}} inside an entry resolve to nothing instead of
 	// recursing, and it leaves ONE roll of the probabilistic entries per assembly.
+	// One derivation of the path, shared by the lorebook scan and the day resolution, so
+	// the day the frameworks compute against is read from exactly the turns the scan saw.
+	const scanPath = chatMessages.map((m) => m.content);
 	const lore = resolveLorebooks({
 		books: input.lorebooks,
 		// An at-depth entry needs a chat to sit inside. Without {{chatHistory}} in the enabled
 		// preset there is no such sequence, so those entries join the block instead of landing
 		// in a position nothing renders. Decided here, once, where the preset is already known.
 		placeAtDepth: base.injectsHistory,
-		messages: chatMessages.map((m) => m.content),
+		messages: scanPath,
 		fields: lorebookScanFields(input.resolvedCharacters, input.resolvedPersona),
 		trigger: input.lorebookTrigger,
 		// Sticky and cooldown read the traces the path's own turns stored, so a swipe measures
@@ -220,7 +223,7 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 		// Frameworks rewrite their markers inside each entry that fired, before the budget
 		// prices it. Built through the one shared builder so the meter and the send cannot
 		// decorate differently.
-		decorate: frameworkDecorator(input.frameworks),
+		decorate: frameworkDecorator(input.frameworks, scanPath),
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget
 	});

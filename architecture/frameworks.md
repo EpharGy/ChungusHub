@@ -56,6 +56,69 @@ The one thing that would break this property is an automatically *rolled* outcom
 
 Where randomness is wanted without storage, **derive it, never roll it**: hash a stable key and read the result. A per-character pick seeded on `subjectKey:phase` is fixed for that character forever, which reads as a trait rather than as dice, and it costs nothing to store.
 
+## Where the day comes from
+
+The day belongs to the base, not to the first framework that wanted one: story time is
+infrastructure, and an age that advances, a season turning and a debt coming due all want the
+same integer from the same place.
+
+[`day.ts`](../src/lib/frameworks/day.ts) resolves it as a ladder, scanning the chat path
+backwards from the newest turn. **The first turn carrying a marker decides**, and the chat's
+stored day is the floor when no turn carries one:
+
+| Source | Marker | Reads as |
+|---|---|---|
+| `day-marker` | `<Day 47>` | that number, verbatim |
+| `time-marker` | `<Time: 11:53 AM, Sunday September 6, 2026>` | a serial date, days since a FIXED epoch |
+| `manual` | none | the stored day, set by `/day` |
+
+Within one turn `<Day N>` wins, because it states the tracker's own unit outright where a date
+has to be converted before it means anything.
+
+**The brackets are the whole point of the day marker.** An unbracketed "day 47" appears in
+ordinary prose constantly ("it had been day 47 of the siege"), and a tracker that read those
+would jump to whatever number a character last reminisced about. The brackets are the author
+saying this one is a statement of fact rather than a line of narration.
+
+**Only the newest marker is ever read, and a date resolves against a FIXED epoch.** An earlier
+version counted dates from the first dated turn on the path, which read far better (day 1 was
+the day the story started) and was quietly wrong: that array is only ever the history that
+happens to be loaded and in budget, so its beginning walks forward as a chat grows and every
+day number would shift under a long story without a word. Nothing here may depend on how far
+back the path reaches.
+
+The serial that produces is large, and it costs nothing, because a framework consuming it needs
+only `day mod length`. That is what lets a framework's own fields stay small and calendar-free:
+a framework can take an optional offset in days and no absolute anchor at all, so nothing in a
+character's entry has to name a year and a western or a fantasy setting needs no editing.
+
+The epoch is 0001-01-01 rather than 1970 or 1900, purely so a historical setting produces
+positive numbers. `serialOf` builds it with `setUTCFullYear` rather than `Date.UTC`, because
+that constructor reads years 0-99 as 1900+year and would put a story set in AD 47 into 1947
+without a word.
+
+**A framework taking an offset should DERIVE an unset one rather than defaulting it to zero.**
+While the day count is smaller than whatever the framework's own period is, everything modulo
+that period collapses together: on story day 3, `3 mod 27` and `3 mod 30` are both 3. That is
+immediately harmless for a serial date and wrong for a long time under `<Day N>`, which starts
+small. Hashing the subject key spreads a cast from the first turn and stores nothing.
+
+Reading only the tail is also what keeps the property the rest of this design has: nothing
+accumulates, so a branch is correct because a path IS a branch. Swipe away the turn that said
+`<Day 9>` and the day is whatever the surviving path says.
+
+**There is no real-time source and there should not be one.** A clock read at substitution
+time would put the token meter and the send either side of midnight, which is exactly the
+disagreement this whole module is built to avoid. What replaces it is the `<Time: ...>` marker:
+the story's own clock, written into the transcript, and therefore stable however many times it
+is read.
+
+**Nothing emits these markers.** The framework reads them; something else has to write them,
+which today means the reader typing one or the model being told to. A preset item or a steering
+note instructing the model to open each reply with a time stamp is what makes the `time-marker`
+source work at all, and its absence is why `manual` is still the floor rather than a fallback
+nobody reaches.
+
 ## The base/framework line
 
 The base owns what every framework would otherwise reinvent; a framework owns what only it can know.
