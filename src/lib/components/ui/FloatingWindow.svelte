@@ -28,12 +28,14 @@
 		readPlacement,
 		snapRegion,
 		snapZoneFor,
+		viewportBounds,
 		writePlacement,
 		type Rect,
 		type Size,
 		type SnapAnchors,
 		type SnapZone
 	} from '$lib/utils/floating-window';
+	import { STACK_BASE, bringToFront } from '$lib/utils/floating-window-stack';
 
 	interface Props {
 		open: boolean;
@@ -76,12 +78,33 @@
 	 *  at its old dimensions instead of dragging an entire dock around. */
 	let restoreSize: Size | null = null;
 
+	/** This window's rung on the shared front-to-back ladder (`floating-window-stack`).
+	 *  It carries no app-wide meaning: the layer this portals into is its own stacking
+	 *  context, so these numbers are only ever compared with other floating windows'. */
+	let stackZ = $state(STACK_BASE);
+	/** The node the portal effect moves. Also what the raise handlers hang off, so a press
+	 *  anywhere in the window (header, body, a resize handle) counts as touching it. */
+	let portalEl: HTMLDivElement | null = $state(null);
+
+	function raise() {
+		stackZ = bringToFront(stackZ);
+	}
+
 	function viewportSize(): Size {
 		return { w: window.innerWidth, h: window.innerHeight };
 	}
 
+	/** What a free-floating window is allowed to occupy: the workspace, which is the screen
+	 *  minus the title bar and whatever notification rows are up. Those paint OVER the layer
+	 *  this window lives on, so a rectangle that reached the top of the viewport would hide
+	 *  its own header, and the header is the only way to drag it back out. Falls back to the
+	 *  viewport if the anchor is missing, on the same terms as the docking above. */
+	function freeBounds(): Rect {
+		return snapAnchors()?.workspace ?? viewportBounds(viewportSize());
+	}
+
 	function fit(r: Rect): Rect {
-		return clampRect(r, minSize, viewportSize());
+		return clampRect(r, minSize, freeBounds());
 	}
 
 	function snapAnchors(): SnapAnchors | null {
@@ -114,7 +137,7 @@
 	$effect(() => {
 		if (open && !isMobile && !rectReady) {
 			const saved = readPlacement(storageKey);
-			rect = saved ? fit(saved) : centeredRect(defaultSize, minSize, viewportSize());
+			rect = saved ? fit(saved) : centeredRect(defaultSize, minSize, freeBounds());
 			restoreSize =
 				saved && saved.freeW !== undefined && saved.freeH !== undefined
 					? { w: saved.freeW, h: saved.freeH }
@@ -129,9 +152,44 @@
 					rect = region;
 				}
 			}
+			// Opening counts as touching it: a window raised now lands in front of every
+			// other one already on screen, rather than reappearing behind them.
+			raise();
 			rectReady = true;
 		}
 		if (!open) rectReady = false;
+	});
+
+	/**
+	 * Move the window into the workspace's floating-window layer, which is what puts it
+	 * BELOW Settings, the Library and every other chat-area overlay.
+	 *
+	 * Callers mount this out at the app shell, which is right for its lifetime, since a
+	 * window has to outlive the gallery or the menu that opened it, and wrong for its
+	 * painting: `.workspace-main` sets `isolation: isolate`, so seen from the shell the
+	 * entire workspace is one flat layer, and no z-index out there can land between the
+	 * chat and Settings. The two rungs only exist inside it, so the node goes to them.
+	 *
+	 * The moved node is the wrapper OUTSIDE the `{#if open}` below, not the window itself.
+	 * That is what keeps this safe: the wrapper mounts and unmounts with the component, so
+	 * the effect that moved it cannot outlive it, and everything Svelte creates and destroys
+	 * on `open` stays inside a parent Svelte still owns. Moving the window instead would
+	 * detach it the instant `open` went false and cut its own exit transition.
+	 *
+	 * A missing layer fails soft, exactly like the snap anchors above: the window stays
+	 * where it was mounted and paints over the workspace rather than throwing.
+	 */
+	$effect(() => {
+		const el = portalEl;
+		if (!el) return;
+		const layer = document.querySelector<HTMLElement>('[data-floating-window-layer]');
+		if (!layer) return;
+		layer.appendChild(el);
+		// The cleanup holds its own reference: `bind:this` is nulled on unmount, which would
+		// skip the removal and strand the node in the layer.
+		return () => {
+			if (el.parentNode === layer) layer.removeChild(el);
+		};
 	});
 
 	/** Re-fit on any layout change. A docked rectangle deliberately skips the viewport clamp,
@@ -307,61 +365,97 @@
 	);
 </script>
 
-{#if open && !isMobile}
-	{#if snapTarget}
-		<!-- The ghost region the window will jump to on release. -->
-		<div
-			class="fw-snap-ghost"
-			style="left:{snapTarget.x}px; top:{snapTarget.y}px; width:{snapTarget.w}px; height:{snapTarget.h}px;"
-		></div>
-	{/if}
-	<section
-		class="fw surface-float"
-		class:fw--snapped={isSnapped}
-		class:fw--snap-left={isSnapped && snappedZone === 'left'}
-		class:fw--snap-right={isSnapped && snappedZone === 'right'}
-		class:fw--snap-center={isSnapped && snappedZone === 'center'}
-		class:fw--snap-top-half={isSnapped && (snappedZone === 'tl' || snappedZone === 'tr')}
-		class:fw--snap-bottom-half={isSnapped && (snappedZone === 'bl' || snappedZone === 'br')}
-		style={frameStyle}
-		aria-label={ariaLabel}
-		data-panel
-		transition:scale={{ duration: 160, start: 0.94, opacity: 0 }}
-	>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<header
-			class="fw-header"
-			class:fw-header--dragging={dragging}
-			onpointerdown={onHeaderPointerDown}
-			onpointermove={onHeaderPointerMove}
-			onpointerup={onHeaderPointerUp}
-		>
-			{@render header()}
-		</header>
+<!--
+	The portal wrapper, and the window's rung on the shared front-to-back stack.
 
-		<div class="fw-body">
-			{@render children()}
-		</div>
+	Unconditional, because the effect above moves THIS node and it has to be one the
+	component owns for the whole of its life rather than one an `{#if}` creates and
+	destroys. It paints nothing itself, being a viewport-sized, pointer-transparent frame,
+	so an empty one belonging to a closed window costs a box and no pixels.
 
-		{#each HANDLES as dir (dir)}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
+	Both handlers are up here rather than on the window: `pointer-events: none` stops this
+	frame being a hit target, it does not stop a descendant's events passing through, so
+	one pair covers the header, the body and the eight resize handles alike. `focusin` is
+	the keyboard's half of the same move: a window tabbed into from behind another would
+	otherwise take typing from underneath it. The z-index is here too, so that a dragging
+	window and its snap ghost rise as one thing.
+-->
+<div
+	bind:this={portalEl}
+	class="fw-portal"
+	style="z-index:{stackZ};"
+	onpointerdowncapture={raise}
+	onfocusin={raise}
+>
+	{#if open && !isMobile}
+		{#if snapTarget}
+			<!-- The ghost region the window will jump to on release. -->
 			<div
-				class="fw-resize fw-resize--{dir}"
-				onpointerdown={(e) => onResizePointerDown(e, dir)}
-				onpointermove={onResizePointerMove}
-				onpointerup={onResizePointerUp}
+				class="fw-snap-ghost"
+				style="left:{snapTarget.x}px; top:{snapTarget.y}px; width:{snapTarget.w}px; height:{snapTarget.h}px;"
 			></div>
-		{/each}
-	</section>
-{/if}
+		{/if}
+		<section
+			class="fw surface-float"
+			class:fw--snapped={isSnapped}
+			class:fw--snap-left={isSnapped && snappedZone === 'left'}
+			class:fw--snap-right={isSnapped && snappedZone === 'right'}
+			class:fw--snap-center={isSnapped && snappedZone === 'center'}
+			class:fw--snap-top-half={isSnapped && (snappedZone === 'tl' || snappedZone === 'tr')}
+			class:fw--snap-bottom-half={isSnapped && (snappedZone === 'bl' || snappedZone === 'br')}
+			style={frameStyle}
+			aria-label={ariaLabel}
+			data-panel
+			transition:scale={{ duration: 160, start: 0.94, opacity: 0 }}
+		>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<header
+				class="fw-header"
+				class:fw-header--dragging={dragging}
+				onpointerdown={onHeaderPointerDown}
+				onpointermove={onHeaderPointerMove}
+				onpointerup={onHeaderPointerUp}
+			>
+				{@render header()}
+			</header>
+
+			<div class="fw-body">
+				{@render children()}
+			</div>
+
+			{#each HANDLES as dir (dir)}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="fw-resize fw-resize--{dir}"
+					onpointerdown={(e) => onResizePointerDown(e, dir)}
+					onpointermove={onResizePointerMove}
+					onpointerup={onResizePointerUp}
+				></div>
+			{/each}
+		</section>
+	{/if}
+</div>
 
 <style>
+	/* The portal frame: the whole viewport, catching nothing, carrying the one number that
+	   decides which floating window is in front. It lives inside the workspace's
+	   `.floating-window-layer`, an isolated rung of its own, so `stackZ` is compared only
+	   with other floating windows and never with the app's z-index scale. */
+	.fw-portal {
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+	}
+
 	/* Frost comes from .surface-float in the markup, like the Assistant's own panel. */
 	.fw {
 		position: fixed;
-		/* The Assistant's tier. Above the workspace's isolated stacking context, below the
-		   lightbox at 300, so a full-screen viewer opened afterwards still lands on top. */
-		z-index: 200;
+		/* Local to .fw-portal: over the snap ghost, and nothing else shares the frame. What
+		   puts the window in the app's order is the layer it was portalled into: above the
+		   chat, below Settings and the Library. */
+		z-index: 1;
+		/* Taken back from the pointer-transparent frame above. */
+		pointer-events: auto;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
@@ -405,7 +499,7 @@
 	/* Snap preview: glides between zones as the cursor moves near the edges. */
 	.fw-snap-ghost {
 		position: fixed;
-		z-index: 199;
+		z-index: 0;
 		border: 2px solid var(--color-accent);
 		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
 		pointer-events: none;
