@@ -29,6 +29,15 @@ is the one thing that will not work.
 | Random & dice macros | `feature/random-roll-macros` | `{{random::red::green::blue}}` picks one of the options and `{{roll::1d20}}` rolls dice, anywhere a macro resolves: preset items, lorebook entries, character fields. SillyTavern's own syntax and its whole spelling surface, so a preset imported from there works unchanged, including `{{roll::1d20}}` itself, which SillyTavern's default engine silently drops. Every occurrence rolls separately. Note that a roll is made fresh on each resolution, so the token meter and the message actually sent can differ by one pick. See `architecture/random-roll-macros.md`. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 
+## Fixes
+
+Not features, so they are listed apart: each one changes how something already here behaves,
+and each is a candidate to go upstream and then disappear from this list.
+
+| Fix | Branch | What it does |
+|---|---|---|
+| Token counting is cached | `fix/token-count-cache` | Memoizes BPE counting per encoding. The token meters re-assemble the whole prompt whenever any store they read changes, so typing into a lorebook entry re-counted every chat turn that memory had not yet archived, twice per keystroke. On a long chat whose memory has fallen behind, that was over a million tokens of encoding per character typed, and the composer visibly lagged behind the keyboard. Counting is pure, so the cache has nothing to invalidate. |
+
 ## Running it
 
 Docker needs two addresses specific to the machine it runs on, so they are not committed.
