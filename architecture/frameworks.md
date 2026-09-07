@@ -119,6 +119,44 @@ note instructing the model to open each reply with a time stamp is what makes th
 source work at all, and its absence is why `manual` is still the floor rather than a fallback
 nobody reaches.
 
+## Showing what the markers are doing
+
+A framework's whole effect can be an **absence**. A marker that was stripped and a subject who
+was never tracked look identical in a prompt: a line that is not there. Every strip is already
+recorded with a reason (`FrameworkRecord`), and until something displays those records the only
+way to tell a typo from an untracked subject is to diff the prompt against the entry by hand.
+
+[`panel.ts`](../src/lib/frameworks/panel.ts) is the derivation a surface reads. It is pure: it
+is handed the books, the state and the path, and it answers from them.
+
+**It runs the real dispatcher and keeps its records**, rather than reading the markers a second
+time and routing them by hand. A second reading is a second answer to "what does this marker
+do", and a panel that can disagree with the prompt is worse than no panel. Same rule the
+lorebook's Test scan follows, for the same reason.
+
+Which entries it reads is the caller's choice, and the two answers are different questions
+rather than a coarse and a fine version of one:
+
+- **Given `injectedEntryIds`**, only markers in entries whose text reached the prompt. This is
+  what the model is being told right now, and it is the only readable view of a book carrying
+  fifty subjects.
+- **Without it**, every marker in every book the chat carries. This is the troubleshooting
+  view, and the only one that can show a marker whose entry never fires at all.
+
+Neither is a superset of the other in usefulness, so **a surface must say which one it is
+showing**: a reader who took a row from the unfiltered view as proof the line reached the
+prompt would be wrong.
+
+That set is ids, not a trace, so this module never learns what a lorebook scan is. Which
+statuses count as reaching the prompt is the lorebook's own question, and `lorebookWasInjected`
+is its answer. A caller wanting the filtered view should build the set from a LIVE scan rather
+than the trace stored on the last turn: a stored trace describes a prompt that was already
+sent, and the answer has to move when a book is edited or a subject held out.
+
+`FrameworkRecord` carries `subject`, the author's own spelling of the key, alongside the folded
+`key` that decides identity. The folded one is what suppression and framework slices are keyed
+on; the spelling is what a row is labelled with, because nobody writes her name in lower case.
+
 ## The base/framework line
 
 The base owns what every framework would otherwise reinvent; a framework owns what only it can know.

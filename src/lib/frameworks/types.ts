@@ -95,6 +95,9 @@ export interface FrameworkRecord {
 	frameworkId: string;
 	/** Null only when the marker was too malformed to yield one. */
 	key: string | null;
+	/** The author's own spelling of that key, for a surface that labels rows with it. Null
+	 *  whenever `key` is. */
+	subject: string | null;
 	status: FrameworkStatus;
 	/** The text that was spliced in. Present for `rendered` only. */
 	text?: string;
