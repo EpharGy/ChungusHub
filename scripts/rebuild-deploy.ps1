@@ -78,8 +78,8 @@ $Topics = @(
     # consumer and it lives in $PrivateTopics, which is appended after this list and so is
     # ordered correctly for free. The trap is removal, not ordering. Dropping the shell from
     # here would leave `deploy` building perfectly and `deploy-full` failing to compile, and
-    # the gate would report it as a private problem. Retire the shell only once nothing in
-    # EITHER list imports it.
+    # the gate would report it as a failure in the private topic. Retire the shell only once
+    # nothing in EITHER list imports it.
     #
     # A change to how those windows drag, dock or resize belongs on feature/floating-window,
     # never on a consumer: a copy on one of them is a copy the other cannot see, and the two
@@ -97,9 +97,24 @@ $Topics = @(
 # A branch listed here has no `origin` copy, so the stale-branch check cannot cover it and
 # there is no off-machine backup of it. That is a deliberate trade, and its price is that
 # this PC and the NAS are the only two places that work exists.
-$PrivateTopics = @(
-    'feature/framework-private'
-)
+#
+# THE NAMES ARE NOT IN THIS FILE, and that is the point. This script is public, so a branch
+# named here would announce the existence and the subject of the private work to anyone
+# reading the repository, which defeats the separation the two lists exist to create. They
+# live one per line in the file below, which is listed in .git/info/exclude and therefore
+# cannot be committed even by `git add -A`.
+#
+# Absent or empty, -Full simply builds what `deploy` builds. That is the safe direction to
+# fail: a private topic left out is a feature missing from the NAS, where a public topic
+# wrongly included would be a leak.
+$privateTopicsFile = Join-Path $PSScriptRoot 'private-topics.local.txt'
+$PrivateTopics = if (Test-Path $privateTopicsFile) {
+    @(Get-Content $privateTopicsFile |
+        ForEach-Object { ($_ -replace '#.*$', '').Trim() } |
+        Where-Object { $_ })
+} else {
+    @()
+}
 
 $targetBranch = if ($Full) { 'deploy-full' } else { 'deploy' }
 if ($Full) { $Topics += $PrivateTopics }
