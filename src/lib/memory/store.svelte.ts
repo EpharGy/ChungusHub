@@ -473,13 +473,15 @@ class MemoryStore {
 		};
 		// One scan, through the same resolver as the prompt and the meters. No budget here: a
 		// memory template is its own request, priced against its own engine connection.
+		// One derivation of the path, shared by the scan and the day resolution.
+		const scanPath = chatMessages.map((m) => m.content);
 		const lore = resolveLorebooks({
 			books: lorebookStore.booksForChat({
 				cards: [...(data?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
 				chat: ctx.lorebookIds,
 				muted: ctx.mutedLorebookIds
 			}),
-			messages: chatMessages.map((m) => m.content),
+			messages: scanPath,
 			// Steering is scannable here too. The ctx already carries the three ids a scope is
 			// matched against, so this reads the same stack the prompt for this chat would, not
 			// the app's notes, which is the trap every other field on the ctx exists to avoid.
@@ -503,7 +505,7 @@ class MemoryStore {
 			// Memory analyses the same story the prompt does, through the same builder: an
 			// entry that reaches a summary with its marker resolved must not reach the prompt
 			// with it raw, or the two disagree about what the entry says.
-			decorate: frameworkDecorator(ctx.frameworks),
+			decorate: frameworkDecorator(ctx.frameworks, scanPath),
 			expand: (text) => expandMacros(text, base)
 		});
 		return { ...base, lorebook: lore.text, lorebookTrace: lore.trace };

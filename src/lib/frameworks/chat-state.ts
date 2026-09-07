@@ -39,9 +39,11 @@ export const MAX_FRAMEWORK_SLICES = 32;
 /**
  * One chat's framework state.
  *
- * There is deliberately no day SOURCE field yet. Manual is the only source implemented, so a
- * selector would be a control with one position; the two the design calls for (the real
- * clock, and a `Day N` read off the story) each add themselves here when they are built.
+ * There is deliberately no day SOURCE field, and there is not going to be one. The story
+ * decides the day when it states one and this number is the floor when it does not (see
+ * day.ts), so there is nothing for a reader to select between: a chat that never mentions
+ * a day uses this, and one that does simply stops needing it. A selector would be a
+ * control whose only job is to switch off a source that already stands aside on its own.
  */
 export interface ChatFrameworkState {
 	/** The story day every framework computes against. */
