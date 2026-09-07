@@ -22,8 +22,49 @@ export function resolveEncoding(model?: string): EncodingName {
 	return 'o200k_base';
 }
 
+/**
+ * Counted strings, per encoding.
+ *
+ * BPE encoding is PURE: the same text under the same encoding is the same number forever,
+ * with no clock, no config and no state behind it. So there is nothing here to invalidate.
+ * An edited message is a different string, which is a different key, which is a miss that
+ * computes the right answer. That is the whole safety argument for this cache.
+ *
+ * It earns its place because the reactive meters re-assemble the ENTIRE prompt whenever any
+ * store they read changes, and most of those changes have nothing to do with the chat. Type
+ * one character into a lorebook entry and `lorebookStore` reassigns its books, which
+ * invalidates the composer's assembly, which re-counts every live turn in the chat -- twice,
+ * since the budget trim sums the whole history before deciding most of it does not fit. On a
+ * long chat whose memory is behind (turns waiting on a summary are sent verbatim, and priced
+ * every time), that is over a million tokens of BPE per keystroke.
+ *
+ * Keyed per encoding rather than by a composite key: the same text genuinely counts
+ * differently under cl100k and o200k, so one shared map would return a wrong number, and a
+ * composite key would allocate a copy of every message string on every lookup.
+ *
+ * Keys are references to strings the caller already holds (message contents live in the chat
+ * store regardless), so the added footprint is the map's own overhead and not the text. The
+ * cap is a safety valve for the strings that ARE transient -- expanded templates, rendered
+ * lorebook blocks -- and is set well above the working set of a long chat so that an ordinary
+ * assembly never trips it. Dropped wholesale rather than one key at a time, the same shape as
+ * the prompt-debug panel's estimate cache: callers here sweep the whole history in order, and
+ * a per-key eviction under that pattern discards exactly what the next pass is about to ask
+ * for.
+ */
+export const COUNT_CACHE_MAX = 20000;
+const caches: Record<EncodingName, Map<string, number>> = {
+	o200k_base: new Map(),
+	cl100k_base: new Map()
+};
+
 /** Token count of `text` under the given encoding. */
 export function encodingCount(text: string, encoding: EncodingName): number {
 	if (!text) return 0;
-	return encoding === 'cl100k_base' ? countCl100k(text) : countO200k(text);
+	const cache = caches[encoding];
+	const hit = cache.get(text);
+	if (hit !== undefined) return hit;
+	const count = encoding === 'cl100k_base' ? countCl100k(text) : countO200k(text);
+	if (cache.size >= COUNT_CACHE_MAX) cache.clear();
+	cache.set(text, count);
+	return count;
 }
