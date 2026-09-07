@@ -86,7 +86,10 @@ $Topics = @(
     # would then disagree about the same component on every rebuild.
     'feature/floating-window',
     'feature/image-popout',
-    'feature/notepad'
+    'feature/notepad',
+    # Memoized token counting. Touches only src/lib/tokenizer/, so it overlaps nothing else
+    # in either list and sits last purely to keep every conflict shape above it unchanged.
+    'fix/token-count-cache'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged after the list above when
