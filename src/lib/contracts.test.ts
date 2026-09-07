@@ -1621,3 +1621,44 @@ describe('palette readability', () => {
 		});
 	}
 });
+
+describe('floating window layer (architecture/floating-window.md)', () => {
+	// The rung a floating window paints on is the whole reason it cannot cover Settings or
+	// the Library, and it is a bare number in a stylesheet next to nine other bare numbers.
+	// Nothing in the CSS says which ones it has to sit between, so the ordering is asserted
+	// here: raise the layer above an overlay, or drop it under the chat, and this fails
+	// rather than the panel quietly going back to covering half the app.
+	const workspace = readFileSync(
+		join(ROOT, 'src', 'lib', 'components', 'layout', 'Workspace.svelte'),
+		'utf8'
+	);
+
+	/** The `z-index` declared in a rule, read out of the component's own `<style>`. Found by
+	 *  plain text rather than a pattern: `.chat-overlay` and `.chat-overlay-front` are two
+	 *  rules, and only the exact one, brace and all, is this one. */
+	function rung(selector: string): number {
+		const at = workspace.indexOf(`${selector} {`);
+		expect(at, `no rule found for ${selector}, so the scan is stale`).toBeGreaterThan(-1);
+		const declared = workspace.slice(at, workspace.indexOf('}', at)).split('z-index:')[1];
+		expect(declared, `${selector} declares no z-index, so the scan is stale`).toBeDefined();
+		return Number.parseInt(declared.trim(), 10);
+	}
+
+	test('the layer sits above the chat and the welcome landing', () => {
+		expect(rung('.floating-window-layer')).toBeGreaterThan(rung('.chat-host'));
+		expect(rung('.floating-window-layer')).toBeGreaterThan(rung('.welcome-layer'));
+	});
+
+	test('the layer sits below every overlay and both docks', () => {
+		for (const above of ['.chat-overlay', '.settings-dock', '.library-dock', '.chats-modal']) {
+			expect(
+				rung('.floating-window-layer'),
+				`a floating window would cover ${above}`
+			).toBeLessThan(rung(above));
+		}
+	});
+
+	test('the host element carries the attribute the windows portal into', () => {
+		expect(workspace).toContain('data-floating-window-layer');
+	});
+});

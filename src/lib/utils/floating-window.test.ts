@@ -19,7 +19,10 @@ import {
 } from './floating-window';
 
 const MIN = { w: 280, h: 240 };
-const SCREEN = { w: 1000, h: 800 };
+const SCREEN = { x: 0, y: 0, w: 1000, h: 800 };
+/** The workspace on a normal screen: the same box with the title bar taken off the top.
+ *  What a free-floating window is really bounded by, since the bar paints over it. */
+const WORKSPACE: Rect = { x: 0, y: 44, w: 1000, h: 756 };
 
 describe('clampRect', () => {
 	test('a window well inside the viewport is left alone', () => {
@@ -53,8 +56,34 @@ describe('clampRect', () => {
 	test('on a viewport too small for both, the minimum beats the margin', () => {
 		// The alternative is a window clamped to a sliver, which is unusable and unrecoverable
 		// by dragging. It is allowed to overhang instead.
-		const fitted = clampRect({ x: 0, y: 0, w: 460, h: 400 }, MIN, { w: 200, h: 200 });
+		const fitted = clampRect({ x: 0, y: 0, w: 460, h: 400 }, MIN, { x: 0, y: 0, w: 200, h: 200 });
 		expect(fitted).toEqual({ x: MARGIN, y: MARGIN, w: MIN.w, h: MIN.h });
+	});
+
+	test('bounds offset from the origin push the window down, not just in', () => {
+		// The whole reason the bounds are a Rect and not a Size: the workspace starts below
+		// the title bar, and a window that settled above this line would hide its own header
+		// behind the bar and have nothing left to be dragged by.
+		expect(clampRect({ x: 100, y: 0, w: 460, h: 400 }, MIN, WORKSPACE)).toEqual({
+			x: 100,
+			y: WORKSPACE.y + MARGIN,
+			w: 460,
+			h: 400
+		});
+	});
+
+	test('the bottom edge still lands one margin short of the bounds', () => {
+		expect(clampRect({ x: 100, y: 5000, w: 460, h: 400 }, MIN, WORKSPACE)).toEqual({
+			x: 100,
+			y: WORKSPACE.y + WORKSPACE.h - 400 - MARGIN,
+			w: 460,
+			h: 400
+		});
+	});
+
+	test('a window already inside the workspace is left alone', () => {
+		const r: Rect = { x: 100, y: 120, w: 460, h: 400 };
+		expect(clampRect(r, MIN, WORKSPACE)).toEqual(r);
 	});
 });
 
@@ -134,6 +163,17 @@ describe('centeredRect', () => {
 		expect(centeredRect({ w: 460, h: 400 }, MIN, SCREEN)).toEqual({
 			x: 270,
 			y: 200,
+			w: 460,
+			h: 400
+		});
+	});
+
+	test('centred on the workspace, not on the screen behind it', () => {
+		// Half the title bar lower than the screen centre: it opens over the chat it is
+		// about rather than riding up under the bar.
+		expect(centeredRect({ w: 460, h: 400 }, MIN, WORKSPACE)).toEqual({
+			x: 270,
+			y: WORKSPACE.y + (WORKSPACE.h - 400) / 2,
 			w: 460,
 			h: 400
 		});
