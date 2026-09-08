@@ -31,6 +31,45 @@ import type { IconName } from '$lib/components/ui/Icon.svelte';
 export const TOPBAR_INLINE_LIMIT = 2;
 
 /**
+ * The glyphs every floating panel spells the same acts with.
+ *
+ * A panel supplies its own header, so without this each one picks its own icon for "put this
+ * away" and "empty this", and two panels doing one thing in two glyphs is how a reader learns
+ * that the app's buttons have to be read one at a time. The notepad and the gallery window
+ * each did exactly that before this existed: one closed with an X, the other with a dash.
+ *
+ * These are the SHARED acts only. A panel's own verbs stay its own: the notepad's export, the
+ * gallery window's paging. Nothing here constrains those, and a panel that invents a control
+ * nobody else has should invent an icon for it too.
+ *
+ * `hide` is rendered by `FloatingWindow` itself when a panel passes `onHide`, so the commonest
+ * one is had by not writing it. The rest are for the panel's own header snippet.
+ */
+export const PANEL_ICONS = {
+	/** Put the window away, keeping everything in it. The title bar entry brings it back. */
+	hide: 'minimize',
+	/** Empty the panel of its contents. The destructive one, and the only destructive one. */
+	clear: 'trash',
+	/** Up a level, inside a panel that browses something. */
+	back: 'arrowLeft',
+	prev: 'chevronLeft',
+	next: 'chevronRight'
+} as const satisfies Record<string, IconName>;
+
+/**
+ * Glyphs a floating panel's header must never use, and the reason each is out.
+ *
+ * Both mean "close" to a reader, and no floating panel closes: hiding one keeps everything in
+ * it, one press from coming back. Spelling the harmless act with the glyph that means the
+ * harmful one teaches a reader to hesitate over a button that never needed it, and it leaves
+ * the genuinely destructive control wearing something milder.
+ *
+ * `contracts.test.ts` enforces this, because it is a rule about a string in a template and
+ * nothing else would notice it being broken.
+ */
+export const FORBIDDEN_HEADER_ICONS: readonly IconName[] = ['close', 'x'];
+
+/**
  * A panel offering itself to the title bar.
  *
  * Everything reactive is a getter, because an entry is declared once at module scope and
