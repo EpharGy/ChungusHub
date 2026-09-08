@@ -55,7 +55,9 @@ The notepad is a thing you return to, so it gets a title bar entry, beside Prese
 
 It does not edit `TitleBar` to get one. The entry is a `registerFloatingPanel` call at the bottom of `notepad.svelte.ts`, and the title bar reads the registry; see [`floating-window.md`](floating-window.md) for why the registry is a call rather than a shared table. What this feature owns is the four sentences that describe the button, sited beside the state they are read from.
 
-The one consequence is that **closing is cheap**, so the X is not a destructive act. It puts the window away, keeps every word, and forgets the chat in the local record so returning does not raise it again. The only destructive door is Clear, which asks through `ConfirmDialog` on the destructive-act ladder. Compare the pop-out, where closing forgets the picture because there is nothing to bring it back with.
+The one consequence is that **hiding is cheap**, so the header's dash is not a destructive act. It puts the window away, keeps every word, and forgets the chat in the local record so returning does not raise it again. The only destructive door is Clear, which asks through `ConfirmDialog` on the destructive-act ladder.
+
+A dash rather than an X, and every floating panel in the app agrees. An X in a window header reads as "this is going away", and nothing here is: the notes stay, the title bar entry brings the window straight back, and the one control that destroys anything is the trash beside it. Spelling the harmless act with the glyph that means the harmful one is how a reader learns to hesitate over a button that never needed it.
 
 Three smaller consequences of having a button:
 
