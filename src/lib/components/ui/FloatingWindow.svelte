@@ -13,10 +13,23 @@
 	 *
 	 * The geometry itself is in `$lib/utils/floating-window`, pure and unit-tested.
 	 *
-	 * **Desktop only.** There is deliberately no phone layout: a floating window needs a
-	 * launcher to come back from, and a third launcher on a phone screen is clutter with no
-	 * home. Callers hide their own entry point on mobile; this renders nothing there, so a
-	 * window can never be stranded off-screen with no way back.
+	 * **On a phone it is one full-screen panel, docked to the workspace.** There is nowhere
+	 * to float on a screen a panel already fills, so drag, resize and the seven snap zones
+	 * are all off: the window takes the workspace whole, flush, with no radius and no
+	 * shadow. Its placement is not read and never written, because a rectangle measured on
+	 * a desktop means nothing here and would otherwise be overwritten by a visit from a
+	 * phone.
+	 *
+	 * This used to render NOTHING on mobile, on the reasoning that a floating window needs a
+	 * launcher to come back from and a launcher pinned to a phone screen is clutter. The
+	 * registry settled that: every panel is reachable from the title bar at every width, so
+	 * the launcher problem the refusal was avoiding no longer exists, and a phone gets the
+	 * panel rather than an entry point that does nothing.
+	 *
+	 * The workspace, not the viewport, for the reason `clampRect` gives at length: this
+	 * paints on a rung INSIDE the workspace, so a panel spanning the viewport would tuck its
+	 * own header under the title bar. On a phone that costs the close button rather than the
+	 * drag handle, which is worse.
 	 */
 	import type { Snippet } from 'svelte';
 	import { scale } from 'svelte/transition';
@@ -94,17 +107,20 @@
 		return { w: window.innerWidth, h: window.innerHeight };
 	}
 
-	/** What a free-floating window is allowed to occupy: the workspace, which is the screen
-	 *  minus the title bar and whatever notification rows are up. Those paint OVER the layer
-	 *  this window lives on, so a rectangle that reached the top of the viewport would hide
-	 *  its own header, and the header is the only way to drag it back out. Falls back to the
-	 *  viewport if the anchor is missing, on the same terms as the docking above. */
-	function freeBounds(): Rect {
+	/** The region a window may occupy: the workspace, which is the screen minus the title
+	 *  bar and whatever notification rows are up. Those paint OVER the layer this window
+	 *  lives on, so a rectangle that reached the top of the viewport would hide its own
+	 *  header: the drag handle on a desktop, the close button on a phone. Falls back to the
+	 *  viewport if the anchor is missing, on the same terms as the docking above.
+	 *
+	 *  A free-floating window is CLAMPED into this with a margin; the phone's full-screen
+	 *  panel takes it whole. Same rectangle, two uses. */
+	function workspaceBounds(): Rect {
 		return snapAnchors()?.workspace ?? viewportBounds(viewportSize());
 	}
 
 	function fit(r: Rect): Rect {
-		return clampRect(r, minSize, freeBounds());
+		return clampRect(r, minSize, workspaceBounds());
 	}
 
 	function snapAnchors(): SnapAnchors | null {
@@ -132,12 +148,38 @@
 		});
 	}
 
-	// Restore the placement the first time the window opens, INCLUDING its dock: reopening
-	// must not demote a docked window to a free one wearing the dock's size.
+	/**
+	 * Which regime the current rectangle was computed for, so crossing the phone breakpoint
+	 * while the window is open re-places it instead of leaving a desktop rectangle stranded
+	 * on a phone screen (or the reverse).
+	 *
+	 * Deliberately NOT `$state`: it is written by the effect that reads it, and a reactive
+	 * one would retrigger that effect on every placement.
+	 */
+	let placedForMobile: boolean | null = null;
+
+	// Place the window when it opens, and again if the breakpoint flips under it.
+	//
+	// On a desktop that means restoring the saved placement INCLUDING its dock: reopening
+	// must not demote a docked window to a free one wearing the dock's size. On a phone it
+	// means the workspace, whole. Nothing is read and nothing is saved, so a visit from a
+	// phone cannot overwrite the rectangle a desktop left behind.
 	$effect(() => {
-		if (open && !isMobile && !rectReady) {
+		if (!open) {
+			rectReady = false;
+			placedForMobile = null;
+			return;
+		}
+		if (rectReady && placedForMobile === isMobile) return;
+
+		if (isMobile) {
+			rect = workspaceBounds();
+			isSnapped = false;
+			snappedZone = null;
+			restoreSize = null;
+		} else {
 			const saved = readPlacement(storageKey);
-			rect = saved ? fit(saved) : centeredRect(defaultSize, minSize, freeBounds());
+			rect = saved ? fit(saved) : centeredRect(defaultSize, minSize, workspaceBounds());
 			restoreSize =
 				saved && saved.freeW !== undefined && saved.freeH !== undefined
 					? { w: saved.freeW, h: saved.freeH }
@@ -152,12 +194,13 @@
 					rect = region;
 				}
 			}
-			// Opening counts as touching it: a window raised now lands in front of every
-			// other one already on screen, rather than reappearing behind them.
-			raise();
-			rectReady = true;
 		}
-		if (!open) rectReady = false;
+		// Opening counts as touching it: a window raised now lands in front of every other
+		// one already on screen, rather than reappearing behind them. On a phone the panels
+		// are full-screen, so the ladder is the whole of what decides which one you see.
+		raise();
+		placedForMobile = isMobile;
+		rectReady = true;
 	});
 
 	/**
@@ -196,6 +239,13 @@
 	 *  so the floating minimums can never push a dock off its own boundaries. */
 	function refitToLayout() {
 		if (!rectReady) return;
+		if (isMobile) {
+			// The panel is the workspace, so re-measuring it IS the re-fit. This runs more
+			// than it looks: a phone's on-screen keyboard resizes the viewport, and so does
+			// a rotation.
+			rect = workspaceBounds();
+			return;
+		}
 		if (isSnapped && snappedZone) {
 			const region = regionFor(snappedZone);
 			if (region) rect = region;
@@ -212,8 +262,10 @@
 		if (snapTarget && pendingZone) snapTarget = regionFor(pendingZone);
 	}
 
+	// Mobile is watched too, and needs it more: the workspace shrinks when a phone raises
+	// its keyboard, and a panel left at the old height would put its footer under it.
 	$effect(() => {
-		if (!open || isMobile) return;
+		if (!open) return;
 		window.addEventListener('resize', refitToLayout);
 		const anchors = [
 			document.querySelector<HTMLElement>('[data-assistant-snap-workspace]'),
@@ -387,8 +439,8 @@
 	onpointerdowncapture={raise}
 	onfocusin={raise}
 >
-	{#if open && !isMobile}
-		{#if snapTarget}
+	{#if open}
+		{#if snapTarget && !isMobile}
 			<!-- The ghost region the window will jump to on release. -->
 			<div
 				class="fw-snap-ghost"
@@ -397,6 +449,7 @@
 		{/if}
 		<section
 			class="fw surface-float"
+			class:fw--mobile={isMobile}
 			class:fw--snapped={isSnapped}
 			class:fw--snap-left={isSnapped && snappedZone === 'left'}
 			class:fw--snap-right={isSnapped && snappedZone === 'right'}
@@ -423,7 +476,11 @@
 				{@render children()}
 			</div>
 
-			{#each HANDLES as dir (dir)}
+			<!-- No handles on a phone: the panel is the workspace, so there is nothing for a
+			     resize to give it. The pointer handlers refuse there as well, which makes this
+			     a matter of not drawing eight invisible strips over the panel's own edges
+			     rather than the thing that enforces it. -->
+			{#each isMobile ? [] : HANDLES as dir (dir)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					class="fw-resize fw-resize--{dir}"
@@ -465,8 +522,13 @@
 	}
 
 	/* A docked window uses the same flush surface and seams as the workspace's own docks.
-	   Floating-only radius, shadow and all-edge glass border stay off. */
-	.fw--snapped {
+	   Floating-only radius, shadow and all-edge glass border stay off.
+
+	   The phone's panel shares the treatment because it shares the reason: it spans the
+	   workspace and meets the app at its own edges rather than floating over it. It takes
+	   no seam rule below, having no neighbour on any side to be separated from. */
+	.fw--snapped,
+	.fw--mobile {
 		border: 0;
 		border-radius: 0;
 		box-shadow: none;
@@ -532,6 +594,12 @@
 
 	.fw-header--dragging {
 		cursor: grabbing;
+	}
+
+	/* Nowhere to drag to, so the header stops advertising that it can be. It keeps its
+	   buttons: on a phone the close button in there is the only way out of the panel. */
+	.fw--mobile .fw-header {
+		cursor: default;
 	}
 
 	.fw-body {
