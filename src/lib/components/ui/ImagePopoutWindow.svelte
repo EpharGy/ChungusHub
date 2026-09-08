@@ -20,7 +20,6 @@
 	import { imagePopoutStore } from '$lib/stores/imagePopout.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
-	import { viewport } from '$lib/stores/viewport.svelte';
 	import { fileUrl } from '$lib/services/transport';
 
 	let path = $derived(imagePopoutStore.images[imagePopoutStore.index] ?? null);
@@ -49,14 +48,16 @@
 	// window out from under a story still on screen. Same reasoning, same choice, as the
 	// notepad's twin.
 	//
-	// Skipped on mobile, where the window is unreachable by design: `FloatingWindow` renders
-	// nothing there and the toolbar button that opens it is hidden, so restoring one would
-	// mean state nobody can see or close.
+	// It runs at every width now. This used to skip on mobile, where the window was
+	// unreachable by design: the shell rendered nothing there and the toolbar button that
+	// opens it was hidden, so restoring one meant state nobody could see or close. The shell
+	// has a full-screen mobile panel and the title bar carries a way out of it, so both
+	// halves of that reasoning are gone.
 	$effect(() => {
 		const chatId = chatStore.currentChatState?.chat.id ?? null;
 		if (chatId === lastChatId) return;
 		lastChatId = chatId;
-		if (!viewport.isMobile) untrack(() => imagePopoutStore.followChat(chatId));
+		untrack(() => imagePopoutStore.followChat(chatId));
 	});
 
 	// Close the window when the library entry its picture came from is deleted, which sweeps

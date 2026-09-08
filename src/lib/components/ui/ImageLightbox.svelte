@@ -14,7 +14,6 @@
 	import Icon from './Icon.svelte';
 	import { focusTrap } from '$lib/actions/focusTrap';
 	import { fileUrl } from '$lib/services/transport';
-	import { viewport } from '$lib/stores/viewport.svelte';
 
 	interface Props {
 		/** Server-relative image paths (images/<category>/<file>), in the order the surface
@@ -150,9 +149,12 @@
 				<a class="lightbox-btn" href={src} download={filename} title="Download" aria-label="Download image">
 					<Icon name="download" class="w-5 h-5" strokeWidth={1.8} />
 				</a>
-				{#if onPopout && !viewport.isMobile}
-					<!-- Desktop only: the pop-out is a floating window, and a phone has nowhere
-					     to float it that is not already this viewer. -->
+				{#if onPopout}
+					<!-- Offered at every width. On a phone the pop-out is a full-screen panel
+					     rather than a floating window, which looks like this viewer and is not:
+					     the viewer closes with the library it was opened from, and the pop-out
+					     stays up while the reader goes back to the story. That is the whole
+					     point of it, and it is worth as much on a phone as on a desktop. -->
 					<button
 						type="button"
 						class="lightbox-btn"
