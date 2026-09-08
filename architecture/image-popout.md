@@ -57,10 +57,12 @@ They used to be one boolean, and with one way in and one way out that was honest
 
 So they are separate, and the header's two buttons are exactly that split:
 
-| Button | Icon | Touches | Means |
-|---|---|---|---|
-| Clear | trash | the picture | empties the window, forgets the picture for this story, frame stays up |
-| Minimise | dash | the window | puts the frame away, keeps the picture, title bar entry brings it back |
+| Button | Icon | Drawn by | Touches | Means |
+|---|---|---|---|---|
+| Clear | trash | this panel | the picture | empties the window, forgets the picture for this story, frame stays up |
+| Hide | dash | `FloatingWindow` | the window | puts the frame away, keeps the picture, title bar entry brings it back |
+
+The second is not this feature's to draw. It passes `onHide` and the shell renders it, in the same corner as every other panel's, which is what stops two panels spelling one act two ways. The glyphs for the shared acts come from `PANEL_ICONS`; see the layer's note.
 
 **Minimise, not close, and the icon says so.** Putting a panel away must not destroy what is in it, because the title bar is one press from bringing it back. The one destructive door is Clear, and it wears the icon the notepad's Clear wears, because it is the same act. **No X anywhere on a floating panel**: an X in a window header reads as "close this window", and closing is precisely what the dash beside it does without destroying anything, so the two would be saying the same thing in two glyphs with two different consequences.
 
