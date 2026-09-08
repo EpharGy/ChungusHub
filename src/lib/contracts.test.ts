@@ -26,6 +26,7 @@ import { PROVIDER_NAMES } from '$lib/types/llm';
 import { REASONING_DIALECTS } from '$lib/config/sampling';
 import { PERMANENT_TRAITS } from '$lib/types/library';
 import { MACROS } from '$lib/macros';
+import { FORBIDDEN_HEADER_ICONS, PANEL_ICONS } from '$lib/utils/floating-panels';
 import {
 	AMBIENT_BASE_SETTINGS,
 	AMBIENT_EFFECTS,
@@ -1660,5 +1661,55 @@ describe('floating window layer (architecture/floating-window.md)', () => {
 
 	test('the host element carries the attribute the windows portal into', () => {
 		expect(workspace).toContain('data-floating-window-layer');
+	});
+});
+
+describe('floating panel header conventions (architecture/floating-window.md)', () => {
+	// A panel supplies its own header, so nothing but this stops each one picking its own
+	// glyph for the acts they all share. Two panels doing one thing in two icons is how a
+	// reader learns that the app's buttons have to be read one at a time, and it is exactly
+	// what happened: the notepad hid with an X and the gallery window with a dash.
+	//
+	// Scanned rather than trusted, because it is a rule about a string in a template. Nothing
+	// else in the toolchain would notice it being broken, and the panel would look fine.
+	const panels = svelteFiles().filter((file) => {
+		const source = readFileSync(file, 'utf8');
+		return source.includes('<FloatingWindow') && !file.endsWith('ui/FloatingWindow.svelte');
+	});
+
+	// There is deliberately no "the scan found something" guard. This branch carries the layer
+	// and no panels at all, by design: every consumer is cut from here onto its own branch, so
+	// an empty list is this branch's own correct state. The rule bites where the panels are,
+	// which is `deploy` and any branch that merges one in, and that is the only place it can.
+
+	/** A panel's header snippet, which is the row this rule is about. Its body is its own
+	 *  business: a picker inside one may legitimately draw a close on something. */
+	function headerOf(source: string): string {
+		const open = source.indexOf('{#snippet header()}');
+		if (open === -1) return '';
+		const end = source.indexOf('{/snippet}', open);
+		return source.slice(open, end === -1 ? undefined : end);
+	}
+
+	for (const icon of FORBIDDEN_HEADER_ICONS) {
+		test(`no panel header spells anything with the ${icon} glyph`, () => {
+			// Both read as "close", and no floating panel closes: hiding one keeps everything
+			// in it, one press from coming back. Spelling the harmless act with the glyph that
+			// means the harmful one teaches a reader to hesitate over a button that never
+			// needed it, and leaves the genuinely destructive control wearing something milder.
+			const offenders = panels
+				.filter((file) => headerOf(readFileSync(file, 'utf8')).includes(`name="${icon}"`))
+				.map((file) => file.slice(file.indexOf('src/')));
+			expect(offenders).toEqual([]);
+		});
+	}
+
+	test('the shell draws the hide control from the shared constant, not a literal', () => {
+		// The one control every panel has is rendered by the shell rather than by each panel,
+		// so it cannot land in a different corner or wear a different glyph. Reading it from
+		// PANEL_ICONS is what keeps that promise pointed at the same place the doc is.
+		const shell = read('src', 'lib', 'components', 'ui', 'FloatingWindow.svelte');
+		expect(shell).toContain('PANEL_ICONS.hide');
+		expect(PANEL_ICONS.hide).toBe('minimize');
 	});
 });
