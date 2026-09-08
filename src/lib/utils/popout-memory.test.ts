@@ -22,8 +22,10 @@ import {
 	type PopoutMemory
 } from './popout-memory';
 
-const one = { path: 'images/one.png', sourceId: 'src-1' };
-const two = { path: 'images/two.png', sourceId: 'src-2' };
+const one = { path: 'images/one.png', sourceId: 'src-1', open: true };
+const two = { path: 'images/two.png', sourceId: 'src-2', open: true };
+/** A window standing with nothing in it: the state the record could not express before. */
+const empty = { open: true };
 
 describe('rememberIn', () => {
 	test('records a picture against the chat being read', () => {
@@ -167,10 +169,47 @@ describe('storage', () => {
 				noSource: { path: 'x.png' },
 				noPath: { sourceId: 's' },
 				notAnObject: 'x.png',
-				empty: { path: '', sourceId: '' }
+				blank: { path: '', sourceId: '' }
 			})
 		);
 		expect(readPopoutMemory()).toEqual({ good: one });
+	});
+
+	test('a standing window with nothing loaded survives the round trip', () => {
+		// The state the old shape could not hold at all: the reader unloaded the picture but
+		// left the frame up. Written with no path, and it has to come back as a window rather
+		// than as a record with nothing in it.
+		rememberPopout('a', empty);
+		expect(readPopoutMemory()).toEqual({ a: empty });
+	});
+
+	test('a picture kept behind a minimised window survives too', () => {
+		const minimised = { ...one, open: false };
+		rememberPopout('a', minimised);
+		expect(readPopoutMemory()).toEqual({ a: minimised });
+	});
+
+	test('a record with no window and no picture is dropped, saying nothing', () => {
+		store.set('image-popout-by-chat', JSON.stringify({ a: { open: false }, b: one }));
+		expect(readPopoutMemory()).toEqual({ b: one });
+	});
+
+	test('a record written before the window could stand empty reads as a standing one', () => {
+		// The migration, and it needs no version stamp: every record of the old shape described
+		// a window that was up, because that was the only thing the old shape could mean.
+		store.set(
+			'image-popout-by-chat',
+			JSON.stringify({ a: { path: 'images/one.png', sourceId: 'src-1' } })
+		);
+		expect(readPopoutMemory()).toEqual({ a: one });
+	});
+
+	test('a non-boolean open is not trusted, and falls back to the migration rule', () => {
+		store.set(
+			'image-popout-by-chat',
+			JSON.stringify({ a: { path: 'images/one.png', sourceId: 'src-1', open: 'yes' } })
+		);
+		expect(readPopoutMemory()).toEqual({ a: one });
 	});
 
 	test('the character-keyed record this replaced is swept, not migrated', () => {
