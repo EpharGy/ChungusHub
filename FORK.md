@@ -8,12 +8,12 @@ Each item is a branch of its own, cut from `main`, so any of them can be taken o
 sent upstream as a pull request. **Items are removed from this list once upstream implements
 them or they stop being needed**, so a short list is a good sign, not a stalled one.
 
-Two of them, the gallery window and the notepad, are built on a shared floating-panel layer
-that has a branch of its own (`feature/floating-window`, cut from `main` like the rest). It is
-not listed below because it adds nothing you can see on its own: it is the dragging, docking,
-placement memory, front-to-back order, title bar entry and full-screen phone layout that both
-of those windows get for free. Taking either feature means taking that layer with it, and
-neither one drags the other.
+Three of them - the gallery window, the notepad and EchoChamber - are built on a shared
+floating-panel layer that has a branch of its own (`feature/floating-window`, cut from `main`
+like the rest). It is not listed below because it adds nothing you can see on its own: it is
+the dragging, docking, placement memory, front-to-back order, title bar entry and full-screen
+phone layout that all three windows get for free. Taking any of those features means taking
+that layer with it, and none of them drags the others.
 
 `deploy` is rebuilt from those branches rather than committed to, which means it is **force
 pushed** and does not fast-forward. Clone it or `git reset --hard origin/deploy`; `git pull`
@@ -23,7 +23,7 @@ is the one thing that will not work.
 
 | Feature | Branch | What it does |
 |---|---|---|
-| EchoChamber | `feature/echochamber` | A floating audience that reacts to each turn as it lands. Its own engine, settings page and authorable styles; feeds ride the chat row, so deleting a chat reaps them. The crowd is told the persona and card version *this chat* plays as, so it never describes someone the reply was not built from. See `architecture/echochamber.md`. |
+| EchoChamber | `feature/echochamber` | A floating audience that reacts to each turn as it lands. Its own engine, settings page and authorable styles; feeds ride the chat row, so deleting a chat reaps them. The crowd is told the persona and card version *this chat* plays as, so it never describes someone the reply was not built from. The feed sits in a floating window raised from the title bar: drag it anywhere, resize it, or drop it against an edge or corner to dock it, and it is a full-screen panel on a phone. See `architecture/echochamber.md`. |
 | Image generation | `feature/comfy-inject` | `[[IMG: ...]]` markers in a reply become pictures, drawn by a ComfyUI server the backend dials directly. Settings page for host, workflow, sampler and framing. See `architecture/imagegen.md`. |
 | Corrections | `feature/corrections` | Rewrites a reply you have already read, to a direction you type. Two extra rows in that reply's Retry menu: replace it, or keep it and write the correction as a branch. It reuses the retry's own prompt, so the rewrite sees the history, lorebooks and memory the original saw. Its own engine, with an editable prompt in Settings → Engines. |
 | Gallery window | `feature/image-popout` | Keeps one picture from any card's gallery on screen while you work elsewhere in the app. Raised from the title bar, and it browses for its own image: a grid of every card that has gallery pictures, then that card's pictures. Drag it anywhere, resize it, or drop it against an edge or corner to dock it; two header buttons page through the rest of that card's gallery. What is pinned is remembered per chat, so returning to a story brings its picture back, and hiding the window keeps the picture rather than throwing it away. On a phone it is a full-screen panel. See `architecture/image-popout.md`. |
