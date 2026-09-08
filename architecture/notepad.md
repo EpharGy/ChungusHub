@@ -57,7 +57,7 @@ It does not edit `TitleBar` to get one. The entry is a `registerFloatingPanel` c
 
 The one consequence is that **hiding is cheap**, so the header's dash is not a destructive act. It puts the window away, keeps every word, and forgets the chat in the local record so returning does not raise it again. The only destructive door is Clear, which asks through `ConfirmDialog` on the destructive-act ladder.
 
-A dash rather than an X, and every floating panel in the app agrees. An X in a window header reads as "this is going away", and nothing here is: the notes stay, the title bar entry brings the window straight back, and the one control that destroys anything is the trash beside it. Spelling the harmless act with the glyph that means the harmful one is how a reader learns to hesitate over a button that never needed it.
+A dash rather than an X, and every floating panel in the app agrees, because the shell draws that button rather than this feature: the notepad passes `onHide` and gets it, in the same corner as every other panel's. An X in a window header reads as "this is going away", and nothing here is: the notes stay, the title bar entry brings the window straight back, and the one control that destroys anything is the trash beside it. Spelling the harmless act with the glyph that means the harmful one is how a reader learns to hesitate over a button that never needed it.
 
 Three smaller consequences of having a button:
 
