@@ -90,6 +90,47 @@ Four consequences worth knowing:
 
 **There is no settings page for this layer, deliberately.** Registration is the whole API and the entry is the whole control surface. A page whose every row reads "show the button for the panel you can already see a button for" is a page that exists to be configured and never is.
 
+## What a panel supplies, and what it gets
+
+A panel writes three things: a header snippet, a body, and a `registerFloatingPanel` call. Everything else arrives.
+
+| It gets | From |
+|---|---|
+| Drag, eight-handle resize, seven dock zones | `FloatingWindow` |
+| Placement remembered per device, dock included | `storageKey` |
+| A rung on the front-to-back ladder | the stack module |
+| Painting below Settings and the Library | the layer it portals into |
+| A full-screen phone layout | `FloatingWindow` |
+| A title bar entry, and the overflow dropdown when there are enough panels | the registry |
+| The hide control in its header | `onHide` |
+
+**The hide control is the shell's, not the panel's.** Pass `onHide` and it is drawn last in the header, so the button that puts a panel away is in the same corner of every panel in the app, spelled the same way. It sits outside the header snippet, which is what stops a consumer moving it or choosing another glyph for it. A panel may draw its own instead; that is the escape hatch and not the path.
+
+There is deliberately **no `onClose` beside it**. Nothing on this layer closes. A hidden panel keeps everything in it and the title bar entry brings it straight back, so a second control that sounded more final would be one that is not.
+
+### The icons a panel does not choose
+
+`PANEL_ICONS` holds the glyphs for the acts every panel shares. A panel supplies its own header, so without a shared list each one picks its own icon for "put this away" and "empty this", and that is not hypothetical: the notepad hid with an X and the gallery window with a dash, doing one thing in two glyphs.
+
+| Act | Glyph | Notes |
+|---|---|---|
+| `hide` | dash | Drawn by the shell. A panel never writes this one. |
+| `clear` | trash | Empties the panel. The destructive one, and the only destructive one. |
+| `back` | left arrow | Up a level, in a panel that browses something. |
+| `prev` / `next` | chevrons | Paging within a set. |
+
+**Two glyphs are forbidden outright: `close` and `x`.** Both read as "this is going away", and no floating panel goes away. Spelling the harmless act with the glyph that means the harmful one teaches a reader to hesitate over a button that never needed it, and it leaves the genuinely destructive control wearing something milder than the one beside it. `FORBIDDEN_HEADER_ICONS` names them and [`contracts.test.ts`](../src/lib/contracts.test.ts) scans every panel's header snippet for them, because this is a rule about a string in a template and nothing else in the toolchain would notice it being broken.
+
+**A panel's own verbs stay its own.** The notepad's export, the gallery window's paging: nothing here constrains those, and a panel that invents a control nobody else has should invent an icon for it too. The list is the shared acts, not a vocabulary anyone has to fit inside.
+
+### One button recipe
+
+[`FloatingPanelButton`](../src/lib/components/ui/FloatingPanelButton.svelte) draws every header control: a 1.7rem square, transparent, muted, tinting on hover, with a `danger` variant that goes red **on hover only**. A header of permanently red buttons reads as a row of warnings and the reader stops seeing any of them; the colour arrives at the moment it is about to matter.
+
+`label` is required and is both the tooltip and the accessible name, because the button renders a glyph and nothing else. A header button without one is announced as "button".
+
+That component exists because the recipe was already duplicated: two panels carried byte-identical copies of the same twelve lines of CSS and neither knew about the other. A third panel would have made a third.
+
 ## On a phone it is one full-screen panel
 
 The panel takes the workspace whole, flush, with no radius and no shadow: the same treatment a dock gets, for the same reason. Drag, resize and the seven zones are all off, there being nowhere to float on a screen the panel already fills. Placement is neither read nor written there, so a visit from a phone cannot overwrite the rectangle a desktop left behind.
