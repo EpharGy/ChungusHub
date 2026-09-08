@@ -19,7 +19,7 @@
  *
  * Unlike the image pop-out this shares a window shell with, the notepad HAS a launcher: the
  * title bar's button. That changes one thing and only one - closing is cheap, because it is
- * always one click from coming back - so the X puts the window away and never touches a word
+ * always one click from coming back - so hiding puts the window away and never touches a word
  * of what is in it. No door here destroys notes except Clear, which asks first.
  */
 
@@ -215,7 +215,7 @@ registerFloatingPanel({
 	badge: () => notepadStore.hasNotes,
 	tooltip: () => {
 		if (!notepadStore.canScope) return 'Notepad · open a chat to take notes';
-		if (notepadStore.open) return 'Close the notepad (the notes are kept)';
+		if (notepadStore.open) return 'Hide the notepad (the notes are kept)';
 		return notepadStore.hasNotes ? 'Notepad · this chat has notes' : 'Notepad';
 	}
 });
