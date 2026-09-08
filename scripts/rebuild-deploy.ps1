@@ -79,7 +79,6 @@ $Topics = @(
     'fork/deploy-tooling',
     'feature/comfy-inject',
     'feature/docker',
-    'feature/echochamber',
     'feature/corrections',
     'feature/random-roll-macros',
     # The frameworks base. A framework is a deterministic calculation over story state
@@ -106,6 +105,10 @@ $Topics = @(
     # never on a consumer: a copy on one of them is a copy the other cannot see, and the two
     # would then disagree about the same component on every rebuild.
     'feature/floating-window',
+    # EchoChamber's reaction feed is a fourth consumer. It carried its own copy of the
+    # shell's maths until the copy was removed, which is what moved it from above the
+    # shell in this list to below it: the dependency is real now, not stylistic.
+    'feature/echochamber',
     'feature/image-popout',
     'feature/notepad',
     # Memoized token counting. Touches only src/lib/tokenizer/, so it overlaps nothing else
