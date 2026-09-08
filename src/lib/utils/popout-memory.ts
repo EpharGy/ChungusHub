@@ -1,5 +1,5 @@
 /**
- * Which picture the pop-out was left showing, per CHAT.
+ * How the pop-out was left, per CHAT: which picture it held, and whether it was standing.
  *
  * The key is the chat that was on screen when the picture was popped out, not the character
  * whose gallery it came from and not the character being read. The window is furniture of
@@ -48,12 +48,24 @@ const LEGACY_MEMORY_KEY = 'image-popout-by-character';
  */
 export const MEMORY_LIMIT = 20;
 
-/** What the window was showing, and where the rest of its set can be found again. */
+/**
+ * What the window was showing, whether it was standing, and where the rest of its set can be
+ * found again.
+ *
+ * Two facts, not one, and keeping them apart is what the three header buttons mean. A window
+ * can be **up with nothing in it** (the reader minimised the picture away but wants the frame
+ * there), and it can be **down with a picture still loaded** (put away from the title bar,
+ * coming back to exactly what it held). Neither is expressible if a record only ever means
+ * "there is a picture here", which is what this used to be.
+ */
 export interface RememberedPopout {
-	/** Server-relative path of the image itself. */
-	path: string;
-	/** The library entry whose gallery holds it, which need NOT be anyone in this chat. */
-	sourceId: string;
+	/** Server-relative path of the image itself. Absent when the window is up and empty. */
+	path?: string;
+	/** The library entry whose gallery holds it, which need NOT be anyone in this chat.
+	 *  Absent exactly when `path` is. */
+	sourceId?: string;
+	/** Whether the window itself is standing, independently of whether anything is loaded. */
+	open: boolean;
 }
 
 /** Chat → the picture its pop-out was left on. */
@@ -123,13 +135,25 @@ export function readPopoutMemory(): PopoutMemory {
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
 		const out: PopoutMemory = {};
 		for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
-			// Half an entry is no entry: without the source there is no set to page through,
-			// and reopening one picture with no way back to its neighbours is a worse answer
-			// than not reopening at all.
-			const { path, sourceId } = (value ?? {}) as Partial<RememberedPopout>;
-			if (typeof path === 'string' && path && typeof sourceId === 'string' && sourceId) {
-				out[id] = { path, sourceId };
-			}
+			const raw = (value ?? {}) as Partial<RememberedPopout>;
+			// Half a picture is no picture: without the source there is no set to page through,
+			// and reopening one image with no way back to its neighbours is a worse answer than
+			// not reopening at all. So the pair survives together or not at all, which leaves
+			// `open` as the other thing a record can be carrying.
+			const hasImage =
+				typeof raw.path === 'string' && raw.path && typeof raw.sourceId === 'string' && raw.sourceId;
+			// Records written before the window could be standing empty carry no `open` at all,
+			// and every one of them described a window that WAS up: that was the only state the
+			// old shape could mean. Reading a missing flag as true is therefore the migration,
+			// and it needs no version stamp and loses nothing.
+			const open = typeof raw.open === 'boolean' ? raw.open : Boolean(hasImage);
+			// A record that is neither standing nor holding a picture says nothing at all. It is
+			// not written, and one that turns up hand-edited is dropped rather than kept as a row
+			// that can never affect anything.
+			if (!open && !hasImage) continue;
+			out[id] = hasImage
+				? { path: raw.path as string, sourceId: raw.sourceId as string, open }
+				: { open };
 		}
 		return out;
 	} catch {

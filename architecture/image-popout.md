@@ -1,42 +1,71 @@
-# The image pop-out window: architecture
+# The gallery window: architecture
 
-A **pop-out** is one picture in a floating, dockable window that stays on screen while the reader works somewhere else in the app. It is opened from the full-screen viewer's toolbar, pages through the set it was opened from, and can be dragged to an edge to dock like the Chungus Assistant. Two files of its own: [`ImagePopoutWindow.svelte`](../src/lib/components/ui/ImagePopoutWindow.svelte) (what is in the window) and [`imagePopout.svelte.ts`](../src/lib/stores/imagePopout.svelte.ts) (which picture, and whether there is a window at all). Where the window is and how it moves is [`FloatingWindow`](../src/lib/components/ui/FloatingWindow.svelte), which is shared and documented in [`floating-window.md`](floating-window.md).
+A **gallery window** is one picture from somebody's gallery, in a floating, dockable window that stays on screen while the reader works somewhere else in the app. It is raised from the title bar, browses the library for what to show, pages through the gallery it is showing, and docks like any other floating panel. Three files of its own: [`ImagePopoutWindow.svelte`](../src/lib/components/ui/ImagePopoutWindow.svelte) (what is in the window), [`imagePopout.svelte.ts`](../src/lib/stores/imagePopout.svelte.ts) (which picture, and whether there is a window at all) and [`gallery-browser.ts`](../src/lib/utils/gallery-browser.ts) (which cards it offers, pure). Where the window is, how it moves and how it is reached are all [`FloatingWindow`](../src/lib/components/ui/FloatingWindow.svelte) and the panel registry, documented in [`floating-window.md`](floating-window.md).
 
-It exists because the viewer is modal and a reference picture is not. Looking at a character's art while editing their description meant closing the viewer, and the viewer is the only thing in the app that shows a picture at full size.
+It exists because the full-screen viewer is modal and a reference picture is not. Looking at a character's art while editing their description meant closing the viewer, and the viewer is the only thing in the app that shows a picture at full size.
 
-## The window is mounted at the shell, not beside the grid that opens it
+## It browses for its own picture, and that is the second version of this feature
 
-This is the load-bearing decision and it is the one that looks like over-engineering until you try the other way. The gallery lives inside the library entry editor ([`CharacterGallery.svelte`](../src/lib/components/library/CharacterGallery.svelte) → [`EntryFormFields.svelte`](../src/lib/components/library/EntryFormFields.svelte)), so a window rendered as its child is unmounted the moment that editor closes, which is the first thing the reader does after popping a picture out, and the entire reason the feature exists. So the window is mounted once in [`AppShell.svelte`](../src/lib/components/layout/AppShell.svelte), beside the Assistant's widget and for the same second reason: it is fixed-positioned and has to paint above the workspace's isolated stacking context. What is in it comes from a store.
+The first version had exactly one way in: open the library, find a card, open its gallery, open the full-screen viewer, press the pop-out button. That is five steps to put a picture on screen, and, worse, five steps to put a *different* one there, because closing the window destroyed what it held. Changing your mind cost the whole journey again.
+
+So the window carries its own browser, two levels deep: every card with at least one gallery image, then that card's pictures. Choosing one loads it. **The old entry point is gone entirely**, and that is a bigger deletion than it sounds: `ImageLightbox.svelte`, `CharacterGallery.svelte` and `EntryFormFields.svelte` are all upstream files this feature used to modify, and it now modifies none of them. The branch's diff against `main` is new files and one line in the shell.
+
+Two rules the picker follows, both in the pure module so they can be tested:
+
+- **Only cards with something to show.** A tile that opens onto an empty gallery is a click that teaches the reader not to trust the grid.
+- **Personas before characters, alphabetical within each**, with a seam between the groups. There are always far fewer personas, so putting them first costs a character card nothing. The sort falls back to the id, because the library allows two cards to share a name and duplication produces them routinely: without the tiebreak the pair can swap places between renders for no visible reason.
+
+The gallery is de-duplicated on the way out of that module rather than trusted. The grid keys its tiles on the path, and a keyed block handed one key twice throws, so a gallery that somehow held a path twice would take the whole window down instead of drawing the picture twice.
+
+## The window is mounted at the shell, not beside anything that opens it
+
+The window is mounted once in [`AppShell.svelte`](../src/lib/components/layout/AppShell.svelte) rather than inside whatever raised it, for the reason every floating panel is: it has to outlive that surface, and it is fixed-positioned above the workspace's isolated stacking context. What is in it comes from a store.
+
+That decision predates the browser and was load-bearing before it: the only way in used to be a grid inside the library editor, so a window rendered as its child died the moment that editor closed, which was the first thing the reader did after popping a picture out. The browser removes the surface that made the point, and the point stands anyway, which is usually the sign it was the right shape.
 
 **The set is copied into the store, not referenced.** A window that outlives the surface which named its set cannot hold that surface's live array: nothing is maintaining it any more. The cost is that the window does not follow later gallery edits, and the payment is a missing-file state on the image itself, keyed on the path so paging to a picture that is still there clears it by itself.
 
-**There is exactly one window.** A second needs a z-order between the two, a placement key each, and an answer to which one the arrows belong to. None of that is worth it for a picture you are keeping on screen while you work. Opening another image takes the window over and toasts, so a reader who clicked twice is never left wondering which of the two clicks they are looking at.
+**There is exactly one window.** A second needs a z-order between the two, a placement key each, and an answer to which one the arrows belong to. None of that is worth it for a picture you are keeping on screen while you work. Choosing another image takes the window over, silently: there used to be a notice, because a picture arrived from a viewer somewhere else in the app and replacing one without a word was a surprise. Picking from the window's own browser is not a surprise, since the reader is looking at the window while it happens.
 
 ## The window belongs to the story being read, not to the picture
 
-A pop-out is furniture of the chat you are in. It is bound to the **chat** that was on screen **when the picture was popped out**, and that binding is what makes it appear and disappear: opening another story closes it, coming back to that one opens it again, at the picture it was left on.
+The window is furniture of the chat you are in. It is bound to the **chat** that was on screen **when the picture was chosen**, and that binding is what makes it appear and disappear: opening another story closes it, coming back to that one opens it again, at the picture it was left on.
 
 **The key is the chat, not the character.** A character with six stories running is six separate rooms, and a reference picture pinned up in one of them is not a fact about the other five. Keying on the character makes those six share one window, so a picture pinned up while working through one story follows you into every other story that character is in. It is also the same unit the notepad's notes use ([`notepad.md`](notepad.md)), which is not a coincidence: both are the reader's own scaffolding around one story.
 
 **The binding is the reader's chat, not the picture's owner, and those are routinely different.** The library is reachable from inside any chat, so opening character A's art while reading a story about B is ordinary. That window belongs to B's story. Leaving it closes the window *even if where you are going is a story about A*, and returning brings it back, still showing A's picture. Binding to the gallery instead reads as reasonable right up to that case, where it produces a window that appears in a story nobody opened it in and refuses to leave the one they did.
 
-The store reads the open chat itself in `show`, rather than taking it as an argument, so no call site can bind a window to the wrong story and no surface offering a pop-out has to know that chats exist. It reads the **loaded** chat rather than the active id, because the id is claimed the moment a row is clicked and the rows land a couple of hundred milliseconds later: keyed on the id, the window would swap out from under a story still on screen. Popped out with no chat open, a window belongs to nobody: the next story to open takes it away and nothing brings it back.
+The store reads the open chat itself in `show`, rather than taking it as an argument, so the picker cannot bind a window to the wrong story and does not have to know that chats exist. It reads the **loaded** chat rather than the active id, because the id is claimed the moment a row is clicked and the rows land a couple of hundred milliseconds later: keyed on the id, the window would swap out from under a story still on screen. There is no loading a picture with no chat open: the title bar entry is disabled on the welcome screen, for the notepad's reason, because a picture pinned to no story is pinned to nothing.
 
 **Two ids, because one cannot do both jobs.** The chat read is the key; the entry whose gallery the set came from is stored beside it, since rebuilding the set on the way back in is the only thing it is for. That source may be a persona, which is why nothing in this path filters on entry type.
 
-**It is an edge, not an invariant.** The effect in [`ImagePopoutWindow.svelte`](../src/lib/components/ui/ImagePopoutWindow.svelte) acts only when the loaded chat *changes*. Re-asserting "the window must belong to the open chat" continuously would be simpler to write and wrong: it would shut a window in the frame it opened, every time, because a picture is popped out from the library and the library is opened from inside a chat. A window is only wrong once the reader moves.
+**It is an edge, not an invariant.** The effect in [`ImagePopoutWindow.svelte`](../src/lib/components/ui/ImagePopoutWindow.svelte) acts only when the loaded chat *changes*. Re-asserting "the window must belong to the open chat" continuously would be simpler to write and wrong: it would shut a window in the frame it opened, every time, because choosing a picture happens inside the window while a chat is on screen. A window is only wrong once the reader moves.
 
 ## Deletion, and the one thing the binding cannot see
 
-Two things can take a pop-out's subject away, and they need opposite answers.
+Two things can take the window's subject away, and they need opposite answers.
 
 **The chat is deleted.** The reader is routed elsewhere, the loaded chat changes, and the edge above fires and puts the window away. Nothing else is needed to get it off the screen, but the *record* would survive, so the prune below drops it. Nobody is owed a notice: there is no returning to a story that no longer exists.
 
-**The library entry the picture came from is deleted**, which sweeps that entry's image files with it. This is the case the binding cannot see at all, under any key: deleting a character happens from the library panel *inside* the story you are reading, so the chat never changes and the edge never fires. Left alone, the window sits there showing files the delete already removed, and the only thing that ever tells the reader is the image's own missing-file panel. So there is a **second effect**, and unlike the first it *is* an invariant, legitimately so, and the difference is the reason it is allowed to be. "The window belongs to the story on screen" is false for a frame every time a picture is popped out, because the library is opened from inside a chat. "The picture's gallery still exists" is never legitimately false: nothing can pop a picture out of an entry that is not there. An invariant that fights nothing costs nothing. It closes the window and says why, and it closes rather than suspends, because the picture is not coming back.
+**The library entry the picture came from is deleted**, which sweeps that entry's image files with it. This is the case the binding cannot see at all, under any key: deleting a character happens from the library panel *inside* the story you are reading, so the chat never changes and the edge never fires. Left alone, the window sits there showing files the delete already removed, and the only thing that ever tells the reader is the image's own missing-file panel. So there is a **second effect**, and unlike the first it *is* an invariant, legitimately so, and the difference is the reason it is allowed to be. "The window belongs to the story on screen" is false for a frame every time a picture is chosen. "The picture's gallery still exists" is never legitimately false: nothing can load a picture from an entry that is not there. An invariant that fights nothing costs nothing. It **unloads** and says why, leaving the frame standing, because what has gone is the picture and not the window.
 
-Records for *other* chats that sourced the same deleted entry are deliberately left alone. Each of those chats can still be walked back into, and `reopenFor` reads the source's gallery live, misses, and tells that reader at the moment it is worth hearing: once, dropping the record as it goes. Sweeping them in advance would take the explanation away and leave a window's absence unaccounted for.
+Records for *other* chats that sourced the same deleted entry are deliberately left alone. Each of those chats can still be walked back into, and `restoreFor` reads the source's gallery live, misses, and tells that reader at the moment it is worth hearing: once, dropping the record as it goes. Sweeping them in advance would take the explanation away and leave a window's absence unaccounted for.
 
-**Closing and being closed are different acts, and the record is where they differ.** The X button forgets the picture, because the reader deciding they are done should not be undone by walking to another story and back. A character switch suspends instead: same closed window, record kept, and returning puts it back. One store method each, so no caller has to remember which it wanted.
+## The window being up and a picture being loaded are two different facts
+
+They used to be one boolean, and with one way in and one way out that was honest: there was no such thing as an empty window, and closing meant you were finished with the picture. Browsing from inside the window makes both halves wrong at once. The reader can want the frame with nothing in it, and can want the picture kept while the frame is away, and neither is expressible.
+
+So they are separate, and the header's three buttons are exactly that split:
+
+| Button | Touches | Means |
+|---|---|---|
+| Browse | neither | opens the picker over the body |
+| Unload | the picture | empties the window, forgets the picture for this story, frame stays up |
+| Minimise | the window | puts the frame away, keeps the picture, title bar entry brings it back |
+
+**Minimise, not close, and the icon says so.** This is the notepad's rule rather than the old pop-out's: putting a panel away must not destroy what is in it, because the title bar is one press from bringing it back. The one destructive door is Unload, and it is a separate button. (The notepad spells the same act with an X, which is a visible inconsistency between two panels doing one thing, and worth aligning at some point.)
+
+Both facts are remembered per chat, in **one** record rather than two. A window can be down with a picture behind it, or up with nothing in it, and a record that is neither is not written at all: it says nothing, so storing it would be a row that can never affect anything. Records written before the window could stand empty carry no flag, and every one of them described a window that was up, because that was the only thing the old shape could mean. Reading a missing flag as "up" is therefore the whole migration, and it needs no version stamp and loses nothing.
 
 **Only the path is stored, never the set.** It is re-read from the source entry's live gallery on the way in, which turns a picture deleted in the meantime into a miss that can be reported (a toast, and the record dropped so the notice comes once) rather than a broken image rendered out of a stale snapshot. Same reasoning as the snapshot's missing-file state, arriving at the opposite answer because a reopen has somewhere live to look and a paging window does not.
 
@@ -56,22 +85,18 @@ What is left here is what this window puts IN that shell, and one thing worth re
 
 A change to how the window moves belongs on `feature/floating-window`, not here.
 
-## Two deliberate omissions
-
-**No launcher, and its title bar entry is not one either.** There is no such thing as opening a pop-out cold: it is made from a picture, so a control offering to raise one with no picture chosen would have nothing to do. Every floating panel registers a title bar entry, and this one registers an entry that is `available` only while a window is out. That makes it a way out of the window rather than a way into it.
-
-Which is worth having rather than merely consistent. The window paints on the floating-window layer, deliberately under Settings and the Library, so a reader who opens either loses sight of the pop-out and its close button with it. On a phone, where both are full-screen, it is hidden completely. The title bar is above all of it at every width.
+## One deliberate omission
 
 **No arrow keys.** Paging is the two header buttons and nothing else. A window-level key handler would have to decide whether this window or the composer had the reader's attention, and getting that wrong steals the arrow keys from typing. The full-screen viewer can bind them because it is modal; this window is not.
 
-## It works on a phone now
+The other omission used to be a launcher, on the grounds that a window made from a picture has nothing for a cold press to do. The browser answered that: the title bar entry is an ordinary toggle now, the same shape as the notepad's, and the panel registry gives it a place to live. See [`floating-window.md`](floating-window.md).
 
-It did not. The shell rendered nothing on mobile, the lightbox hid its pop-out button there, and `followChat` skipped: the state could not be reached rather than merely being awkward, and the reasoning was that without a launcher there was nothing to reopen it from and nowhere to float it that was not already the full-screen viewer.
+That entry is worth more here than uniformity would make it. The window paints on the floating-window layer, deliberately under Settings and the Library, so a reader who opens either loses sight of the window and every button on it. On a phone, where both are full-screen, it disappears completely. The title bar is above all of it at every width, so the entry is the one control that can always be reached.
 
-Half of that was answered by the registry (there is a control, and it is in the title bar) and half by the shell growing a full-screen mobile panel. The remaining objection was that a full-screen pop-out on a phone looks like the viewer it was opened from, and it is worth saying why that is not an argument: the viewer closes with the library, and the pop-out stays up while the reader goes back to the story. Outliving the surface that opened it is the entire feature, and a phone is where the library covers everything, so it is worth more there rather than less.
+## It works on a phone
 
-## The entry point is opt-in
+It did not. The shell rendered nothing on mobile, the old launch path hid its button there, and `followChat` skipped: the state could not be reached rather than merely being awkward, and the reasoning was that without a launcher there was nothing to reopen the window from and nowhere to float it that was not already the full-screen viewer.
 
-[`ImageLightbox.svelte`](../src/lib/components/ui/ImageLightbox.svelte) is shared by four surfaces (the gallery, a chat message's attachments, an assistant tab's roster and one logged request's images) and grows an `onPopout` prop that only the gallery passes today. Opt-in rather than always-on, because the pop-out keeps a snapshot: that is right for a gallery, which changes only when the reader edits it, and wrong for a set the app is still writing to. A surface offers the button once its set is settled enough to outlive the viewer, and adding one later is a single line at that call site.
+Half of that was answered by the registry, and half by the shell growing a full-screen mobile panel. The remaining objection was that a full-screen picture on a phone looks like the viewer it was opened from, and it is worth saying why that is not an argument: the viewer closes with the library, and this window stays up while the reader goes back to the story. Outliving the surface that opened it is the entire feature, and a phone is where the library covers everything, so it is worth more there rather than less.
 
-Popping out **closes the viewer**, which would otherwise cover the window it just made.
+Thumbnails are what the two grids draw, by the derived path, with `loading="lazy"` on every tile. A thumbnail is an optimization and never a distinct asset (`resolveImageFile`, server/files.ts), so a card that has never had one built answers with the original beside it: the grid is heavier and never broken. Building them on the way into the picker was considered and refused. The encoder is the browser, so it would mean a download, a decode and an upload per image, which is slower than showing the originals, turns a browse into a server write, and duplicates Settings -> Advanced -> Rebuild thumbnails, which already does it once, explicitly, with progress, and for the whole app rather than for this grid.
