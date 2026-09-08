@@ -23,20 +23,47 @@
  * - **`images` / `sourceId`** are what is loaded. `show` fills them, `unload` empties them,
  *   and neither touches whether the window is up.
  *
- * Both are remembered per chat, in one record (`popout-memory.ts`). Nothing here destroys a
- * picture as a side effect of putting the window away, which is the whole complaint that
- * started this: closing used to mean walking back through the library to find the image again.
+ * ## The two facts have two different homes, and that is the fix this file exists after
+ *
+ * - **The pinned picture is the chat's**, on its own row (`feature_state.galleryPin`). A
+ *   reference the reader pinned to a story is a fact about that story: it has to survive a
+ *   cleared browser and be there on the phone, exactly like the notepad's notes.
+ * - **The standing window is the device's**, in localStorage: its rectangle (via
+ *   `FloatingWindow`) and whether it is up (`popout-memory.ts`). Neither means anything on
+ *   another screen, and a window left standing on a desktop would take a phone's whole
+ *   screen the moment that story opened.
+ *
+ * Both used to be in the localStorage record, on the reasoning that a window's state is
+ * per-device. That is true of the frame and false of the picture, and the result was a pin
+ * made on the desktop being invisible from the phone and the other way round, silently:
+ * a device with no record restores nothing and has nothing to report. The notepad had made
+ * this split correctly one branch over, citing this feature as its model for the half it
+ * kept local.
+ *
+ * Writes to the row are debounced, because a chat row write broadcasts the `chats` scope and
+ * every other device answers it with a chat-list refetch. Paging through a gallery is a
+ * burst of clicks, and a refetch per arrow press is the shape that would make.
  */
 import { toastStore } from './toast.svelte';
 import { registerFloatingPanel } from './floating-panels.svelte';
 import { chatStore } from './chat.svelte';
 import { characterLibraryStore } from './characterLibrary.svelte';
+import { normalizeChatFeatureState, type GalleryPin } from '$lib/types/chat';
 import {
-	forgetPopout,
+	forgetPopoutOpen,
+	isPopoutOpenFor,
 	prunePopoutMemory,
-	readPopoutMemory,
-	rememberPopout
+	rememberPopoutOpen
 } from '$lib/utils/popout-memory';
+
+/**
+ * How long a pause in paging is before the pin goes to the server.
+ *
+ * The scene store's figure rather than the notepad's, and for its reason: paging is a burst
+ * that ENDS, like a slider drag, so a short debounce costs one write per burst. Typing is a
+ * burst that keeps restarting, which is why the notepad waits more than twice as long.
+ */
+const PERSIST_MS = 250;
 
 class ImagePopoutStore {
 	/** Server-relative image paths: one card's whole gallery, in its own order. */
@@ -44,6 +71,11 @@ class ImagePopoutStore {
 	index = $state(0);
 	/** Whether the window is standing. Independent of whether anything is loaded. */
 	open = $state(false);
+
+	/** Written but not yet persisted, with the chat it belongs to. Null pin means "no pin",
+	 *  which is a write like any other and not the absence of one. */
+	private pending = $state<{ chatId: string; pin: GalleryPin | null } | null>(null);
+	private timer: ReturnType<typeof setTimeout> | null = null;
 
 	/**
 	 * The chat that was on screen when this window was made: the story it belongs to, and the
@@ -75,7 +107,7 @@ class ImagePopoutStore {
 	 *  nothing, and the next story to open would take it away with nothing to bring it back. */
 	canScope = $derived(chatStore.currentChatState?.chat != null);
 
-	/** The path on screen, which is what gets remembered. Null when nothing is loaded. */
+	/** The path on screen, which is what gets pinned. Null when nothing is loaded. */
 	private get currentPath(): string | null {
 		return this.images[this.index] ?? null;
 	}
@@ -100,7 +132,7 @@ class ImagePopoutStore {
 		this.sourceId = options.sourceId ?? null;
 		this.sourceName = options.name?.trim() || null;
 		this.boundChatId = chatStore.currentChatState?.chat.id ?? null;
-		this.open = true;
+		this.setOpen(true);
 		this.remember();
 	}
 
@@ -115,21 +147,19 @@ class ImagePopoutStore {
 	 * Put the window away, keeping the picture.
 	 *
 	 * What the header's minimise button and the title bar entry both do. The picture is not
-	 * touched, in memory or in the record, so restoring shows exactly what was there. This is
+	 * touched, in memory or on the row, so restoring shows exactly what was there. This is
 	 * the notepad's rule rather than the old pop-out's: the one destructive door is `unload`,
 	 * and it is a separate button that says so.
 	 */
 	minimize(): void {
 		if (!this.open) return;
-		this.open = false;
-		this.remember();
+		this.setOpen(false);
 	}
 
 	/** Stand the window back up. Whatever was loaded is still loaded. */
 	restore(): void {
 		if (this.open) return;
-		this.open = true;
-		this.remember();
+		this.setOpen(true);
 	}
 
 	toggle(): void {
@@ -140,7 +170,7 @@ class ImagePopoutStore {
 	/**
 	 * Empty the window, leaving the frame standing.
 	 *
-	 * The other half of the split: this is the one that forgets the picture, so returning to
+	 * The other half of the split: this is the one that unpins the picture, so returning to
 	 * this story does not bring it back. The window stays up, showing nothing, because the
 	 * reader who pressed it is looking at the window and is most likely about to pick another.
 	 */
@@ -158,25 +188,50 @@ class ImagePopoutStore {
 		this.sourceName = null;
 	}
 
+	/** Move the frame and record it against the story, in one place, so the flag and the
+	 *  localStorage list cannot drift apart. */
+	private setOpen(next: boolean): void {
+		this.open = next;
+		const chatId = this.boundChatId;
+		if (!chatId) return;
+		if (next) rememberPopoutOpen(chatId);
+		else forgetPopoutOpen(chatId);
+	}
+
 	/**
-	 * Write the current state against the story it belongs to.
+	 * Pin what is on screen to the story it belongs to, debounced.
 	 *
-	 * Total over the three shapes a record can take, which is why every mutator above can end
-	 * with a bare call to it: a picture (with the window up or down), a standing window with
-	 * nothing in it, and neither, which is not a record at all and is removed rather than
-	 * stored as a row that can never affect anything.
+	 * Only ever writes the picture. Whether the window is standing went to `setOpen` above and
+	 * never reaches the row, which is the whole point of the split: a phone must not inherit a
+	 * frame a desktop left up.
 	 */
 	private remember(): void {
 		const chatId = this.boundChatId;
 		if (!chatId) return;
 		const path = this.currentPath;
-		if (path && this.sourceId) {
-			rememberPopout(chatId, { path, sourceId: this.sourceId, open: this.open });
-		} else if (this.open) {
-			rememberPopout(chatId, { open: true });
-		} else {
-			forgetPopout(chatId);
+		const pin = path && this.sourceId ? { path, sourceId: this.sourceId } : null;
+		this.pending = { chatId, pin };
+		if (this.timer !== null) clearTimeout(this.timer);
+		this.timer = setTimeout(() => void this.flush(), PERSIST_MS);
+	}
+
+	/**
+	 * Push a pending pin out now.
+	 *
+	 * Public because the debounce has ends that are not the timer: leaving the story, and the
+	 * page going away. `flush` is the house name for this (see `lorebookStore.flush`).
+	 */
+	async flush(): Promise<void> {
+		if (this.timer !== null) {
+			clearTimeout(this.timer);
+			this.timer = null;
 		}
+		const write = this.pending;
+		if (!write) return;
+		await chatStore.updateChatFeatureState(write.chatId, { galleryPin: write.pin });
+		// Only drop what actually went out: a page turn during the round trip left a newer pin
+		// here, and clearing it would rewind the row to whatever was sent.
+		if (this.pending === write) this.pending = null;
 	}
 
 	/**
@@ -186,12 +241,14 @@ class ImagePopoutStore {
 	 * difference is load-bearing: an invariant would shut the window in the frame it opened.
 	 * A window is only wrong once the reader *moves*, which is exactly this event.
 	 *
+	 * The outgoing chat's pending pin is flushed first, and that write carries its own id, so
+	 * a page turned up to the instant of the switch lands on the story it was made in.
+	 *
 	 * `null` (the welcome screen, a deleted chat) clears without restoring anything.
 	 */
 	followChat(chatId: string | null): void {
 		if (this.boundChatId === chatId) return;
-		// Nothing is written on the way out: every mutator already recorded the old chat's
-		// state as it happened, so there is nothing here the record does not have.
+		void this.flush();
 		this.clearLoaded();
 		this.open = false;
 		this.boundChatId = chatId;
@@ -199,28 +256,34 @@ class ImagePopoutStore {
 	}
 
 	/**
-	 * Restore what this story was left with, reading the picture back out of its SOURCE
-	 * entry's live gallery rather than out of any stored set: a path deleted since is then a
-	 * miss to report rather than a broken image to render.
+	 * Restore what this story was left with: the frame from this device's own record, the
+	 * picture from the chat row, and the SET re-read from the source entry's live gallery
+	 * rather than from anything stored, so a path deleted since is a miss to report rather
+	 * than a broken image to render.
 	 *
-	 * The set is loaded even when the record says the window is down, which costs an array of
-	 * strings and no image request, and makes restoring from the title bar instant instead of
-	 * a second round through this.
+	 * The set is loaded even when the frame is down, which costs an array of strings and no
+	 * image request, and makes restoring from the title bar instant instead of a second round
+	 * through this.
 	 */
 	private restoreFor(chatId: string): void {
-		const remembered = readPopoutMemory()[chatId];
-		if (!remembered) return;
+		this.open = isPopoutOpenFor(chatId);
 
-		this.open = remembered.open;
-		if (!remembered.path || !remembered.sourceId) return;
+		const chat = chatStore.currentChatState?.chat;
+		// The row is the source of truth, but only once the story it belongs to is the one
+		// actually loaded: `followChat` fires on that edge, so this is the ordinary case and a
+		// mismatch means the rows have not landed yet.
+		if (chat?.id !== chatId) return;
+		const pin = normalizeChatFeatureState(chat.featureState).galleryPin;
+		if (!pin) return;
 
-		const source = characterLibraryStore.entries.find((e) => e.id === remembered.sourceId);
+		const source = characterLibraryStore.entries.find((e) => e.id === pin.sourceId);
 		const gallery = source?.identity.gallery ?? [];
-		const at = gallery.indexOf(remembered.path);
+		const at = gallery.indexOf(pin.path);
 		if (at === -1) {
 			// Said out loud rather than passed over in silence: the reader left a picture here
 			// and is owed a reason it is not back. The window itself is left exactly as the
-			// record described it, so an empty frame stands where a full one would have.
+			// records described it, so an empty frame stands where a full one would have, and
+			// the pin goes so the notice comes once rather than on every visit.
 			this.remember();
 			toastStore.info('The image left in the gallery window here is no longer in its gallery.');
 			return;
@@ -228,7 +291,7 @@ class ImagePopoutStore {
 
 		this.images = [...gallery];
 		this.index = at;
-		this.sourceId = remembered.sourceId;
+		this.sourceId = pin.sourceId;
 		this.sourceName = source?.identity.name?.trim() || null;
 	}
 
@@ -241,9 +304,9 @@ class ImagePopoutStore {
 	 * never fires. Without this the window sits there showing files the delete already swept.
 	 *
 	 * Unloads rather than putting the window away, because what has gone is the picture and not
-	 * the frame. Records for OTHER chats that sourced the same entry are deliberately left
-	 * alone: each of those chats can still be walked back into, and `restoreFor` gives its
-	 * reader the same notice at the moment it is worth hearing.
+	 * the frame. Pins on OTHER chats that sourced the same entry are deliberately left alone:
+	 * each of those chats can still be walked back into, and `restoreFor` gives its reader the
+	 * same notice at the moment it is worth hearing.
 	 */
 	forgetEntry(entryId: string): void {
 		if (this.sourceId !== entryId) return;
@@ -252,13 +315,14 @@ class ImagePopoutStore {
 	}
 
 	/**
-	 * Drop remembered windows for stories that no longer exist.
+	 * Drop the standing-window record for stories that no longer exist.
 	 *
-	 * The record is capped, so it can never grow without bound; this is what stops it going
-	 * STALE, which the cap alone does not: twenty pictures pinned to twenty deleted chats is
-	 * within the cap and is still twenty rows of nothing. Driven from the window's own effect
-	 * off the live chat list, so a delete anywhere (one row, a batch, another device) is swept
-	 * without every delete path having to know this feature exists.
+	 * The pinned pictures need no sweep at all: they are a column on the chat row, so deleting
+	 * the chat takes them, on every device at once. What is left behind is this device's memory
+	 * of whether a frame was up, and a deleted chat's id would sit in it until the cap pushed
+	 * it out. Driven from the window's own effect off the live chat list, so one row, a batch,
+	 * and a delete arriving from another device are all the same event, and no delete path has
+	 * to know this feature exists.
 	 */
 	pruneTo(liveChatIds: ReadonlySet<string>): void {
 		prunePopoutMemory(liveChatIds);

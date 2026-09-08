@@ -1,120 +1,103 @@
 /**
- * What the pop-out remembers per chat, pinned. The recency rule, the cap and the prune
- * decide whether a window you left open comes back weeks later, and none of them is visible
- * from the outside until one silently does not. Run with `bun test`.
+ * Which chats the gallery window reopens for, pinned. The recency rule, the cap and the
+ * prune decide whether a window you left standing comes back weeks later, and none of them
+ * is visible from the outside until one silently does not. Run with `bun test`.
  *
- * Two things are most worth pinning here. The key is the CHAT, not the character, so a
- * character with several stories running does not share one pinned picture between them. And
- * the key and the source are allowed to differ: the key is the story being read, the source
- * is whose gallery the picture came from, and conflating them is exactly the bug this shape
- * exists to prevent.
+ * What is most worth pinning here is that this record holds NO picture. It is presence and
+ * nothing else; the pinned image lives on the chat row (`feature_state.galleryPin`). A test
+ * that started asserting a path in here would be the first sign the two had been confused
+ * again - they were, once, and a picture pinned on a desktop was invisible from the phone
+ * for exactly as long as this file was the only place it lived.
+ *
+ * The legacy sweep is tested for the same reason: both dead keys held objects, so a reader
+ * of this list has to be sure it can never be handed one.
  */
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import {
 	MEMORY_LIMIT,
 	forgetIn,
-	forgetPopout,
+	forgetPopoutOpen,
+	isPopoutOpenFor,
 	pruneIn,
 	prunePopoutMemory,
 	readPopoutMemory,
 	rememberIn,
-	rememberPopout,
+	rememberPopoutOpen,
 	type PopoutMemory
 } from './popout-memory';
 
-const one = { path: 'images/one.png', sourceId: 'src-1', open: true };
-const two = { path: 'images/two.png', sourceId: 'src-2', open: true };
-/** A window standing with nothing in it: the state the record could not express before. */
-const empty = { open: true };
-
 describe('rememberIn', () => {
-	test('records a picture against the chat being read', () => {
-		expect(rememberIn({}, 'a', one)).toEqual({ a: one });
+	test('records a chat as having its gallery window standing', () => {
+		expect(rememberIn([], 'a')).toEqual(['a']);
 	});
 
-	test('keeps a source that is nobody in the chat keyed on', () => {
-		// Character A's art, opened while reading a chat about B, belongs to that chat and is
-		// found again in A's gallery. Both halves have to survive the round trip.
-		const map = rememberIn({}, 'chat-b', { path: 'a.png', sourceId: 'char-a' });
-		expect(map['chat-b']).toEqual({ path: 'a.png', sourceId: 'char-a' });
+	test('records a chat once, however many times it is opened', () => {
+		expect(rememberIn(rememberIn([], 'a'), 'a')).toEqual(['a']);
 	});
 
-	test('two chats of one character keep separate pictures', () => {
-		// The whole point of keying on the chat: a reference pinned up in one story is not a
-		// fact about every other story with the same character in it.
-		const map = rememberIn(rememberIn({}, 'chat-1', one), 'chat-2', two);
-		expect(map).toEqual({ 'chat-1': one, 'chat-2': two });
+	test('leaves the source list alone', () => {
+		const before: PopoutMemory = ['a'];
+		rememberIn(before, 'b');
+		expect(before).toEqual(['a']);
 	});
 
-	test('replaces the picture a chat was already on', () => {
-		expect(rememberIn({ a: one }, 'a', two)).toEqual({ a: two });
-	});
-
-	test('leaves the source map alone', () => {
-		const before: PopoutMemory = { a: one };
-		rememberIn(before, 'b', two);
-		expect(before).toEqual({ a: one });
+	test('two chats of one character are remembered separately', () => {
+		// The whole point of keying on the chat: a window left up in one story is not a fact
+		// about every other story with the same character in it.
+		expect(rememberIn(rememberIn([], 'chat-1'), 'chat-2')).toEqual(['chat-1', 'chat-2']);
 	});
 
 	test('moves a chat you return to back to the front of the queue', () => {
-		// Assigning in place would leave `a` in its original slot, so a story opened daily
-		// would still age out behind ones untouched for weeks.
-		const map = rememberIn(rememberIn(rememberIn({}, 'a', one), 'b', two), 'a', two);
-		expect(Object.keys(map)).toEqual(['b', 'a']);
+		// Left in place, a story opened daily would age out behind ones untouched for weeks.
+		expect(rememberIn(rememberIn(rememberIn([], 'a'), 'b'), 'a')).toEqual(['b', 'a']);
 	});
 
 	test('drops the oldest once the cap is reached', () => {
-		let map: PopoutMemory = {};
-		for (let i = 0; i < MEMORY_LIMIT + 3; i++) {
-			map = rememberIn(map, `c${i}`, { path: `${i}.png`, sourceId: 's' });
-		}
-		expect(Object.keys(map)).toHaveLength(MEMORY_LIMIT);
-		expect(map.c0).toBeUndefined();
-		expect(map.c2).toBeUndefined();
-		expect(map[`c${MEMORY_LIMIT + 2}`]?.path).toBe(`${MEMORY_LIMIT + 2}.png`);
+		let list: PopoutMemory = [];
+		for (let i = 0; i < MEMORY_LIMIT + 3; i++) list = rememberIn(list, `c${i}`);
+		expect(list).toHaveLength(MEMORY_LIMIT);
+		expect(list).not.toContain('c0');
+		expect(list).not.toContain('c2');
+		expect(list).toContain(`c${MEMORY_LIMIT + 2}`);
 	});
 
 	test('honours a smaller cap', () => {
-		const map = rememberIn(rememberIn({ a: one }, 'b', two), 'c', one, 2);
-		expect(Object.keys(map)).toEqual(['b', 'c']);
+		expect(rememberIn(rememberIn(['a'], 'b'), 'c', 2)).toEqual(['b', 'c']);
 	});
 });
 
 describe('forgetIn', () => {
 	test('removes just that chat', () => {
-		expect(forgetIn({ a: one, b: two }, 'a')).toEqual({ b: two });
+		expect(forgetIn(['a', 'b'], 'a')).toEqual(['b']);
 	});
 
 	test('a chat with nothing remembered is not an error', () => {
-		expect(forgetIn({ a: one }, 'z')).toEqual({ a: one });
+		expect(forgetIn(['a'], 'z')).toEqual(['a']);
 	});
 });
 
 describe('pruneIn', () => {
-	test('drops records whose chat is gone', () => {
-		expect(pruneIn({ a: one, b: two }, new Set(['a']))).toEqual({ a: one });
+	test('drops ids whose chat is gone', () => {
+		expect(pruneIn(['a', 'b', 'c'], new Set(['a', 'c']))).toEqual(['a', 'c']);
 	});
 
-	test('keeps every record whose chat is still there', () => {
-		expect(pruneIn({ a: one, b: two }, new Set(['a', 'b']))).toEqual({ a: one, b: two });
+	test('keeps every id whose chat is still there', () => {
+		expect(pruneIn(['a', 'b'], new Set(['a', 'b']))).toEqual(['a', 'b']);
+	});
+
+	test('keeps the recency order of what survives', () => {
+		// The order IS the record: sweeping must not quietly re-age what it leaves behind.
+		expect(pruneIn(['a', 'b', 'c'], new Set(['c', 'a']))).toEqual(['a', 'c']);
 	});
 
 	test('an empty chat list drops everything', () => {
-		// Reachable only with no chats at all, where there is nothing left to reopen into.
-		expect(pruneIn({ a: one }, new Set())).toEqual({});
+		expect(pruneIn(['a'], new Set())).toEqual([]);
 	});
 
-	test('keeps a record whose SOURCE is gone, so its reader can still be told', () => {
-		// A deleted gallery is not a reason to sweep here: that chat can still be walked back
-		// into, and the reopen is what owes its reader the notice. Sweeping it silently would
-		// take that notice away.
-		expect(pruneIn({ 'chat-1': one }, new Set(['chat-1']))).toEqual({ 'chat-1': one });
-	});
-
-	test('leaves the source map alone', () => {
-		const before: PopoutMemory = { a: one, b: two };
+	test('leaves the source list alone', () => {
+		const before: PopoutMemory = ['a', 'b'];
 		pruneIn(before, new Set(['a']));
-		expect(before).toEqual({ a: one, b: two });
+		expect(before).toEqual(['a', 'b']);
 	});
 });
 
@@ -140,99 +123,75 @@ describe('storage', () => {
 		(globalThis as { localStorage?: unknown }).localStorage = original;
 	});
 
-	test('a remembered picture survives the round trip', () => {
-		rememberPopout('chat-1', one);
-		expect(readPopoutMemory()).toEqual({ 'chat-1': one });
+	test('a standing window survives the round trip', () => {
+		rememberPopoutOpen('chat-1');
+		expect(isPopoutOpenFor('chat-1')).toBe(true);
+	});
+
+	test('a chat nobody opened one in reads as closed', () => {
+		rememberPopoutOpen('chat-1');
+		expect(isPopoutOpenFor('chat-2')).toBe(false);
 	});
 
 	test('forgetting one leaves the others', () => {
-		rememberPopout('chat-1', one);
-		rememberPopout('chat-2', two);
-		forgetPopout('chat-1');
-		expect(readPopoutMemory()).toEqual({ 'chat-2': two });
+		rememberPopoutOpen('chat-1');
+		rememberPopoutOpen('chat-2');
+		forgetPopoutOpen('chat-1');
+		expect(readPopoutMemory()).toEqual(['chat-2']);
 	});
 
 	test('nothing saved reads as nothing', () => {
-		expect(readPopoutMemory()).toEqual({});
+		expect(readPopoutMemory()).toEqual([]);
 	});
 
 	test('a malformed record reads as nothing rather than throwing', () => {
-		store.set('image-popout-by-chat', '{not json');
-		expect(readPopoutMemory()).toEqual({});
+		store.set('image-popout-open-chats', '[not json');
+		expect(readPopoutMemory()).toEqual([]);
 	});
 
-	test('half an entry is dropped, since a path with no source has no set to page', () => {
-		store.set(
-			'image-popout-by-chat',
-			JSON.stringify({
-				good: one,
-				noSource: { path: 'x.png' },
-				noPath: { sourceId: 's' },
-				notAnObject: 'x.png',
-				blank: { path: '', sourceId: '' }
-			})
-		);
-		expect(readPopoutMemory()).toEqual({ good: one });
+	test('a record of the wrong shape reads as nothing', () => {
+		// This key held an object in two earlier shapes, and both are still out there. Reading
+		// one must not produce a list of its keys, which would stand windows up for ids that
+		// meant something else entirely.
+		store.set('image-popout-open-chats', JSON.stringify({ 'chat-1': { open: true } }));
+		expect(readPopoutMemory()).toEqual([]);
 	});
 
-	test('a standing window with nothing loaded survives the round trip', () => {
-		// The state the old shape could not hold at all: the reader unloaded the picture but
-		// left the frame up. Written with no path, and it has to come back as a window rather
-		// than as a record with nothing in it.
-		rememberPopout('a', empty);
-		expect(readPopoutMemory()).toEqual({ a: empty });
+	test('junk entries are dropped and the good ones kept', () => {
+		store.set('image-popout-open-chats', JSON.stringify(['chat-1', '', 3, null, 'chat-2']));
+		expect(readPopoutMemory()).toEqual(['chat-1', 'chat-2']);
 	});
 
-	test('a picture kept behind a minimised window survives too', () => {
-		const minimised = { ...one, open: false };
-		rememberPopout('a', minimised);
-		expect(readPopoutMemory()).toEqual({ a: minimised });
-	});
-
-	test('a record with no window and no picture is dropped, saying nothing', () => {
-		store.set('image-popout-by-chat', JSON.stringify({ a: { open: false }, b: one }));
-		expect(readPopoutMemory()).toEqual({ b: one });
-	});
-
-	test('a record written before the window could stand empty reads as a standing one', () => {
-		// The migration, and it needs no version stamp: every record of the old shape described
-		// a window that was up, because that was the only thing the old shape could mean.
-		store.set(
-			'image-popout-by-chat',
-			JSON.stringify({ a: { path: 'images/one.png', sourceId: 'src-1' } })
-		);
-		expect(readPopoutMemory()).toEqual({ a: one });
-	});
-
-	test('a non-boolean open is not trusted, and falls back to the migration rule', () => {
-		store.set(
-			'image-popout-by-chat',
-			JSON.stringify({ a: { path: 'images/one.png', sourceId: 'src-1', open: 'yes' } })
-		);
-		expect(readPopoutMemory()).toEqual({ a: one });
-	});
-
-	test('the character-keyed record this replaced is swept, not migrated', () => {
-		// Turning it into a chat-keyed one would mean guessing which of that character's
-		// chats the picture was pinned up in. Left in place it would sit in every reader's
-		// browser forever, which is the one thing this record must not do.
-		store.set('image-popout-by-character', JSON.stringify({ 'char-1': one }));
+	test('both dead keys are swept on read', () => {
+		// The character-keyed shape, and the chat-keyed one that wrongly held the picture.
+		// Neither is migrated: promoting a stored path onto a chat row can only happen inside
+		// that loaded chat, so it would land one story at a time and could never be declared
+		// finished. Sweeping is what stops them sitting in a browser forever.
+		store.set('image-popout-by-character', JSON.stringify({ 'char-1': { path: 'a.png' } }));
+		store.set('image-popout-by-chat', JSON.stringify({ 'chat-1': { path: 'a.png' } }));
 		readPopoutMemory();
 		expect(store.has('image-popout-by-character')).toBe(false);
+		expect(store.has('image-popout-by-chat')).toBe(false);
+	});
+
+	test('sweeping a dead key does not disturb the live one', () => {
+		rememberPopoutOpen('chat-1');
+		store.set('image-popout-by-chat', JSON.stringify({ 'chat-9': { path: 'a.png' } }));
+		expect(readPopoutMemory()).toEqual(['chat-1']);
 	});
 
 	describe('prunePopoutMemory', () => {
-		test('drops records for chats that are gone', () => {
-			rememberPopout('chat-1', one);
-			rememberPopout('chat-2', two);
+		test('drops ids for chats that are gone', () => {
+			rememberPopoutOpen('chat-1');
+			rememberPopoutOpen('chat-2');
 			prunePopoutMemory(new Set(['chat-2']));
-			expect(readPopoutMemory()).toEqual({ 'chat-2': two });
+			expect(readPopoutMemory()).toEqual(['chat-2']);
 		});
 
 		test('does not write when there is nothing to sweep', () => {
 			// It runs off the live chat list, so it fires on every change to that list. The
 			// ordinary case has to cost nothing.
-			rememberPopout('chat-1', one);
+			rememberPopoutOpen('chat-1');
 			const before = writes;
 			prunePopoutMemory(new Set(['chat-1']));
 			expect(writes).toBe(before);
