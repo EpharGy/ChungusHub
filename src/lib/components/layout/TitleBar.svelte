@@ -7,6 +7,13 @@
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
+	import FloatingPanelMenu from '$lib/components/ui/FloatingPanelMenu.svelte';
+	import {
+		TOPBAR_INLINE_LIMIT,
+		availablePanels,
+		floatingPanels,
+		topbarLayout
+	} from '$lib/stores/floating-panels.svelte';
 
 	let activeOverlay = $derived(uiStore.activeOverlay);
 	let settingsOpen = $derived(uiStore.settingsOpen);
@@ -48,6 +55,25 @@
 		NAV.filter((item) => item.overlay !== 'memory' || featurePromptsStore.memoryEnabled)
 	);
 
+	// The floating panels, which are not overlays and are not listed above: they register
+	// themselves (`stores/floating-panels.svelte.ts`), so a new one costs this file nothing.
+	// That is the point of the registry rather than a fourth row in NAV: every panel
+	// arrives on its own topic branch, and a shared list is a conflict re-fought on every
+	// rebuild.
+	//
+	// The availability read happens HERE, inside a `$derived`, rather than inside the
+	// registry: the getters belong to each panel's own store, so this is the scope the
+	// dependency has to be tracked in for a button to appear and disappear on its own.
+	let panelLayout = $derived(topbarLayout(availablePanels(floatingPanels.all)));
+	let panelMenuOpen = $state(false);
+	let panelMenuTrigger = $state<HTMLButtonElement | null>(null);
+
+	// A menu left open while its last panel goes away would hang over the app with nothing
+	// under it: the trigger stops rendering, so nothing is left to press it closed.
+	$effect(() => {
+		if (panelLayout.menu.length === 0) panelMenuOpen = false;
+	});
+
 	// Whether the buttons carry their labels is decided against ONE width: the dock
 	// regime's column at the current window width (`--chat-col-docked`, measured off
 	// the probe below), never the bar's own rendered width. The bar's room is
@@ -69,7 +95,20 @@
 	// panels these buttons raise name themselves exactly while the buttons are bare
 	// icons, off one writer, with nothing to keep in step. contracts.test.ts pins
 	// the attribute's name and the probe's variable.
-	const NAV_LABELS_MIN_REM = 40;
+	//
+	// It is COMPUTED from the panel limit rather than tuned beside it. The row's widest
+	// state is both split pills plus every overlay label plus `TOPBAR_INLINE_LIMIT` panel
+	// labels. The limit is the worst case exactly, because past it the panels collapse
+	// into one chevron and the row gets narrower again. Writing the sum down means raising
+	// the limit cannot silently leave the bar clipping labels it no longer has room for,
+	// which is the failure this whole rule exists to prevent.
+	//
+	// The per-slot allowance is generous on purpose: a fixed number cannot know whether a
+	// panel called itself 'Notes' or 'Preset Controls', and erring high drops the labels a
+	// little early. Early is the safe side.
+	const NAV_LABELS_BASE_REM = 40;
+	const NAV_LABEL_SLOT_REM = 6;
+	const NAV_LABELS_MIN_REM = NAV_LABELS_BASE_REM + TOPBAR_INLINE_LIMIT * NAV_LABEL_SLOT_REM;
 	let navRoomProbe: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
@@ -153,6 +192,56 @@
 					<span>{item.label}</span>
 				</button>
 			{/each}
+
+			<!-- The floating panels. Registered rather than listed, so nothing here names one.
+			     Either every panel is its own button or every panel is in the menu below; the
+			     layout guarantees exactly one of the two lists is populated, so these never
+			     both draw. -->
+			{#each panelLayout.inline as entry (entry.id)}
+				{@const panelOpen = entry.isOpen()}
+				<button
+					type="button"
+					class="overlay-btn"
+					class:is-active-tint={panelOpen}
+					class:has-badge={!panelOpen && (entry.badge?.() ?? false)}
+					disabled={entry.disabled?.() ?? false}
+					title={entry.tooltip?.() ?? entry.label}
+					aria-label={entry.tooltip?.() ?? entry.label}
+					onclick={entry.toggle}
+				>
+					<Icon name={entry.icon} class="w-3.5 h-3.5" />
+					<span>{entry.label}</span>
+				</button>
+			{/each}
+
+			{#if panelLayout.menu.length > 0}
+				<!-- The collapsed form. The trigger carries the state of what is inside it, or a
+				     panel standing behind the menu would look closed: tinted while any of them is
+				     on screen, dotted while any closed one has something waiting. -->
+				<button
+					bind:this={panelMenuTrigger}
+					type="button"
+					class="overlay-btn"
+					class:is-active-tint={panelLayout.menu.some((e) => e.isOpen())}
+					class:has-badge={panelLayout.menu.some((e) => !e.isOpen() && (e.badge?.() ?? false))}
+					aria-haspopup="menu"
+					aria-expanded={panelMenuOpen}
+					aria-label="Panels"
+					title="Panels"
+					onclick={() => (panelMenuOpen = !panelMenuOpen)}
+				>
+					<Icon name="columns" class="w-3.5 h-3.5" />
+					<span>Panels</span>
+					<Icon name="chevronDown" class="w-3 h-3" />
+				</button>
+				{#if panelMenuOpen}
+					<FloatingPanelMenu
+						entries={panelLayout.menu}
+						anchor={panelMenuTrigger}
+						onclose={() => (panelMenuOpen = false)}
+					/>
+				{/if}
+			{/if}
 		</div>
 
 		<div class="nav-group nav-group-end">
@@ -268,9 +357,33 @@
 		-webkit-app-region: no-drag;
 	}
 
-	.overlay-btn:hover {
+	.overlay-btn:hover:not(:disabled) {
 		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
 		color: var(--color-text-primary);
+	}
+
+	/* A panel that will be openable and is not yet. It stays in the row rather than
+	   disappearing, because vanishing would shift the whole centred cluster sideways the
+	   moment the thing it needs arrives; the tooltip is what says why it is inert. */
+	.overlay-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	/* "There is something in here you have not seen", which a closed panel cannot otherwise
+	   say: a notepad holding a page of notes is otherwise identical to an empty one. A dot
+	   rather than the active tint, which means "on screen right now" everywhere else in this
+	   row. Positioned against .overlay-btn, already relative for Memory's indicator, and at
+	   the corner rather than beside the label because the label is absent at most widths. */
+	.overlay-btn.has-badge::after {
+		content: '';
+		position: absolute;
+		top: 0.3rem;
+		right: 0.3rem;
+		width: 0.32rem;
+		height: 0.32rem;
+		border-radius: 50%;
+		background: var(--color-accent);
 	}
 
 	/* Scoped active tint: the canonical .is-active-tint recipe is in a cascade layer,
