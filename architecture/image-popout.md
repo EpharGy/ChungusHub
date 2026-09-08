@@ -15,6 +15,8 @@ Two rules the picker follows, both in the pure module so they can be tested:
 - **Only cards with something to show.** A tile that opens onto an empty gallery is a click that teaches the reader not to trust the grid.
 - **Personas before characters, alphabetical within each**, with a seam between the groups. There are always far fewer personas, so putting them first costs a character card nothing. The sort falls back to the id, because the library allows two cards to share a name and duplication produces them routinely: without the tiebreak the pair can swap places between renders for no visible reason.
 
+**No persona can currently reach that group**, and the grouping is right anyway. `gallery` lives on the identity both kinds share, but nothing in the app ever writes one for a persona: `PersonaEditor` renders no gallery section, and `convertEntry` deliberately leaves the gallery behind along with versions, greetings, sprites and tags. So the picker shows characters only, and it does that by the ordinary rule rather than by a special case: a card with an empty gallery is not a row, `personaCount` returns zero, and no seam is drawn. Exposing persona galleries is a library change on a branch of its own, and the day it lands this needs no edit.
+
 The gallery is de-duplicated on the way out of that module rather than trusted. The grid keys its tiles on the path, and a keyed block handed one key twice throws, so a gallery that somehow held a path twice would take the whole window down instead of drawing the picture twice.
 
 ## The window is mounted at the shell, not beside anything that opens it
