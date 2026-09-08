@@ -28,7 +28,7 @@
 	 *
 	 * The workspace, not the viewport, for the reason `clampRect` gives at length: this
 	 * paints on a rung INSIDE the workspace, so a panel spanning the viewport would tuck its
-	 * own header under the title bar. On a phone that costs the close button rather than the
+	 * own header under the title bar. On a phone that costs the hide button rather than the
 	 * drag handle, which is worse.
 	 */
 	import type { Snippet } from 'svelte';
@@ -49,6 +49,8 @@
 		type SnapZone
 	} from '$lib/utils/floating-window';
 	import { UNRAISED, bringToFront } from '$lib/utils/floating-window-stack';
+	import { PANEL_ICONS } from '$lib/utils/floating-panels';
+	import FloatingPanelButton from './FloatingPanelButton.svelte';
 
 	interface Props {
 		open: boolean;
@@ -63,6 +65,22 @@
 		 *  never a drag. */
 		header: Snippet;
 		children: Snippet;
+		/**
+		 * Put the window away, keeping everything in it.
+		 *
+		 * Pass this and the standard hide control is drawn at the end of the header, so the
+		 * one button every panel needs is had by not writing it, and it cannot be drawn with
+		 * the wrong glyph or land somewhere else in the row. A panel that leaves it out draws
+		 * its own, which is the escape hatch and not the path.
+		 *
+		 * There is no `onClose` beside it on purpose. Nothing on this layer closes: a hidden
+		 * panel keeps its contents and the title bar entry brings it straight back, so
+		 * offering a second control that sounds more final would be offering one that is not.
+		 */
+		onHide?: () => void;
+		/** What the hide control says. Worth overriding to name what is being kept, which is
+		 *  the thing a reader is actually asking when they hover it. */
+		hideLabel?: string;
 	}
 
 	let {
@@ -72,7 +90,9 @@
 		defaultSize = { w: 480, h: 520 },
 		ariaLabel,
 		header,
-		children
+		children,
+		onHide,
+		hideLabel = 'Hide the window'
 	}: Props = $props();
 
 	let isMobile = $derived(viewport.isMobile);
@@ -470,6 +490,12 @@
 				onpointerup={onHeaderPointerUp}
 			>
 				{@render header()}
+				<!-- Last in the row, always, so the control that puts a panel away is in the same
+				     corner of every panel in the app. Outside the snippet, so a consumer cannot
+				     put it anywhere else or spell it with another glyph. -->
+				{#if onHide}
+					<FloatingPanelButton icon={PANEL_ICONS.hide} label={hideLabel} onclick={onHide} />
+				{/if}
 			</header>
 
 			<div class="fw-body">
