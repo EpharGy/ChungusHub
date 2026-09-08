@@ -18,10 +18,10 @@
 	 * not survive being reopened somewhere else. What the window IS showing is the store's.
 	 *
 	 * **There is no browse button in the header**, and the picker is reached from the empty
-	 * window's own labelled button instead. The header carries two controls and neither is a
-	 * glyph anybody has to decode: the trash empties the window, and the dash puts it away.
-	 * `clearWindow` is what gets a full window back to empty, and it is also the way out of a
-	 * picker, because both end in the same place.
+	 * window's own labelled button instead. What this panel draws is the paging arrows and the
+	 * trash; the dash beside them is `FloatingWindow`'s, from `onHide`, so it sits in the same
+	 * corner as every other panel's. `clearWindow` is what gets a full window back to empty,
+	 * and it is also the way out of a picker, because both end in the same place.
 	 *
 	 * This is also where the window is told the reader has moved to another story, that its
 	 * picture's gallery has been deleted, and which stories still exist, because it is the one
@@ -30,6 +30,8 @@
 	import { untrack } from 'svelte';
 	import Icon from './Icon.svelte';
 	import FloatingWindow from './FloatingWindow.svelte';
+	import FloatingPanelButton from './FloatingPanelButton.svelte';
+	import { PANEL_ICONS } from '$lib/utils/floating-panels';
 	import EmptyState from './EmptyState.svelte';
 	import { imagePopoutStore } from '$lib/stores/imagePopout.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
@@ -205,6 +207,8 @@
 	minSize={{ w: 260, h: 220 }}
 	defaultSize={{ w: 460, h: 460 }}
 	ariaLabel={imagePopoutStore.sourceName ? `${imagePopoutStore.sourceName} gallery` : 'Gallery'}
+	onHide={() => imagePopoutStore.minimize()}
+	hideLabel="Hide the window (the image is kept)"
 >
 	{#snippet header()}
 		<span class="popout-name" title={filename ? `${title} · ${filename}` : title}>{title}</span>
@@ -212,58 +216,30 @@
 		<!-- Paging is for a set with somewhere to go: hidden with nothing loaded, and hidden for
 		     a gallery of one, where both arrows would land back on the picture already shown. -->
 		{#if pageable && !browsing}
-			<button
-				type="button"
-				class="popout-btn"
+			<FloatingPanelButton
+				icon={PANEL_ICONS.prev}
+				label="Previous image"
 				onclick={() => imagePopoutStore.step(-1)}
-				title="Previous image"
-				aria-label="Previous image"
-			>
-				<Icon name="chevronLeft" class="w-4 h-4" strokeWidth={1.8} />
-			</button>
+			/>
 			<span class="popout-count">{imagePopoutStore.index + 1} / {imagePopoutStore.images.length}</span>
-			<button
-				type="button"
-				class="popout-btn"
+			<FloatingPanelButton
+				icon={PANEL_ICONS.next}
+				label="Next image"
 				onclick={() => imagePopoutStore.step(1)}
-				title="Next image"
-				aria-label="Next image"
-			>
-				<Icon name="chevronRight" class="w-4 h-4" strokeWidth={1.8} />
-			</button>
+			/>
 		{/if}
 
 		<!-- Back to an empty window, from either of the two ways of not being one: a picture
 		     loaded, or a picker part-way through choosing another. Both are "put this window
 		     back to nothing", so they are one button rather than a remove and a cancel that
-		     would sit side by side doing the same thing.
-
-		     The trash rather than an X, which now belongs to nothing in this app: X in a
-		     window header reads as "close the window", and closing is what the minimise beside
-		     it does without destroying anything. This is the destructive one, and it wears the
-		     icon the notepad's Clear already wears. -->
-		<button
-			type="button"
-			class="popout-btn"
+		     would sit side by side doing the same thing. -->
+		<FloatingPanelButton
+			icon={PANEL_ICONS.clear}
+			label={browsing ? 'Stop choosing an image' : 'Remove this image from the window'}
 			onclick={clearWindow}
 			disabled={!imagePopoutStore.hasImage && !browsing}
-			title={browsing ? 'Stop choosing' : 'Remove this image from the window'}
-			aria-label={browsing ? 'Stop choosing an image' : 'Remove this image from the window'}
-		>
-			<Icon name="trash" class="w-4 h-4" strokeWidth={1.8} />
-		</button>
-
-		<!-- Puts the window away and keeps everything. The title bar entry brings it back, which
-		     is what makes this a minimise rather than a close. -->
-		<button
-			type="button"
-			class="popout-btn"
-			onclick={() => imagePopoutStore.minimize()}
-			title="Hide the window (the image is kept)"
-			aria-label="Hide the gallery window"
-		>
-			<Icon name="minimize" class="w-4 h-4" strokeWidth={1.8} />
-		</button>
+			danger
+		/>
 	{/snippet}
 
 	{#if browsing}
@@ -280,7 +256,7 @@
 						title="Back to the cards"
 						aria-label="Back to the cards"
 					>
-						<Icon name="arrowLeft" class="w-6 h-6" strokeWidth={1.5} />
+						<Icon name={PANEL_ICONS.back} class="w-6 h-6" strokeWidth={1.5} />
 					</button>
 					{#each browseCard.gallery as image, at (image)}
 						<button
@@ -353,31 +329,9 @@
 		color: var(--color-text-muted);
 	}
 
-	.popout-btn {
-		flex-shrink: 0;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.7rem;
-		height: 1.7rem;
-		border: none;
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--color-text-secondary);
-		cursor: pointer;
-		transition: background-color 120ms ease, color 120ms ease;
-	}
-
-	.popout-btn:hover:not(:disabled) {
-		background: var(--color-bg-tertiary);
-		color: var(--color-text-primary);
-	}
-
-	.popout-btn:disabled {
-		opacity: 0.4;
-		cursor: default;
-	}
-
+	
+	
+	
 	.popout-count {
 		flex-shrink: 0;
 		font-family: var(--font-ui);
