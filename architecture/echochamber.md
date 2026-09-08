@@ -277,8 +277,8 @@ now calls `ensureForNewestReply()` from an effect, the way `SpriteLayer` calls
 means a call. It carries **no policy of its own** - every gate is `ensureForMessage`'s, so a turn
 with a feed and a turn being generated are both left alone - and it is bounded to the newest
 reply, never a sweep back through the branch. Mounted with the widget rather than gated on the
-panel being open, so arrival behaves the same whether the feed is on screen or behind the
-launcher, which is how the per-turn sidecar already behaves. The image engine carries the same
+panel being open, so arrival behaves the same whether the feed is on screen or put away,
+which is how the per-turn sidecar already behaves. The image engine carries the same
 pair of rules for the same reason (architecture/imagegen.md), where the cost of getting it wrong
 is GPU time rather than one call.
 
@@ -286,34 +286,45 @@ is GPU time rather than one call.
 workspace's side panels are mutually exclusive (`uiStore.dropUnlockedSidePanels`), and a feed
 exists to be read WHILE the story is read. Docking it would have meant teaching that
 choreography about a panel that never closes - the single highest-risk edit available in this
-area, in the file most likely to move upstream. The Chungus Assistant already carved the
-exemption for a free-floating widget, so EchoChamber rides it for one added `$state` flag.
+area, in the file most likely to move upstream.
 
-It snaps like the Assistant too: drag the header to an edge or a corner and it docks (left,
-right, the four quarter-corners, or the centred chat column from the top edge), with a ghost
-preview during the drag, a tear-off that restores the free size, and the dock persisted
-across reopens. Resizing a docked panel frees it, since a dock is a slot with a size of its
-own.
+**It is a floating panel, and the layer owns everything about that.** Drag, the eight resize
+handles, the seven dock zones and their ghost preview, the tear-off that restores the free
+size, the placement remembered per device, the rung on the front-to-back ladder, the
+full-screen phone layout, the hide control and the title-bar entry all arrive from
+`FloatingWindow` and the panel registry. This file has nothing to say about any of them;
+[`architecture/floating-window.md`](floating-window.md) does.
 
-**The dock geometry is read from the app's real layout, not recomputed.**
-`[data-assistant-snap-workspace]` and `[data-assistant-snap-column]` are already in the DOM
-for the Assistant's own snapping, so querying them keeps the docks aligned with the chat
-column through zoom, width changes and breakpoint flips with no responsive maths duplicated,
-and it cost this feature no upstream edit whatsoever.
+What EchoChamber supplies is the three things that shell asks for: a header, a body, and a
+`registerFloatingPanel` call at the bottom of `stores/echochamber.svelte.ts`. The panel's own
+verbs - the style picker, stop, refresh, delete - are the only controls in that header it
+chose.
 
-That is a DOM contract this port does not own, so it **fails soft**: `snapRegion` returns
-null when an anchor is missing and the panel stays free-floating. The Assistant throws in the
-same place, which is correct for the feature the contract belongs to; a reaction feed is
-decoration and must degrade instead. What EchoChamber deliberately does NOT do is set
-`uiStore.assistantSnapSide`, the flag Workspace reads to draw its animated tint behind a
-side-docked panel: teaching Workspace about a second widget is an edit to the file this port
-exists to leave alone, for a visual flourish.
+This is a change of ownership rather than of behaviour. **The widget used to carry its own
+copy of that geometry**, some 350 lines of it, and the comment at the top of the file said
+extracting a shared shell would have meant rewriting `AssistantFloatingWidget.svelte`, 900
+lines of upstream file this port had no other reason to touch. That reason expired the day
+the shell was extracted as a *port* of the Assistant's maths rather than a refactor of it: the
+merge surface the duplication was buying stopped existing, and the copy went with it. The
+saved placement was already byte-identical to the shell's, so `echochamber-widget-rect`
+survives the change and nobody's panel moved.
 
-Its drag/resize logic is a **sibling** of the Assistant's rather than a shared shell
-extracted from it. Extracting would mean rewriting `AssistantFloatingWidget.svelte`, 900
-lines of upstream file this port has no other reason to touch, and merge surface on upstream
-files is the cost the whole port is shaped to avoid. The duplication is what was bought with
-it, deliberately. If upstream ever extracts such a shell itself, adopt it then.
+**The launcher went too.** It was a round button pinned to the edge of the screen, draggable
+up and down it, with its own persisted side and offset and a pulse ring for a call in flight -
+all of it answering "how do I get the panel back", next to the Assistant's button answering
+the same question a different way. The registry answers it for every panel at once, from the
+title bar, so the entry replaced the button; the pulse became the entry's badge, and the
+launcher's own remembered position (`echochamber-launcher-pos`) is now a dead key that nothing
+reads.
+
+The entry is `available` only while the engine is on, rather than present and greyed. An
+EchoChamber that is switched off has nothing to show and no call it could be asked to make,
+which is exactly what the widget already did: with the engine off it drew nothing at all.
+
+What EchoChamber still deliberately does NOT do is set `uiStore.assistantSnapSide`, the flag
+Workspace reads to draw its animated tint behind a side-docked panel. That is an edit to the
+file this port exists to leave alone, for a visual flourish, and it is the layer's decision to
+make rather than a consumer's in any case.
 
 ## What it deliberately does not do yet
 
@@ -342,14 +353,18 @@ it, deliberately. If upstream ever extracts such a shell itself, adopt it then.
 | `src/lib/echochamber/echochamber.test.ts` | `bun test` coverage of all of the above |
 | `src/lib/stores/echochamber.svelte.ts` | The engine: styles, generation, context, writes |
 | `src/lib/stores/echochamber-retry.test.ts` | What a failed feed costs: the guard against a retry loop |
-| `src/lib/components/echochamber/EchoChamberWidget.svelte` | The floating panel and its launcher |
+| `src/lib/components/echochamber/EchoChamberWidget.svelte` | The panel's header and body, on `FloatingWindow` |
 | `src/lib/components/echochamber/ReactionFeed.svelte` | The feed's rows |
 | `src/lib/components/settings/EchoChamberPage.svelte` | Settings → App → EchoChamber |
 
 Modified elsewhere, all additive: one `ChatFeatureState` field and its normalizer
 (`types/chat.ts`), one engine entry plus its debug colour and route-point icon
 (`engines/registry.ts`, `debug/format.ts`, `settings/ConnectionsPage.svelte`), one settings
-row and page arm (`config/settings-pages.ts`, `settings/SettingsPageView.svelte`), one
-`$state` flag (`stores/ui.svelte.ts`), one mount and one boot step
-(`layout/AppShell.svelte`), and three one-line trigger calls plus one private method
-(`stores/messages.svelte.ts`).
+row and page arm (`config/settings-pages.ts`, `settings/SettingsPageView.svelte`), one mount
+and one boot step (`layout/AppShell.svelte`), and three one-line trigger calls plus one
+private method (`stores/messages.svelte.ts`).
+
+`stores/ui.svelte.ts` used to be on that list, for the one `$state` flag holding whether the
+panel was open. It is not any more: the flag lives on `echoChamberStore` beside the title-bar
+entry that toggles it, which is one fewer edit to an upstream file for something nothing
+outside this feature ever read.
