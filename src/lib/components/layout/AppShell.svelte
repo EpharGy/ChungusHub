@@ -342,9 +342,13 @@
 		     floating widget/launcher paints above the title bar and the workspace's
 		     isolated stacking context. -->
 		<AssistantFloatingWidget />
-		<!-- EchoChamber's feed, floating on the same terms and mounted here for the same
-		     reason: it is fixed-positioned and has to paint above the workspace's isolated
-		     stacking context. It draws nothing at all while the engine is off. -->
+		<!-- EchoChamber's feed, on FloatingWindow and mounted at the shell for the reason
+		     every caller of that shell shares: it has to outlive whatever the reader has
+		     open, and the shell is where a panel's lifetime is longest. Where it PAINTS is
+		     not decided here - the window portals itself into the workspace's floating-panel
+		     layer, which is what puts it under Settings and the Library. It draws nothing at
+		     all while the engine is off, and it registers the title-bar entry that opens it
+		     by being imported. -->
 		<EchoChamberWidget />
 		<!-- Mounted with the workspace, not with the shell: it portals to body and owns
 		     its own open flag, and there is nothing to greet anyone about while a boot

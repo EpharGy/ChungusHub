@@ -22,6 +22,7 @@ import { chatPersonaEntry } from '$lib/utils/chat-setup';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { memoryStore } from '$lib/memory/store.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
+import { registerFloatingPanel } from '$lib/stores/floating-panels.svelte';
 import { llmService } from '$lib/services/llm/provider';
 import { readSetting, registerSettingsReload, writeSetting } from '$lib/services/syncedSetting';
 import type { LLMMessage } from '$lib/types/llm';
@@ -73,6 +74,29 @@ class EchoChamberStore {
 	}
 
 	loaded = $state(false);
+
+	/**
+	 * Whether the feed is on screen.
+	 *
+	 * Held here rather than on `uiStore`, which is where it used to live: that is an upstream
+	 * file, and a flag nothing outside this feature reads is merge surface bought for nothing.
+	 * It also puts the state beside the title-bar entry declared at the bottom of this module,
+	 * which is the only thing that toggles it.
+	 *
+	 * It deliberately does not join `dropUnlockedSidePanels`, the workspace's mutual exclusion.
+	 * A feed exists to be read WHILE the story is read; see `architecture/echochamber.md`.
+	 */
+	open = $state(false);
+
+	toggle(): void {
+		this.open = !this.open;
+	}
+
+	/** Put the feed away. Nothing is lost by it: feeds live on the chat row, so this is only
+	 *  about what is on screen. */
+	close(): void {
+		this.open = false;
+	}
 
 	/** The message a call is in flight for, or null. One at a time, by design. */
 	generatingFor = $state<string | null>(null);
@@ -470,3 +494,36 @@ function describe(traits: { description?: string; personality?: string }): strin
 }
 
 export const echoChamberStore = new EchoChamberStore();
+
+/**
+ * EchoChamber's entry in the title bar.
+ *
+ * This replaced a launcher: a round button pinned to the edge of the screen, draggable up
+ * and down it, with its own persisted side and offset and a pulse ring for a call in flight.
+ * All of that existed to answer "how do I get the panel back", which the registry now
+ * answers for every panel at once, and it answered it by putting a second floating button on
+ * screen next to the Assistant's and leaving the reader to keep them apart.
+ *
+ * `available` rather than `disabled` while the engine is off: an EchoChamber that is switched
+ * off has nothing to show and no call it could be asked to make, so the entry is absent, not
+ * greyed. That matches what the widget did before, which drew nothing at all - launcher
+ * included - until the engine was on.
+ */
+registerFloatingPanel({
+	id: 'echochamber',
+	order: 30,
+	label: 'EchoChamber',
+	icon: 'users',
+	isOpen: () => echoChamberStore.open,
+	toggle: () => echoChamberStore.toggle(),
+	available: () => echoChamberStore.settings.enabled,
+	// The launcher's pulse ring, in the one place a closed panel can still say it. A call in
+	// flight is the state worth knowing about from outside: it is being billed for, and it is
+	// the reason the panel will look different when it is next opened.
+	badge: () => echoChamberStore.generatingFor !== null,
+	tooltip: () => {
+		if (echoChamberStore.generatingFor !== null) return 'EchoChamber · listening…';
+		if (echoChamberStore.open) return 'Hide the feed (the reactions are kept)';
+		return 'EchoChamber';
+	}
+});
