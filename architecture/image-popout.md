@@ -55,15 +55,18 @@ Records for *other* chats that sourced the same deleted entry are deliberately l
 
 They used to be one boolean, and with one way in and one way out that was honest: there was no such thing as an empty window, and closing meant you were finished with the picture. Browsing from inside the window makes both halves wrong at once. The reader can want the frame with nothing in it, and can want the picture kept while the frame is away, and neither is expressible.
 
-So they are separate, and the header's three buttons are exactly that split:
+So they are separate, and the header's two buttons are exactly that split:
 
-| Button | Touches | Means |
-|---|---|---|
-| Browse | neither | opens the picker over the body |
-| Unload | the picture | empties the window, forgets the picture for this story, frame stays up |
-| Minimise | the window | puts the frame away, keeps the picture, title bar entry brings it back |
+| Button | Icon | Touches | Means |
+|---|---|---|---|
+| Clear | trash | the picture | empties the window, forgets the picture for this story, frame stays up |
+| Minimise | dash | the window | puts the frame away, keeps the picture, title bar entry brings it back |
 
-**Minimise, not close, and the icon says so.** This is the notepad's rule rather than the old pop-out's: putting a panel away must not destroy what is in it, because the title bar is one press from bringing it back. The one destructive door is Unload, and it is a separate button. (The notepad spells the same act with an X, which is a visible inconsistency between two panels doing one thing, and worth aligning at some point.)
+**Minimise, not close, and the icon says so.** Putting a panel away must not destroy what is in it, because the title bar is one press from bringing it back. The one destructive door is Clear, and it wears the icon the notepad's Clear wears, because it is the same act. **No X anywhere on a floating panel**: an X in a window header reads as "close this window", and closing is precisely what the dash beside it does without destroying anything, so the two would be saying the same thing in two glyphs with two different consequences.
+
+**There is no browse button.** There was, and its icon was the problem that found the better shape: the only sensible glyph left was `gallery`, two tall rounded rectangles, which at sixteen pixels is a pause symbol. Rather than hunt for a third icon, the button went. The picker is reached from the empty window's own "Choose an image", which is a labelled control rather than a glyph anybody has to decode, and Clear is what gets you back to an empty window. Swapping one picture for another costs two presses instead of one, which is the price, and it buys a header of two buttons whose meanings nobody has to guess.
+
+That is also why Clear is enabled **while the picker is open**. The picker is only ever reached from an empty window, so there was otherwise no way out of it except choosing something. Removing a loaded picture and abandoning a half-finished choice both end in the same place, an empty window offering to choose, so they are one button rather than a remove and a cancel sitting side by side doing the same thing.
 
 Both facts are remembered per chat, in **one** record rather than two. A window can be down with a picture behind it, or up with nothing in it, and a record that is neither is not written at all: it says nothing, so storing it would be a row that can never affect anything. Records written before the window could stand empty carry no flag, and every one of them described a window that was up, because that was the only thing the old shape could mean. Reading a missing flag as "up" is therefore the whole migration, and it needs no version stamp and loses nothing.
 
