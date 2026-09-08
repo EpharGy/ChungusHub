@@ -12,7 +12,7 @@
 	 * whole life. See the effects.
 	 *
 	 * It shares its shell with the image pop-out (`FloatingWindow`) and differs from it in one
-	 * way that matters: the notepad has a launcher, so closing is reversible and the X is not
+	 * way that matters: the notepad has a launcher, so hiding is reversible and the dash is not
 	 * a destructive act. The only destructive act here is Clear, and it asks.
 	 */
 	import { untrack } from 'svelte';
@@ -170,10 +170,14 @@
 			type="button"
 			class="np-btn"
 			onclick={() => notepadStore.close()}
-			title="Close (the notes are kept)"
-			aria-label="Close the notepad"
+			title="Hide the window (the notes are kept)"
+			aria-label="Hide the notepad"
 		>
-			<Icon name="close" class="w-4 h-4" strokeWidth={1.8} />
+			<!-- The dash, not an X, and every floating panel in the app agrees. An X in a window
+			     header reads as "this is going away", and nothing here is: the notes stay, the
+			     title bar entry brings the window straight back, and the one control that
+			     destroys anything is the trash beside it. -->
+			<Icon name="minimize" class="w-4 h-4" strokeWidth={1.8} />
 		</button>
 	{/snippet}
 
