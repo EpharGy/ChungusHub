@@ -139,7 +139,8 @@ describe('storage', () => {
 	});
 
 	test('a record of the wrong shape reads as nothing', () => {
-		// The pop-out's key holds an object; reading one of those here must not produce a
+		// Two dead keys in this browser hold an object of exactly this shape, and the
+		// pop-out's own list sits beside them. Reading any of those here must not produce a
 		// list of its keys, which would reopen windows for ids that mean something else.
 		store.set('notepad-open-chats', JSON.stringify({ 'chat-1': true }));
 		expect(readNotepadMemory()).toEqual([]);
