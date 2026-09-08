@@ -11,13 +11,15 @@
 	 * stories still exist, because it is the one part of the feature mounted for the app's
 	 * whole life. See the effects.
 	 *
-	 * It shares its shell with the image pop-out (`FloatingWindow`) and differs from it in one
-	 * way that matters: the notepad has a launcher, so hiding is reversible and the dash is not
-	 * a destructive act. The only destructive act here is Clear, and it asks.
+	 * The header carries three controls of its own and none of them is the dash: `FloatingWindow`
+	 * draws that itself from `onHide`, so the button that puts a panel away is in the same corner
+	 * of every panel in the app. Hiding is reversible, so it is not a destructive act; the only
+	 * destructive act here is Clear, and it asks.
 	 */
 	import { untrack } from 'svelte';
-	import Icon from './Icon.svelte';
 	import FloatingWindow from './FloatingWindow.svelte';
+	import FloatingPanelButton from './FloatingPanelButton.svelte';
+	import { PANEL_ICONS } from '$lib/utils/floating-panels';
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import { notepadStore } from '$lib/stores/notepad.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
@@ -134,51 +136,29 @@
 	minSize={{ w: 260, h: 200 }}
 	defaultSize={{ w: 420, h: 480 }}
 	ariaLabel="Notes for {title}"
+	onHide={() => notepadStore.close()}
+	hideLabel="Hide the window (the notes are kept)"
 >
 	{#snippet header()}
 		<span class="np-title" title="Notes for {title}">{title}</span>
 
-		<button
-			type="button"
-			class="np-btn"
+		<FloatingPanelButton
+			icon="chevronDown"
+			label="Jump to the end of the notes"
 			onclick={jumpToEnd}
-			title="Jump to the end"
-			aria-label="Jump to the end of the notes"
-		>
-			<Icon name="chevronDown" class="w-4 h-4" strokeWidth={1.8} />
-		</button>
-		<button
-			type="button"
-			class="np-btn"
+		/>
+		<FloatingPanelButton
+			icon="download"
+			label="Export the notes as a text file"
 			onclick={exportText}
-			title="Export as a text file"
-			aria-label="Export the notes as a text file"
-		>
-			<Icon name="download" class="w-4 h-4" strokeWidth={1.8} />
-		</button>
-		<button
-			type="button"
-			class="np-btn np-btn--danger"
+		/>
+		<FloatingPanelButton
+			icon={PANEL_ICONS.clear}
+			label="Clear these notes"
 			onclick={() => (confirmingClear = true)}
 			disabled={!notepadStore.hasNotes}
-			title="Clear these notes"
-			aria-label="Clear these notes"
-		>
-			<Icon name="trash" class="w-4 h-4" strokeWidth={1.8} />
-		</button>
-		<button
-			type="button"
-			class="np-btn"
-			onclick={() => notepadStore.close()}
-			title="Hide the window (the notes are kept)"
-			aria-label="Hide the notepad"
-		>
-			<!-- The dash, not an X, and every floating panel in the app agrees. An X in a window
-			     header reads as "this is going away", and nothing here is: the notes stay, the
-			     title bar entry brings the window straight back, and the one control that
-			     destroys anything is the trash beside it. -->
-			<Icon name="minimize" class="w-4 h-4" strokeWidth={1.8} />
-		</button>
+			danger
+		/>
 	{/snippet}
 
 	<div class="np">
@@ -237,35 +217,10 @@
 		color: var(--color-text-muted);
 	}
 
-	.np-btn {
-		flex-shrink: 0;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.7rem;
-		height: 1.7rem;
-		border: none;
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--color-text-secondary);
-		cursor: pointer;
-		transition: background-color 120ms ease, color 120ms ease;
-	}
-
-	.np-btn:hover:not(:disabled) {
-		background: var(--color-bg-tertiary);
-		color: var(--color-text-primary);
-	}
-
-	.np-btn--danger:hover:not(:disabled) {
-		color: var(--color-error);
-	}
-
-	.np-btn:disabled {
-		opacity: 0.4;
-		cursor: default;
-	}
-
+	
+	
+	
+	
 	.np-text {
 		flex: 1;
 		min-height: 0;
