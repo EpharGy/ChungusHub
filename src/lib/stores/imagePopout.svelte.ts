@@ -15,6 +15,7 @@
  * The window is also a fixture of the CHAT being read, not of the picture. See `followChat`.
  */
 import { toastStore } from './toast.svelte';
+import { registerFloatingPanel } from './floating-panels.svelte';
 import { chatStore } from './chat.svelte';
 import { characterLibraryStore } from './characterLibrary.svelte';
 import {
@@ -221,3 +222,33 @@ class ImagePopoutStore {
 }
 
 export const imagePopoutStore = new ImagePopoutStore();
+
+/**
+ * The pop-out's entry in the title bar.
+ *
+ * It is `available` only while a window is out, which makes this the one entry that is not
+ * a way to open its panel. There is no such thing as opening this one cold: a pop-out is
+ * made from a picture in a gallery, so an entry offering to raise one with no picture
+ * chosen would be a button with nothing to do. It is a way OUT of the window instead.
+ *
+ * That is worth having rather than merely consistent. The window paints on the
+ * floating-window layer, which sits under Settings and the Library by design, so a reader
+ * who opens either of those loses sight of the pop-out and its close button with it. On a
+ * phone, where both are full-screen, it is hidden completely. The title bar is above all of
+ * it at every width, so this is the one control that can always be reached.
+ *
+ * `isOpen` is therefore true whenever the entry is visible at all, which is honest rather
+ * than degenerate: it means "this panel is on screen right now", and it is.
+ */
+registerFloatingPanel({
+	id: 'image-popout',
+	order: 20,
+	label: 'Image',
+	icon: 'image',
+	available: () => imagePopoutStore.open,
+	isOpen: () => imagePopoutStore.open,
+	toggle: () => imagePopoutStore.close(),
+	// Names the picture rather than the feature, because the window's own header does and
+	// the reader chose it by that name in the gallery.
+	tooltip: () => `Close ${imagePopoutStore.label}`
+});
