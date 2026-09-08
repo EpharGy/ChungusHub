@@ -24,8 +24,9 @@
 	 * and it is also the way out of a picker, because both end in the same place.
 	 *
 	 * This is also where the window is told the reader has moved to another story, that its
-	 * picture's gallery has been deleted, and which stories still exist, because it is the one
-	 * part of the feature mounted for the app's whole life. See the three effects.
+	 * picture's gallery has been deleted, and which stories still exist, and where the pin's
+	 * debounce is closed out on the way off the page, because it is the one part of the feature
+	 * mounted for the app's whole life. See the effects.
 	 */
 	import { untrack } from 'svelte';
 	import Icon from './Icon.svelte';
@@ -171,6 +172,15 @@
 	$effect(() => {
 		const live = new Set(chatStore.chats.map((c) => c.id));
 		untrack(() => imagePopoutStore.pruneTo(live));
+	});
+
+	// The debounce's last end. A reload or a tab close is the one exit that does not pass
+	// through a chat switch, and it would otherwise drop a page turn made in the last quarter
+	// second, leaving the story pinned to the picture before it.
+	$effect(() => {
+		const onLeave = () => void imagePopoutStore.flush();
+		window.addEventListener('beforeunload', onLeave);
+		return () => window.removeEventListener('beforeunload', onLeave);
 	});
 </script>
 
