@@ -1,8 +1,18 @@
-# The floating window shell: architecture
+# The floating panel layer: architecture
 
-`FloatingWindow` is a panel that floats above the app: draggable by its header, resizable from eight handles, dockable against an edge or a corner, and remembered where you left it. It takes a header and a body and owns everything else. Two files: [`FloatingWindow.svelte`](../src/lib/components/ui/FloatingWindow.svelte) (the component and its pointer handling) and [`floating-window.ts`](../src/lib/utils/floating-window.ts) (the geometry, pure and unit-tested in [`floating-window.test.ts`](../src/lib/utils/floating-window.test.ts)).
+A **floating panel** is a window that floats above the app: draggable by its header, resizable from eight handles, dockable against an edge or a corner, remembered where you left it, reachable from the title bar, and a full-screen panel on a phone. A feature that wants one supplies a header, a body and a registration, and gets all of that.
 
-It has no behaviour of its own to show. It exists so that the next thing wanting a floating window costs a header and a body instead of five hundred lines.
+Five files, in two halves that never mix:
+
+| File | Holds |
+|---|---|
+| [`FloatingWindow.svelte`](../src/lib/components/ui/FloatingWindow.svelte) | The window: pointer handling, the portal, the measured anchors |
+| [`floating-window.ts`](../src/lib/utils/floating-window.ts) | Its geometry, pure ([tests](../src/lib/utils/floating-window.test.ts)) |
+| [`floating-window-stack.ts`](../src/lib/utils/floating-window-stack.ts) | Which window is in front ([tests](../src/lib/utils/floating-window-stack.test.ts)) |
+| [`floating-panels.svelte.ts`](../src/lib/stores/floating-panels.svelte.ts) | The registry: who has a panel |
+| [`floating-panels.ts`](../src/lib/utils/floating-panels.ts) | What a registration is, and how the title bar arranges them, pure ([tests](../src/lib/utils/floating-panels.test.ts)) |
+
+The layer has no behaviour of its own to show. It exists so that the next thing wanting a floating panel costs a header, a body and eight lines instead of five hundred, and so that the eight lines do not include an edit to anybody else's file.
 
 ## It is a port of the Assistant's widget, not a refactor of it
 
@@ -45,7 +55,7 @@ Three details hold it up:
 
 The rung is a bare number in a stylesheet next to nine other bare numbers, and nothing in the CSS says which ones it has to sit between, so [`contracts.test.ts`](../src/lib/contracts.test.ts) asserts the ordering: raise the layer above an overlay or drop it under the chat and `bun test` fails, rather than the panel quietly going back to covering half the app.
 
-**The Chungus Assistant is not in the layer** and still paints above everything, Settings included. Same call as the rest of this branch: it is a 946-line upstream file, and moving it would be a behaviour change to upstream's own widget rather than to this shell. A visible inconsistency, not an oversight.
+The Chungus Assistant is not in this layer and paints above all of it. See **Not in the layer** at the end.
 
 ## Front to back: one ladder, and docking is not a tier
 
@@ -61,14 +71,45 @@ Raising is bound to `pointerdown` in the capture phase **and** to `focusin`, bot
 
 A window re-reads its placement **every time it opens**, dock included, so anything reopened is already the size and place it was left.
 
-## Desktop only, and it renders nothing on mobile
+## Every panel registers, and the title bar reads the registry
 
-Not a judgment about phones: a floating window needs somewhere to float that is not already the whole screen, and it needs a launcher to come back from. Callers hide their own entry point on mobile and this renders nothing there, so the state cannot be reached rather than merely being awkward. A window that could be opened but never seen is worse than no window.
+A window nobody can open is a window that closes once. So a panel calls `registerFloatingPanel` from its own module, and the title bar renders what it finds beside Preset Controls, Story Map and Memory, where the reader already looks for what belongs to the story they are in.
+
+**Registration is a call, not a row in a table**, and that is the one decision here made for the fork rather than for the app. The obvious shape is an array of definitions in one file, which is what `engines/registry.ts` and `config/settings-pages.ts` both are. But a panel arrives on its own topic branch, so a shared table is a line every branch adds in the same place, and that is a conflict re-fought on every single rebuild. The notepad is the evidence: it used to add its button by hand, and its diff against this branch touched 111 lines of `TitleBar.svelte`. It now touches none of them.
+
+The cost is that registration rides an import, so a panel is registered only once something has imported its module. In practice the app shell mounts every panel's window, which imports its store, which registers: the chain that makes the panel exist is the chain that registers it, and a panel that is somehow not mounted has no window to open either.
+
+**Every registered panel gets an entry, and that is not an option.** A flag would allow a panel with no entry point at all, which is the one configuration that cannot work. It also keeps the title bar the single place a reader looks for "what can I open", instead of the answer being spread across a title bar, a settings page and whichever widget pinned a launcher to the edge of the screen.
+
+Four consequences worth knowing:
+
+- **Everything reactive on an entry is a getter.** An entry is declared once, at module scope, and describes a panel whose state changes every turn. Values captured at registration would be the state at boot, forever.
+- **`available` and `disabled` are different questions.** Absent versus present-and-inert. The notepad on the welcome screen is `disabled`, because hiding it would shift the whole centred cluster sideways the moment a chat opened. The image pop-out is `available` only while a window is out, because there is no such thing as opening one cold.
+- **Past `TOPBAR_INLINE_LIMIT` the WHOLE set collapses into one dropdown**, not just the overflow. A row that is part buttons and part menu makes opening the notepad cost one click or two depending on how many unrelated features happen to be installed, and nothing on screen says which.
+- **The label-width rule is computed from that limit**, not tuned beside it. The limit is the row's widest state exactly, since past it the panels become one chevron and the row narrows again, so raising the limit cannot silently leave the bar clipping labels it no longer has room for.
+
+**There is no settings page for this layer, deliberately.** Registration is the whole API and the entry is the whole control surface. A page whose every row reads "show the button for the panel you can already see a button for" is a page that exists to be configured and never is.
+
+## On a phone it is one full-screen panel
+
+The panel takes the workspace whole, flush, with no radius and no shadow: the same treatment a dock gets, for the same reason. Drag, resize and the seven zones are all off, there being nowhere to float on a screen the panel already fills. Placement is neither read nor written there, so a visit from a phone cannot overwrite the rectangle a desktop left behind.
+
+The **workspace** and not the viewport, for the reason `clampRect` gives at length: a panel spanning the viewport tucks its own header under the title bar, and on a phone that costs the close button rather than the drag handle.
+
+This used to render nothing at all on mobile, and the reasoning was that a floating window needs a launcher to come back from and a launcher pinned to a phone screen is clutter with no home. **The registry retired that premise**: every panel is reachable from the title bar at every width. A phone was being handed an entry point that did nothing, rather than the panel.
+
+The ladder still applies there and matters more, not less: full-screen panels hide each other completely, so which one is on top is the whole of what the reader sees.
 
 ## Why it is its own branch
 
-Because two features want it: the image pop-out, which brought it, and the chat notepad. A shell owned by one of them makes the other impossible to send upstream on its own, since its diff against `main` would drag a whole unrelated feature along.
+Because several features want it: the image pop-out, which brought it, the chat notepad, and a panel on a private topic. A layer owned by one of them makes the others impossible to send upstream on their own, since their diff against `main` would drag a whole unrelated feature along.
 
-Cut from `main`, with both consumers cut from here, they are **siblings**: either can be retired with a one-line edit to `$Topics`, and either can be opened as a pull request carrying this shell and nothing else it does not need.
+Cut from `main`, with the consumers cut from here, they are **siblings**: any can be retired with a one-line edit to `$Topics`, and any can be opened as a pull request carrying this layer and nothing else it does not need.
 
-A change to the window's behaviour belongs on this branch, never on a consumer's, even when a consumer is what wanted it.
+A change to how a panel drags, docks, resizes or offers itself belongs on this branch, never on a consumer's, even when a consumer is what wanted it. The registry is what makes that rule cheap to keep: a consumer that needs an entry point no longer has any reason to reach into `TitleBar` and leave a copy of this layer's business behind on its own branch.
+
+## Not in the layer
+
+**The Chungus Assistant** still paints above everything, Settings included, and keeps its own copy of the geometry this module was lifted from. Same call as the rest of this branch: it is a 946-line upstream file, so moving it would be a behaviour change to upstream's own widget rather than to this layer, and rewriting it to consume this would buy a permanent conflict on every future upstream change to it. A visible inconsistency, not an oversight.
+
+**EchoChamber** keeps its own copy too, and unlike the Assistant it has no upstream reason to: the comment at the top of that widget says extracting a shared shell would have meant rewriting the Assistant, and that reason expired the day this was extracted without touching it. Deferred rather than rejected.
