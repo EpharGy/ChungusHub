@@ -58,11 +58,17 @@ A change to how the window moves belongs on `feature/floating-window`, not here.
 
 ## Two deliberate omissions
 
-**No launcher.** The Assistant and EchoChamber both keep a draggable button on screen when closed, because both are things you return to. A pop-out is opened from a picture and closed for good; closing destroys it. That removes about 140 lines and, more importantly, a third permanent button from the workspace edge.
+**No launcher, and its title bar entry is not one either.** There is no such thing as opening a pop-out cold: it is made from a picture, so a control offering to raise one with no picture chosen would have nothing to do. Every floating panel registers a title bar entry, and this one registers an entry that is `available` only while a window is out. That makes it a way out of the window rather than a way into it.
+
+Which is worth having rather than merely consistent. The window paints on the floating-window layer, deliberately under Settings and the Library, so a reader who opens either loses sight of the pop-out and its close button with it. On a phone, where both are full-screen, it is hidden completely. The title bar is above all of it at every width.
 
 **No arrow keys.** Paging is the two header buttons and nothing else. A window-level key handler would have to decide whether this window or the composer had the reader's attention, and getting that wrong steals the arrow keys from typing. The full-screen viewer can bind them because it is modal; this window is not.
 
-Both omissions are why the window is **desktop only**. Without a launcher there is nothing to reopen it from, and a phone has nowhere to float it that is not already the full-screen viewer. `FloatingWindow` renders nothing on mobile and the toolbar button is hidden there, so the state cannot be reached rather than merely being awkward.
+## It works on a phone now
+
+It did not. The shell rendered nothing on mobile, the lightbox hid its pop-out button there, and `followChat` skipped: the state could not be reached rather than merely being awkward, and the reasoning was that without a launcher there was nothing to reopen it from and nowhere to float it that was not already the full-screen viewer.
+
+Half of that was answered by the registry (there is a control, and it is in the title bar) and half by the shell growing a full-screen mobile panel. The remaining objection was that a full-screen pop-out on a phone looks like the viewer it was opened from, and it is worth saying why that is not an argument: the viewer closes with the library, and the pop-out stays up while the reader goes back to the story. Outliving the surface that opened it is the entire feature, and a phone is where the library covers everything, so it is worth more there rather than less.
 
 ## The entry point is opt-in
 
