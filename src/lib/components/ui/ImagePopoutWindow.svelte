@@ -17,6 +17,12 @@
 	 * reader has got to in a picker, which means nothing once the window is put away and should
 	 * not survive being reopened somewhere else. What the window IS showing is the store's.
 	 *
+	 * **There is no browse button in the header**, and the picker is reached from the empty
+	 * window's own labelled button instead. The header carries two controls and neither is a
+	 * glyph anybody has to decode: the trash empties the window, and the dash puts it away.
+	 * `clearWindow` is what gets a full window back to empty, and it is also the way out of a
+	 * picker, because both end in the same place.
+	 *
 	 * This is also where the window is told the reader has moved to another story, that its
 	 * picture's gallery has been deleted, and which stories still exist, because it is the one
 	 * part of the feature mounted for the app's whole life. See the three effects.
@@ -82,6 +88,24 @@
 		// Always at the top level. Reopening on the card a previous browse ended in would be
 		// guessing, and the one press it saves costs a press to undo when the guess is wrong.
 		browseCardId = null;
+	}
+
+	/**
+	 * Put the window back to empty, whichever kind of not-empty it currently is.
+	 *
+	 * There is no separate browse button in the header any more, so the picker is only ever
+	 * reached from the empty state's own button and the only way out of it was to choose
+	 * something. This is that way out, and it is the same act as removing a loaded picture:
+	 * both end with an empty window offering to choose one.
+	 *
+	 * `unload` is idempotent, so calling it while nothing is loaded is a write of the state
+	 * that is already there rather than a case to branch on.
+	 */
+	function clearWindow(): void {
+		browsing = false;
+		browseCardId = null;
+		missing = null;
+		imagePopoutStore.unload();
 	}
 
 	function choose(card: GalleryCard, at: number): void {
@@ -209,29 +233,24 @@
 			</button>
 		{/if}
 
-		<button
-			type="button"
-			class="popout-btn"
-			class:is-active={browsing}
-			aria-pressed={browsing}
-			onclick={() => (browsing ? (browsing = false) : openBrowser())}
-			title={browsing ? 'Stop choosing' : 'Choose an image'}
-			aria-label={browsing ? 'Stop choosing an image' : 'Choose an image'}
-		>
-			<Icon name="gallery" class="w-4 h-4" strokeWidth={1.8} />
-		</button>
+		<!-- Back to an empty window, from either of the two ways of not being one: a picture
+		     loaded, or a picker part-way through choosing another. Both are "put this window
+		     back to nothing", so they are one button rather than a remove and a cancel that
+		     would sit side by side doing the same thing.
 
-		<!-- Empties the window and forgets the picture for this story. The destructive one of
-		     the three, and the only one of them that touches what is loaded. -->
+		     The trash rather than an X, which now belongs to nothing in this app: X in a
+		     window header reads as "close the window", and closing is what the minimise beside
+		     it does without destroying anything. This is the destructive one, and it wears the
+		     icon the notepad's Clear already wears. -->
 		<button
 			type="button"
 			class="popout-btn"
-			onclick={() => imagePopoutStore.unload()}
-			disabled={!imagePopoutStore.hasImage}
-			title="Remove this image from the window"
-			aria-label="Remove this image from the window"
+			onclick={clearWindow}
+			disabled={!imagePopoutStore.hasImage && !browsing}
+			title={browsing ? 'Stop choosing' : 'Remove this image from the window'}
+			aria-label={browsing ? 'Stop choosing an image' : 'Remove this image from the window'}
 		>
-			<Icon name="close" class="w-4 h-4" strokeWidth={1.8} />
+			<Icon name="trash" class="w-4 h-4" strokeWidth={1.8} />
 		</button>
 
 		<!-- Puts the window away and keeps everything. The title bar entry brings it back, which
@@ -357,13 +376,6 @@
 	.popout-btn:disabled {
 		opacity: 0.4;
 		cursor: default;
-	}
-
-	/* The browse button stays lit while the picker is up, because the picker replaces the
-	   picture and the reader needs to see which press put it there. */
-	.popout-btn.is-active {
-		background: color-mix(in srgb, var(--color-accent) 16%, transparent);
-		color: var(--color-accent);
 	}
 
 	.popout-count {
