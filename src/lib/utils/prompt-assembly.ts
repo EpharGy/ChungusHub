@@ -118,12 +118,19 @@ export interface AssembleInput {
 	 *  this reaches the prompt through the entry that fired rather than as a block of its
 	 *  own. Absent = no story to compute against (a library meter, or the prompt builder
 	 *  pricing a preset), which runs no framework at all rather than assuming day 1. */
-	frameworks?: ChatFrameworkState;
-	/** The frameworks' app-wide settings: which are available on this install, and each one's
-	 *  own tunables. Travels on the input rather than being read from the store here, because
-	 *  assembly may not touch a store; absent reads as nothing available, which is what a
-	 *  surface holding no settings should inject. */
-	frameworkSettings?: FrameworkSettings;
+	/**
+	 * ONE field carrying both halves, because they are useless apart.
+	 *
+	 * Assembly intersects the chat's switches with the install's, so a caller that passed the
+	 * story state and forgot the settings found nothing available and quietly assembled a
+	 * prompt with no framework in it: markers stripped and left nothing behind, no block
+	 * injected, and every surface still looking correct. Two optional fields made that a
+	 * one-line omission; one field makes it unsayable.
+	 *
+	 * Absent means the caller has no story to speak for (a library meter, the prompt builder
+	 * pricing a preset), which runs no framework at all rather than assuming one.
+	 */
+	frameworks?: { state: ChatFrameworkState; settings: FrameworkSettings };
 }
 
 /** One item's contribution to the final prompt, with tokens attributed by provenance:
@@ -217,7 +224,7 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 		// The frameworks' own blocks join the books rather than being spliced in afterwards,
 		// so they are placed, priced and traced by the same code every other injected line
 		// goes through (frameworks/apply.ts).
-		books: [...input.lorebooks, ...frameworkBooks(input.frameworks, input.frameworkSettings)],
+		books: [...input.lorebooks, ...frameworkBooks(input.frameworks?.state, input.frameworks?.settings)],
 		// An at-depth entry needs a chat to sit inside. Without {{chatHistory}} in the enabled
 		// preset there is no such sequence, so those entries join the block instead of landing
 		// in a position nothing renders. Decided here, once, where the preset is already known.
@@ -232,7 +239,7 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 		// Frameworks rewrite their markers inside each entry that fired, before the budget
 		// prices it. Built through the one shared builder so the meter and the send cannot
 		// decorate differently.
-		decorate: frameworkDecorator(input.frameworks, input.frameworkSettings),
+		decorate: frameworkDecorator(input.frameworks?.state, input.frameworks?.settings),
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget
 	});
