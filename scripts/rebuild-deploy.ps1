@@ -119,6 +119,11 @@ $Topics = @(
     # consumes the shell, so it needs BOTH above it and typechecks on neither alone.
     # It sits here rather than beside frameworks for that reason.
     'feature/frameworks-panel',
+    # An entry can scan the steering standing over the reply. Touches the three context
+    # builders on the line where each hands the scan its extra sources, and that is a line
+    # feature/frameworks changes the neighbours of, so it sits AFTER it: the conflict is one
+    # rerere shape and every shape above this point is left unchanged.
+    'feature/lore-scan-steering',
     # Memoized token counting. Touches only src/lib/tokenizer/, so it overlaps nothing else
     # in either list and sits last purely to keep every conflict shape above it unchanged.
     'fix/token-count-cache'
