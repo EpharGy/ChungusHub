@@ -182,6 +182,7 @@ export const DATE_FRAMEWORK: FrameworkDef = {
 	// One word, because the XML gate around the injected block is named for it and
 	// `<Date and time>` is not a tag anyone wants to read.
 	name: 'Date',
+	icon: 'clock',
 	summary: 'Tells the model the current real time, and how to handle a gap since the last reply.',
 	description:
 		'In real-time mode, injects the current time and instructions for what to do when the ' +
