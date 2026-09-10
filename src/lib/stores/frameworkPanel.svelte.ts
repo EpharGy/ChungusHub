@@ -20,6 +20,9 @@
  * book expanded stops folding it away in every story. A book id that no longer exists costs
  * nothing: it names no group, so it is never read.
  */
+import { registerFloatingPanel } from '$lib/stores/floating-panels.svelte';
+import { chatStore } from '$lib/stores/chat.svelte';
+
 const KEY = 'framework-panel-open';
 const COLLAPSED_KEY = 'framework-panel-collapsed';
 const ONLY_FIRED_KEY = 'framework-panel-only-fired';
@@ -130,3 +133,28 @@ class FrameworkPanelStore {
 }
 
 export const frameworkPanelStore = new FrameworkPanelStore();
+
+/**
+ * The title bar entry, so the panel can actually be raised.
+ *
+ * It went without one for a while, which made it a window nothing opened: the code was all
+ * there and the only way in was a slash command nobody had a reason to guess at. Every other
+ * floating panel registers here, and a panel that does not is a panel that does not exist.
+ *
+ * `disabled` rather than hidden when there is no chat, the same choice the notepad makes: a
+ * button that vanishes shifts the whole cluster sideways the moment a chat opens, and a greyed
+ * one that says why is the cheaper explanation.
+ */
+registerFloatingPanel({
+	id: 'frameworks',
+	order: 40,
+	label: 'Frameworks',
+	icon: 'sliders',
+	isOpen: () => frameworkPanelStore.open,
+	toggle: () => frameworkPanelStore.toggle(),
+	disabled: () => !chatStore.activeChat,
+	tooltip: () =>
+		chatStore.activeChat
+			? 'Frameworks: what the markers in this chat are doing'
+			: 'Frameworks: open a chat first'
+});
