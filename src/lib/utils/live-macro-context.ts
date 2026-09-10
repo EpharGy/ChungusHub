@@ -14,6 +14,7 @@ import type { Message } from '$lib/types/chat';
 import { expandMacros, type MacroContext, type PromptCharacter } from '$lib/macros';
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import { frameworkBooks, frameworkDecorator } from '$lib/frameworks/apply';
+import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 import { lorebookHistory, lorebookScanFields, type LorebookTrigger } from '$lib/lorebook/types';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -96,7 +97,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 			}),
 			...frameworkBooks(
 				chatStore.activeChat ? chatStore.featureState(chatStore.activeChat.id).frameworks : undefined,
-				scanPath
+				frameworkSettingsStore.settings
 			)
 		],
 		messages: scanPath,
@@ -108,7 +109,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 		// builder so these surfaces cannot decorate differently from the prompt beside them.
 		decorate: frameworkDecorator(
 			chatStore.activeChat ? chatStore.featureState(chatStore.activeChat.id).frameworks : undefined,
-			scanPath
+			frameworkSettingsStore.settings
 		),
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget

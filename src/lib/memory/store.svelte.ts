@@ -23,6 +23,7 @@ import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import { frameworkDecorator } from '$lib/frameworks/apply';
+import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
 import { lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
@@ -493,7 +494,7 @@ class MemoryStore {
 			// Memory analyses the same story the prompt does, through the same builder: an
 			// entry that reaches a summary with its marker resolved must not reach the prompt
 			// with it raw, or the two disagree about what the entry says.
-			decorate: frameworkDecorator(ctx.frameworks, scanPath),
+			decorate: frameworkDecorator(ctx.frameworks, frameworkSettingsStore.settings),
 			expand: (text) => expandMacros(text, base)
 		});
 		return { ...base, lorebook: lore.text, lorebookTrace: lore.trace };

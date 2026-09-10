@@ -24,7 +24,7 @@ import { createEmptyLorebook, createEmptyLorebookEntry } from '$lib/lorebook/typ
 import { resolveLorebooks } from '$lib/lorebook/engine';
 
 import { frameworkDecorator } from './apply';
-import { resolveDay, serialOf, todaySerial, type DayMode } from './day';
+import { resolveDay, todaySerial, type DayMode } from './day';
 import { applyFrameworks } from './dispatch';
 import { findMarkers, hasMarker } from './marker';
 import type { FrameworkComputeInput, FrameworkContext, FrameworkDef } from './types';
@@ -296,7 +296,7 @@ describe('the per-chat blob', () => {
 	});
 
 	test('a stored blob comes back as it went in', () => {
-		const stored = { mode: 'marker', day: 63, suppressed: ['rowan'], byFramework: { demo: { note: 'x' } } };
+		const stored = { enabled: ['demo'], mode: 'marker', day: 63, suppressed: ['rowan'], byFramework: { demo: { note: 'x' } } };
 		expect(normalizeChatFrameworkState(stored)).toEqual(stored);
 	});
 
@@ -435,28 +435,24 @@ describe('the decorator the app actually builds', () => {
 		const today = todaySerial(new Date(2026, 9, 10));
 		const book = createEmptyLorebook('T');
 		book.entries = [{ ...createEmptyLorebookEntry(), constant: true, content: '@demo[x]' }];
-		const seen = (mode: DayMode, path: string[]) =>
+		const seen = (mode: DayMode) =>
 			resolveLorebooks({
 				books: [book],
-				messages: path,
+				messages: [],
 				decorate: (entry, text) =>
 					applyFrameworks(
 						text,
 						ctx({
 							frameworks: [fake(({ day }) => `day ${day}`)],
-							day: resolveDay({ messages: path, mode, manual: 3, today }).day
+							day: resolveDay({ mode, manual: 3, today }).day
 						})
 					).text
 			}).text;
 
-		// Manual: the stored number, whatever the story says.
-		expect(seen('manual', ['they talked'])).toBe('day 3');
-		expect(seen('manual', ['<Time: 9:00 AM, October 20, 2026>'])).toBe('day 3');
-		// Marker: the story, and the stored number is never reached.
-		expect(seen('marker', ['they talked'])).toBe(`day ${today}`);
-		expect(seen('marker', ['<Time: 9:00 AM, October 20, 2026>'])).toBe(`day ${serialOf(2026, 9, 20)}`);
-		// A date already behind today loses to it, which is the resumed-chat case.
-		expect(seen('marker', ['<Time: 9:00 AM, October 1, 2026>'])).toBe(`day ${today}`);
+		// Manual: the stored number, and no clock is read.
+		expect(seen('manual')).toBe('day 3');
+		// Real time: today, and the stored number is never reached.
+		expect(seen('marker')).toBe(`day ${today}`);
 	});
 
 	test('prose around a marker is untouched', () => {

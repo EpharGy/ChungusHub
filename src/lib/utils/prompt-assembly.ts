@@ -25,6 +25,7 @@ import { EMPTY_LOREBOOK_TRACE, lorebookHistory, lorebookScanFields } from '$lib/
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
 import { frameworkBooks, frameworkDecorator } from '$lib/frameworks/apply';
+import type { FrameworkSettings } from '$lib/frameworks/settings';
 import {
 	expandMacros,
 	expandSelfRefs,
@@ -118,6 +119,11 @@ export interface AssembleInput {
 	 *  own. Absent = no story to compute against (a library meter, or the prompt builder
 	 *  pricing a preset), which runs no framework at all rather than assuming day 1. */
 	frameworks?: ChatFrameworkState;
+	/** The frameworks' app-wide settings: which are available on this install, and each one's
+	 *  own tunables. Travels on the input rather than being read from the store here, because
+	 *  assembly may not touch a store; absent reads as nothing available, which is what a
+	 *  surface holding no settings should inject. */
+	frameworkSettings?: FrameworkSettings;
 }
 
 /** One item's contribution to the final prompt, with tokens attributed by provenance:
@@ -211,7 +217,7 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 		// The frameworks' own blocks join the books rather than being spliced in afterwards,
 		// so they are placed, priced and traced by the same code every other injected line
 		// goes through (frameworks/apply.ts).
-		books: [...input.lorebooks, ...frameworkBooks(input.frameworks, scanPath)],
+		books: [...input.lorebooks, ...frameworkBooks(input.frameworks, input.frameworkSettings)],
 		// An at-depth entry needs a chat to sit inside. Without {{chatHistory}} in the enabled
 		// preset there is no such sequence, so those entries join the block instead of landing
 		// in a position nothing renders. Decided here, once, where the preset is already known.
@@ -226,7 +232,7 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 		// Frameworks rewrite their markers inside each entry that fired, before the budget
 		// prices it. Built through the one shared builder so the meter and the send cannot
 		// decorate differently.
-		decorate: frameworkDecorator(input.frameworks, scanPath),
+		decorate: frameworkDecorator(input.frameworks, input.frameworkSettings),
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget
 	});
