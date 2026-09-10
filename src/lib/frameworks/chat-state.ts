@@ -24,6 +24,7 @@
  * See architecture/frameworks.md.
  */
 import type { DayMode } from './day';
+import { FRAMEWORKS } from './registry';
 import { normalizeSubjectKey } from './marker';
 
 /** Farthest a story day may sit from zero. A story numbering its days is not counting to a
@@ -55,6 +56,19 @@ export const MAX_FRAMEWORK_SLICES = 32;
  */
 export interface ChatFrameworkState {
 	/**
+	 * The frameworks this story has turned on, by id.
+	 *
+	 * **Opt-in per chat, and empty is the default**, which is what keeps this blob small: a
+	 * chat that never touches frameworks stores an empty list rather than a row of `false`
+	 * for every framework the build happens to carry. It also means a framework added in a
+	 * later version arrives off everywhere, rather than switching itself on across every
+	 * story someone already has.
+	 *
+	 * A list rather than a map for the same reason, and it is the shape that scales: the
+	 * next dozen frameworks cost one short string each, only in the chats that use them.
+	 */
+	enabled: string[];
+	/**
 	 * Where this story's day comes from. `manual` by default, which is the conservative
 	 * reading of a chat that predates the field: it keeps `/day` in charge and reads no
 	 * clock, where defaulting to `marker` would put every existing chat onto the reader's
@@ -79,13 +93,81 @@ export interface ChatFrameworkState {
 }
 
 export function defaultChatFrameworkState(): ChatFrameworkState {
-	return { mode: 'manual', day: 1, suppressed: [], byFramework: {} };
+	return { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} };
+}
+
+/**
+ * The frameworks actually running for this chat: what was stored, plus whatever those
+ * require, closed over until nothing new is added.
+ *
+ * **The closure is applied on the way OUT, not only when a switch is flipped.** A UI that
+ * enforced the rule at the toggle would still be trusting the stored list, and a blob can
+ * arrive from an older build, another device or a hand edit claiming a combination that
+ * cannot work. Resolving it here means every reader of this gets a coherent answer and
+ * nobody has to remember to ask.
+ *
+ * Unknown ids survive rather than being dropped: a chat that used a framework this build does
+ * not carry should get it back when the branch that has it returns, not lose the setting
+ * silently in between.
+ */
+export function enabledFrameworks(
+	state: ChatFrameworkState,
+	registry: readonly { id: string; requires?: readonly string[] }[] = FRAMEWORKS
+): string[] {
+	const on = new Set(state.enabled);
+	// Fixed point rather than one pass: a requirement may itself require something, and a
+	// single sweep would satisfy the first level and quietly miss the second.
+	for (let guard = 0; guard < registry.length + 1; guard++) {
+		let grew = false;
+		for (const framework of registry) {
+			if (!on.has(framework.id)) continue;
+			for (const needed of framework.requires ?? []) {
+				if (!on.has(needed)) {
+					on.add(needed);
+					grew = true;
+				}
+			}
+		}
+		if (!grew) break;
+	}
+	return [...on];
+}
+
+/**
+ * Which frameworks are holding another one on, so a switch can explain why it will not turn
+ * off rather than simply refusing.
+ */
+export function requiredBy(
+	id: string,
+	enabled: readonly string[],
+	registry: readonly { id: string; requires?: readonly string[] }[] = FRAMEWORKS
+): string[] {
+	return registry
+		.filter((f) => enabled.includes(f.id) && (f.requires ?? []).includes(id))
+		.map((f) => f.id);
 }
 
 /** Anything that is not a mode this build knows reads as `manual`: the mode that touches no
  *  clock and moves no day on its own is the safe thing to degrade to. */
 function normalizeDayMode(raw: unknown): DayMode {
 	return raw === 'marker' ? 'marker' : 'manual';
+}
+
+/** Framework ids one chat may have on. A backstop against a corrupt blob, not a ration: the
+ *  registry bounds this in practice. */
+export const MAX_ENABLED = 64;
+
+/** Stored ids, deduped and capped. Lowercased to match the ids markers parse to, so an id
+ *  written two ways in a blob cannot enable a framework twice or fail to enable it at all. */
+function normalizeEnabled(raw: unknown): string[] {
+	if (!Array.isArray(raw)) return [];
+	const seen = new Set<string>();
+	for (const value of raw) {
+		if (typeof value !== 'string' || !value.trim()) continue;
+		seen.add(value.trim().toLowerCase());
+		if (seen.size >= MAX_ENABLED) break;
+	}
+	return [...seen];
 }
 
 function normalizeDay(raw: unknown): number {
@@ -128,6 +210,7 @@ export function normalizeChatFrameworkState(raw: unknown): ChatFrameworkState {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaultChatFrameworkState();
 	const stored = raw as Record<string, unknown>;
 	return {
+		enabled: normalizeEnabled(stored.enabled),
 		mode: normalizeDayMode(stored.mode),
 		day: normalizeDay(stored.day),
 		suppressed: normalizeSuppressed(stored.suppressed),
