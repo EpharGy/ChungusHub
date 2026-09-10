@@ -60,32 +60,94 @@ Where randomness is wanted without storage, **derive it, never roll it**: hash a
 
 The day belongs to the base, not to the first framework that wanted one: story time is
 infrastructure, and an age that advances, a season turning and a debt coming due all want the
-same integer from the same place.
+same integer from the same place. A framework may own the instruction that puts a marker in
+the transcript; the number those markers resolve to is read in one place.
 
-[`day.ts`](../src/lib/frameworks/day.ts) resolves it as a ladder, scanning the chat path
-backwards from the newest turn. **The first turn carrying a marker decides**, and the chat's
-stored day is the floor when no turn carries one:
+[`day.ts`](../src/lib/frameworks/day.ts) resolves it from a per-chat **mode**, and the two
+modes do not overlap at all:
 
-| Source | Marker | Reads as |
+| Mode | Reads | Ignores | Sources |
+|---|---|---|---|
+| `manual` | the chat's stored day, set by `/day` | the transcript, and the clock | `manual` |
+| `marker` | the latest date in play | the stored day | `clock`, `time-marker` |
+
+**The mode replaced a ladder, and the way the ladder failed is the reason it exists.** It
+scanned backwards and let the first turn carrying a marker decide, with the stored day as a
+floor. A chat halted on the 1st and resumed on the 10th still had a nine-day-old
+`<Time: ...>` as the newest thing the transcript said, so the day stayed nine days behind and
+every framework downstream computed against a day the story had already left. No ordering
+fixes that: the stale marker is a perfectly good answer to the question the ladder was
+asking. The reader could not correct it either, because the stored day was only ever consulted
+when nothing stated one.
+
+The modes are exclusive because their **units** are. `marker` yields a serial date in the
+hundreds of thousands; `manual` yields whatever small number the reader typed. A fallback
+across them does not degrade, it lies: every cycle reading `day mod length` lands on an
+unrelated point and nothing on screen says so.
+
+### In marker mode, the LATEST date wins
+
+Not the newest turn's. Today is always a candidate, and a transcript date beats it only by
+being further ahead. Two things follow, and both are the point:
+
+- **A resumed chat is current.** The old marker simply loses to today.
+- **A narrated jump forward sticks.** A turn saying the story is now three weeks on states a
+  date beyond today and keeps winning until the clock catches up to it. A clock alone can
+  never know a scene skipped three weeks; only the story can say so.
+
+The cost is real and unguarded: a date the model invents far in the future wins permanently,
+because nothing can be later than a date that has not happened. `manual` mode and an edit to
+the offending turn are the two ways out. A cap on how far ahead a marker may reach was
+considered and left out, because every value for it is arbitrary and a story set in 2400 is
+not rarer than a model typo.
+
+### The marker, in two shapes
+
+| Shape | Written | In the transcript |
 |---|---|---|
-| `day-marker` | `<Day 47>` | that number, verbatim |
-| `time-marker` | `<Time: 11:53 AM, Sunday September 6, 2026>` | a serial date, days since a FIXED epoch |
-| `manual` | none | the stored day, set by `/day` |
+| visible | `<Time: 11:53 AM, Sunday September 6, 2026>` | markdown escapes it; drawn as written |
+| hidden | `<!-- Time: 11:53 AM, Sunday September 6, 2026 -->` | an HTML comment; no browser draws it |
 
-Within one turn `<Day N>` wins, because it states the tracker's own unit outright where a date
-has to be converted before it means anything.
+**Both are read forever, whichever one is currently being asked for.** Only the instruction
+switches. A reader who changes the setting leaves a chat whose older turns are all in the
+other shape, and a parser reading only the current shape would go blind to that history the
+moment the switch was flipped.
 
-**The brackets are the whole point of the day marker.** An unbracketed "day 47" appears in
-ordinary prose constantly ("it had been day 47 of the siege"), and a tracker that read those
-would jump to whatever number a character last reminisced about. The brackets are the author
-saying this one is a statement of fact rather than a line of narration.
+Only the DATE is read. The clock time inside says nothing about which day it is, and the
+weekday is ignored: it is redundant against the date, and trusting it would mean disagreeing
+with a model that got it wrong. It is asked for anyway, because a weekday beside a long-form
+date gives the model a second reading of the same fact to check itself against, and models are
+noticeably worse at naming the weekday for a bare ISO date.
 
-**Only the newest marker is ever read, and a date resolves against a FIXED epoch.** An earlier
-version counted dates from the first dated turn on the path, which read far better (day 1 was
-the day the story started) and was quietly wrong: that array is only ever the history that
-happens to be loaded and in budget, so its beginning walks forward as a chat grows and every
-day number would shift under a long story without a word. Nothing here may depend on how far
-back the path reaches.
+**The month must be a NAME.** `parseDate`'s ISO branch is anchored, so it cannot match inside
+a marker: `<Time: 18:02, Thursday 2026-11-04>` parses to nothing, and the day silently stops
+moving while everything on screen still looks right.
+
+### The clock is an argument, not a read
+
+`day.ts` reads no clock itself. `today` arrives as a number the caller measured, via
+`todaySerial(at)`, so the module stays pure and a test can pin it. The impurity is one default
+argument in `frameworkDecorator`, and the dispatcher's determinism contract is untouched
+because it is handed a number.
+
+What a real-time mode genuinely costs is narrower than "impurity": a token meter that ran at
+23:59 and a send at 00:01 price different days. That window is a mode asking to be told the
+real time, and it is the same window `{{date}}` in a lorebook entry has always had.
+
+### `<Day N>` is gone
+
+It read `<Day 47>` out of a turn and was removed with the ladder. It only ever worked if the
+model incremented an integer across turns, which models do not do reliably, and every drift
+moved every cycle silently. Manual mode covers what it was for, including a setting with no
+Gregorian calendar at all.
+
+### A fixed epoch, and what that buys
+
+A date resolves against a FIXED origin. An earlier version counted from the first dated turn
+on the path, which read far better (day 1 was the day the story started) and was quietly
+wrong: that array is only ever the history that happens to be loaded and in budget, so its
+beginning walks forward as a chat grows and every day number would shift under a long story
+without a word. Nothing here may depend on how far back the path reaches.
 
 The serial that produces is large, and it costs nothing, because a framework consuming it needs
 only `day mod length`. That is what lets a framework's own fields stay small and calendar-free:
@@ -95,29 +157,81 @@ character's entry has to name a year and a western or a fantasy setting needs no
 The epoch is 0001-01-01 rather than 1970 or 1900, purely so a historical setting produces
 positive numbers. `serialOf` builds it with `setUTCFullYear` rather than `Date.UTC`, because
 that constructor reads years 0-99 as 1900+year and would put a story set in AD 47 into 1947
-without a word.
+without a word. `todaySerial` is the one place LOCAL accessors are used, because it has to
+agree with `{{date}}`, which goes through `toLocaleDateString` and is the reader's own wall
+clock.
 
 **A framework taking an offset should DERIVE an unset one rather than defaulting it to zero.**
 While the day count is smaller than whatever the framework's own period is, everything modulo
 that period collapses together: on story day 3, `3 mod 27` and `3 mod 30` are both 3. That is
-immediately harmless for a serial date and wrong for a long time under `<Day N>`, which starts
-small. Hashing the subject key spreads a cast from the first turn and stores nothing.
+immediately harmless for a serial date and wrong for a long time under a small manual day.
+Hashing the subject key spreads a cast from the first turn and stores nothing.
 
-Reading only the tail is also what keeps the property the rest of this design has: nothing
-accumulates, so a branch is correct because a path IS a branch. Swipe away the turn that said
-`<Day 9>` and the day is whatever the surviving path says.
+Reading the path rather than a counter is also what keeps the property the rest of this design
+has: nothing accumulates, so a branch is correct because a path IS a branch. Swipe away the
+turn that stated a date and the day is whatever the surviving path says.
 
-**There is no real-time source and there should not be one.** A clock read at substitution
-time would put the token meter and the send either side of midnight, which is exactly the
-disagreement this whole module is built to avoid. What replaces it is the `<Time: ...>` marker:
-the story's own clock, written into the transcript, and therefore stable however many times it
-is read.
+## A framework can inject a block, not only answer a marker
 
-**Nothing emits these markers.** The framework reads them; something else has to write them,
-which today means the reader typing one or the model being told to. A preset item or a steering
-note instructing the model to open each reply with a time stamp is what makes the `time-marker`
-source work at all, and its absence is why `manual` is still the floor rather than a fallback
-nobody reaches.
+`compute` and `inject` are separate jobs rather than a required one and an optional extra, and
+a framework may have either or both:
+
+| | Answers `@id[...]` | Injects a block |
+|---|---|---|
+| a marker-driven tracker | yes | no |
+| date | no | yes |
+
+A tracker decorates text an author already wrote. The date framework contributes an
+**instruction addressed to the model**, which belongs to no lorebook entry and no character, so
+there is nothing for a marker to sit inside. A framework with neither is a settings row and
+nothing else: not an error, almost certainly a mistake.
+
+**An injected block rides the lorebook's own pipeline.** `frameworkBooks` (apply.ts) returns a
+synthetic book, and the caller adds it to its own. That is the whole design: an injected block
+is text in a prompt, so it has to be placed somewhere, priced against the budget that caps
+lore, and visible in the trace that explains the prompt. `renderLorebookBlock` answers all
+three. A second channel beside it would answer them again, differently, and the second answer
+is the one that goes wrong: a block outside the lore budget is a block the meter does not
+count, and the meter and the send stop agreeing with nothing on screen saying so.
+
+The entries are `constant` (addressed to the model, so nothing for a key to match), at depth
+**0** (an instruction about THIS reply is worth nothing four turns up), and `order: 0` (ahead
+of ordinary lore in the budget's greedy admission; a framework block that lost its place to a
+character description would take the day with it).
+
+**Macro expansion never reaches an injected block.** Entry content is expanded and THEN
+decorated, so a framework emitting `{{date}}` would ship those braces to the model. That is
+why `FrameworkInjectInput` carries `now`, and why the date framework imports the same
+formatters `{{time}}`, `{{weekday}}` and `{{date}}` use rather than writing its own.
+
+**The memory store deliberately injects no framework books**, unlike the prompt and the live
+meters. Those blocks tell the model what to write in its next reply, and a summariser is not
+writing one: telling it to open with a time marker would put a marker in the summary, which
+the day resolver would then read back as the story stating a date. Decoration is still shared,
+because that rewrites text an author wrote.
+
+## The date framework
+
+It is the counterpart to `marker` mode, and the only framework registered on the base branch.
+The mode is a base field; nothing but this can make a marker appear; shipping the two on
+different branches would leave the base carrying half a feature. Every other framework still
+adds itself on its own branch and needs no edit anywhere else.
+
+Two settings, both per chat, because both are facts about one story:
+
+| Setting | Lives in | Why there |
+|---|---|---|
+| `mode` (`manual`/`marker`) | `ChatFrameworkState.mode` | the base's own resolver reads it |
+| `shape` (`visible`/`hidden`) | `byFramework.date` | only this framework reads it; the parser takes both shapes regardless |
+
+**In `manual` mode it injects nothing at all.** A reader driving the day with `/day` has not
+asked to be told the real date and would be actively misled by one, so the block is absent
+rather than present-and-ignored.
+
+The round trip is the coupling that matters: this framework writes the marker the model is
+asked to copy, and `day.ts` reads it back. `date.test.ts` asserts it across both shapes and a
+run of dates, because if those two ever disagree the day silently stops moving while every
+surface still looks correct.
 
 ## Showing what the markers are doing
 
@@ -189,27 +303,32 @@ Clamped in the normalizer rather than only at the input, because `getAllChats` i
 
 ## Files
 
-- [`types.ts`](../src/lib/frameworks/types.ts): `FrameworkDef`, `FrameworkComputeInput`, `FrameworkRecord`, `FrameworkContext`. No logic.
+- [`types.ts`](../src/lib/frameworks/types.ts): `FrameworkDef`, `FrameworkComputeInput`, `FrameworkInjectInput`, `FrameworkRecord`, `FrameworkContext`. No logic.
 - [`marker.ts`](../src/lib/frameworks/marker.ts): the grammar, `findMarkers`, `hasMarker`. Pure.
 - [`dispatch.ts`](../src/lib/frameworks/dispatch.ts): `applyFrameworks`. Pure. The whole of the base's runtime.
+- [`day.ts`](../src/lib/frameworks/day.ts): the mode, the marker grammar, `resolveDay`, `todaySerial`, and the serial/date arithmetic. Pure; the clock arrives as an argument.
 - [`chat-state.ts`](../src/lib/frameworks/chat-state.ts): the per-chat blob, its normalizer and caps, and `parseDayArg`.
 - [`registry.ts`](../src/lib/frameworks/registry.ts): every framework this build carries. Pure data, deliberately store-free (prompt assembly reads it).
-- [`apply.ts`](../src/lib/frameworks/apply.ts): the ONE place a chat's state becomes a `LorebookDecorator`.
-- Tests: [`frameworks.test.ts`](../src/lib/frameworks/frameworks.test.ts), which runs against a **fake** framework declared in the test, so the base is provable without a real one; plus the seam's own cases in [`lorebook/engine.test.ts`](../src/lib/lorebook/engine.test.ts).
+- [`apply.ts`](../src/lib/frameworks/apply.ts): the ONE place a chat's state becomes a `LorebookDecorator`, and the ONE place it becomes injected books.
+- [`date/`](../src/lib/frameworks/date/index.ts): the date framework. The only one registered on this branch, because it is the counterpart to a base field.
+- Tests: [`frameworks.test.ts`](../src/lib/frameworks/frameworks.test.ts), which runs against a **fake** framework declared in the test, so the base is provable without a real one; [`day.test.ts`](../src/lib/frameworks/day.test.ts) and [`date/date.test.ts`](../src/lib/frameworks/date/date.test.ts); plus the seam's own cases in [`lorebook/engine.test.ts`](../src/lib/lorebook/engine.test.ts).
 
 ## Before touching this
 
 - **The dispatcher and the parser stay pure.** No stores, no db, no Svelte, no clock, no randomness. The token meters and the real send both run them and must produce byte-identical output; `frameworks.test.ts` guards it. Run `bun test` after any change.
-- **A framework's `compute` is held to the same rule.** Reading a clock or calling `Math.random` there makes the meter and the send disagree, and neither surface will look wrong.
-- **A new framework is one entry in `FRAMEWORKS` and nothing else.** If it needs an edit anywhere in the base, the base is missing something and that is the change to make first.
-- **A framework wanting per-chat state puts it under `byFramework[id]`**, never as a new field on `ChatFrameworkState`, and normalizes the inside of its own slice. The base guarantees only that a slice is a plain object or absent.
+- **A framework's `compute` and `inject` are held to the same rule.** Reading a clock or calling `Math.random` there makes the meter and the send disagree, and neither surface will look wrong. `inject` is handed `now` for exactly this reason: take the clock from the input, never from `new Date()`.
+- **A new framework is one entry in `FRAMEWORKS` and nothing else.** If it needs an edit anywhere in the base, the base is missing something and that is the change to make first. The date framework is the one exception, and only because it is the counterpart to `ChatFrameworkState.mode`, which is a base field.
+- **A framework wanting per-chat state puts it under `byFramework[id]`**, never as a new field on `ChatFrameworkState`, and normalizes the inside of its own slice. The base guarantees only that a slice is a plain object or absent. The date framework's marker shape lives there; its `mode` does not, because the base's own resolver reads that one.
+- **Anything asking the model to write a marker must agree with what `day.ts` parses.** The two are a pair, and a disagreement is silent: the day stops moving while every surface still looks correct. `date.test.ts` asserts the round trip, and a change to either side belongs in the same commit as a change to the other.
 - Line-tidying rules live in `applyFrameworks` and nowhere else: a stripped marker takes one adjacent space, and a line left blank by stripping is dropped. Prose on a line that had no marker is never touched.
 - **No em dash anywhere**, per the contract in `contracts.test.ts`.
 
 ## Hand-kept couplings
 
 1. **One decorator, built in one place.** Every surface that assembles goes through `frameworkDecorator` (apply.ts): `prompt-assembly.ts`'s `buildMacroContext` via `AssembleInput.frameworks`, `live-macro-context.ts`, and the memory store via `ChatCtx`. Build one at a call site instead and the meter prices a prompt the send does not build, with nothing on screen saying so. `PromptBuilderView` deliberately passes nothing, exactly as it omits steering: it prices the preset, not story state.
-2. **`resolveLorebooks` has FOUR callers, one more than prompt-pipeline coupling 3 lists.** Besides the three context builders there is `LorebookScanTester`, which passes `NO_DECORATION` **deliberately**, for the same reason it passes no `expand`: it scans one book against typed text with no chat, no card fields and no story state, so it tests matching and only matching.
-3. **`ChatCtx` has three construction sites** (`chat.svelte.ts`, `MemoryView.svelte`, `messages.svelte.ts`) and every one must fill `frameworks`, through `chatFrameworkState` in [`chat-setup.ts`](../src/lib/utils/chat-setup.ts). The memory store may never import `chatStore`, which is why this travels on the ctx like the version pin and the persona claim do.
-4. **`FrameworkContext.disabled` is separate from `frameworks` on purpose.** A framework left out of the list reads as `unknownFramework`; a switched-off one reads as `disabled`. The two send someone debugging a silent marker to completely different places, so pass every registered framework and name the off ones.
-5. **`registry.ts` imports no store**, unlike `engines/registry.ts`. Prompt assembly reads this list and may not touch a store, so an app-wide switch belongs beside the callers that already read settings.
+2. **`frameworkBooks` has TWO callers, one fewer than the decorator.** `prompt-assembly.ts` and `live-macro-context.ts` add it to their books; the memory store deliberately does not, because an instruction about what to write next has no business in a summariser (see above). A third surface that assembles a SEND must add it, or the meter beside it prices a prompt the send does not build.
+3. **`resolveLorebooks` has FOUR callers, one more than prompt-pipeline coupling 3 lists.** Besides the three context builders there is `LorebookScanTester`, which passes `NO_DECORATION` **deliberately**, for the same reason it passes no `expand`: it scans one book against typed text with no chat, no card fields and no story state, so it tests matching and only matching.
+4. **`ChatCtx` has three construction sites** (`chat.svelte.ts`, `MemoryView.svelte`, `messages.svelte.ts`) and every one must fill `frameworks`, through `chatFrameworkState` in [`chat-setup.ts`](../src/lib/utils/chat-setup.ts). The memory store may never import `chatStore`, which is why this travels on the ctx like the version pin and the persona claim do.
+5. **`FrameworkContext.disabled` is separate from `frameworks` on purpose.** A framework left out of the list reads as `unknownFramework`; a switched-off one reads as `disabled`. The two send someone debugging a silent marker to completely different places, so pass every registered framework and name the off ones.
+6. **`registry.ts` imports no store**, unlike `engines/registry.ts`. Prompt assembly reads this list and may not touch a store, so an app-wide switch belongs beside the callers that already read settings.
+7. **The date framework and `macros.ts` share three formatters.** `formatClock`, `formatLongDate` and `formatWeekday` are exported from `macros.ts` so `{{time}}`, `{{weekday}}` and `{{date}}` and the injected marker produce the same strings. Two copies of `toLocaleDateString('en-US', ...)` would drift the first time either was tidied, and the drift would show up as a marker the parser silently stops reading.
