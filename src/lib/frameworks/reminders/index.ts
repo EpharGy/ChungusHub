@@ -44,7 +44,7 @@ export const REMINDERS_BLOCKS: readonly FrameworkBlockDef[] = [
 	{
 		slot: 'section',
 		label: 'Section',
-		hint: 'Wraps every reminder the other frameworks contribute. {{reminders}} is where their lines go, one per line.',
+		hint: 'Wraps every reminder the other frameworks contribute. {{reminders}} is where their lines go, one per line, exactly as each framework wrote them.',
 		defaultText: DEFAULT_REMINDERS_TEMPLATE,
 		placeholders: [REMINDERS_PLACEHOLDER],
 		required: [REMINDERS_PLACEHOLDER],
@@ -83,6 +83,9 @@ export const REMINDERS_FRAMEWORK: FrameworkDef = {
 	 */
 	fill(text, input) {
 		if (input.reminders.length === 0) return '';
+		// Joined verbatim. The section does not add a list marker, indent or anything else: a
+		// line's shape belongs to the framework that wrote it, which is what lets one reminder
+		// be a bullet and the next be two sentences without this having to know.
 		return text.replaceAll(REMINDERS_PLACEHOLDER, input.reminders.join('\n'));
 	}
 };
