@@ -26,7 +26,8 @@
  */
 import { formatClock, formatLongDate, formatWeekday } from '$lib/macros';
 
-import type { FrameworkDef, FrameworkEntry, FrameworkInjectInput } from '../types';
+import type { FrameworkBlockDef } from '../blocks';
+import type { FrameworkDef } from '../types';
 
 export const DATE_FRAMEWORK_ID = 'date';
 
@@ -88,37 +89,6 @@ export const DATE_PLACEHOLDERS = ['{{time}}', '{{weekday}}', '{{date}}', '{{mark
  */
 export const DATE_REQUIRED_PLACEHOLDERS = ['{{time}}', '{{date}}'] as const;
 
-/** This framework's APP-WIDE settings: the same for every chat, because a template and a
- *  position are configuration rather than facts about one story. */
-export interface DateSettings {
-	/** The instruction block, verbatim, placeholders unsubstituted. */
-	instructions: string;
-	/**
-	 * Where the block lands. `false`, the default, joins the lorebook block.
-	 *
-	 * The block is where a standing instruction belongs: it sits with the rest of the world
-	 * text the model is given up front, it is easy to find when something reads wrong, and it
-	 * does not interrupt the story. At-depth is the sharper tool, for a model that keeps
-	 * losing the rule in a long prompt, and it is worth reaching for deliberately rather than
-	 * being handed to everyone who never opens this page.
-	 */
-	atDepth: boolean;
-	depth: number;
-	role: 'system' | 'user' | 'assistant';
-}
-
-/**
- * The default instructions.
- *
- * Deliberately short. A hand-tuned version of this grew to about four times the length, almost
- * all of it the same rule restated in escalating capitals, because the model kept dropping a
- * marker that a regex then had to read. Nothing reads it now, so the text only has to ask for
- * the marker rather than police its shape, and what is left is the part that actually changes
- * what the model writes: the gap rule, and the hour the scene is set in.
- *
- * The thresholds live in this text rather than in a setting, on purpose. No code reads them,
- * so a field for them would be a control that edits a sentence you can already edit.
- */
 export const DEFAULT_DATE_INSTRUCTIONS = `The current real time is {{time}}, {{weekday}} {{date}}. This is the canonical "now": it takes precedence over the story's own sense of time and over simply continuing from where the last reply stopped.
 
 Begin your reply with a time marker, before any narration:
@@ -135,29 +105,10 @@ Do not stretch the previous scene across a long gap. Cut to the real time instea
 
 Write the scene the hour actually calls for. Late night is dim and slow and people are in nightwear or already asleep; early morning is groggy; mornings are routines and daylight; evenings wind down. A single reply covers a few minutes of story time, so do not race the clock forward within it.`;
 
-export function defaultDateSettings(): DateSettings {
-	return { instructions: DEFAULT_DATE_INSTRUCTIONS, atDepth: false, depth: 0, role: 'system' };
-}
-
-const ROLES = ['system', 'user', 'assistant'] as const;
-
-export function normalizeDateSettings(raw: unknown): DateSettings {
-	const base = defaultDateSettings();
-	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
-	const stored = raw as Record<string, unknown>;
-	const role = ROLES.find((r) => r === stored.role) ?? base.role;
-	// An empty template reads as "I have not set this", not as "inject nothing": a reader who
-	// wants nothing injected turns the framework off, which is the control that says so.
-	const instructions =
-		typeof stored.instructions === 'string' && stored.instructions.trim()
-			? stored.instructions
-			: base.instructions;
-	const depth =
-		typeof stored.depth === 'number' && Number.isFinite(stored.depth)
-			? Math.max(0, Math.min(100, Math.trunc(stored.depth)))
-			: base.depth;
-	return { instructions, atDepth: stored.atDepth === true, depth, role };
-}
+/** The reminder line, for the section a reminders framework gathers. One sentence: it is a
+ *  nudge for a model that has read the instructions and drifted, not a second copy of them. */
+export const DEFAULT_DATE_REMINDER =
+	'The current real time is {{time}}, {{weekday}} {{date}}. This takes precedence over simply continuing from the last reply.';
 
 /**
  * One time marker, in the shape asked for.
@@ -185,6 +136,31 @@ export function fillDateTemplate(template: string, at: Date, shape: MarkerShape)
 		.replaceAll('{{date}}', formatLongDate(at));
 }
 
+
+export const DATE_BLOCKS: readonly FrameworkBlockDef[] = [
+	{
+		slot: 'instructions',
+		label: 'Instructions',
+		hint: 'Sent every turn while this chat is on real time.',
+		defaultText: DEFAULT_DATE_INSTRUCTIONS,
+		placeholders: DATE_PLACEHOLDERS,
+		required: DATE_REQUIRED_PLACEHOLDERS,
+		gate: true,
+		defaultOn: true,
+		placement: { atDepth: false, depth: 0, role: 'system', order: 0 }
+	},
+	{
+		slot: 'reminder',
+		label: 'Reminder',
+		hint: 'One line in the Reminders section, for a model that has drifted. Needs the Reminders framework; without it nothing is sent.',
+		defaultText: DEFAULT_DATE_REMINDER,
+		placeholders: DATE_PLACEHOLDERS,
+		gate: false,
+		defaultOn: false,
+		reminder: true
+	}
+];
+
 export const DATE_FRAMEWORK: FrameworkDef = {
 	id: DATE_FRAMEWORK_ID,
 	// One word, because the XML gate around the injected block is named for it and
@@ -196,20 +172,17 @@ export const DATE_FRAMEWORK: FrameworkDef = {
 		'In real-time mode, injects the current time and instructions for what to do when the ' +
 		'story has been away for a while. The marker it asks for is for you to read: nothing ' +
 		'parses it back. Says nothing in manual mode, where /day drives the day instead.',
-	inject(input: FrameworkInjectInput): FrameworkEntry[] {
-		if (input.mode !== 'marker') return [];
-		const settings = normalizeDateSettings(input.settings);
+	blocks: DATE_BLOCKS,
+	/**
+	 * Nothing at all in manual mode.
+	 *
+	 * A reader driving the day by hand has not asked to be told the real date and would be
+	 * actively misled by one, so the blocks are absent rather than present-and-ignored. Blank
+	 * text is how a declared block says "not this time"; the base drops it.
+	 */
+	fill(text, input) {
+		if (input.mode !== 'marker') return '';
 		const { shape } = normalizeDateChatState(input.state);
-		return [
-			{
-				slot: 'instructions',
-				content: fillDateTemplate(settings.instructions, input.now, shape),
-				gate: true,
-				atDepth: settings.atDepth,
-				depth: settings.depth,
-				role: settings.role,
-				order: 0
-			}
-		];
+		return fillDateTemplate(text, input.now, shape);
 	}
 };
