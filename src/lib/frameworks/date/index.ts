@@ -93,7 +93,15 @@ export const DATE_REQUIRED_PLACEHOLDERS = ['{{time}}', '{{date}}'] as const;
 export interface DateSettings {
 	/** The instruction block, verbatim, placeholders unsubstituted. */
 	instructions: string;
-	/** Where the block lands. `false` joins the lorebook block. */
+	/**
+	 * Where the block lands. `false`, the default, joins the lorebook block.
+	 *
+	 * The block is where a standing instruction belongs: it sits with the rest of the world
+	 * text the model is given up front, it is easy to find when something reads wrong, and it
+	 * does not interrupt the story. At-depth is the sharper tool, for a model that keeps
+	 * losing the rule in a long prompt, and it is worth reaching for deliberately rather than
+	 * being handed to everyone who never opens this page.
+	 */
 	atDepth: boolean;
 	depth: number;
 	role: 'system' | 'user' | 'assistant';
@@ -128,7 +136,7 @@ Do not stretch the previous scene across a long gap. Cut to the real time instea
 Write the scene the hour actually calls for. Late night is dim and slow and people are in nightwear or already asleep; early morning is groggy; mornings are routines and daylight; evenings wind down. A single reply covers a few minutes of story time, so do not race the clock forward within it.`;
 
 export function defaultDateSettings(): DateSettings {
-	return { instructions: DEFAULT_DATE_INSTRUCTIONS, atDepth: true, depth: 0, role: 'system' };
+	return { instructions: DEFAULT_DATE_INSTRUCTIONS, atDepth: false, depth: 0, role: 'system' };
 }
 
 const ROLES = ['system', 'user', 'assistant'] as const;
@@ -148,7 +156,7 @@ export function normalizeDateSettings(raw: unknown): DateSettings {
 		typeof stored.depth === 'number' && Number.isFinite(stored.depth)
 			? Math.max(0, Math.min(100, Math.trunc(stored.depth)))
 			: base.depth;
-	return { instructions, atDepth: stored.atDepth !== false, depth, role };
+	return { instructions, atDepth: stored.atDepth === true, depth, role };
 }
 
 /**
