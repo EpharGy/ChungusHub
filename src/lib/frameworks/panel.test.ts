@@ -54,7 +54,6 @@ function view(over: Partial<Parameters<typeof panelView>[0]> = {}) {
 		frameworks: [DEMO],
 		disabled: [],
 		state: defaultChatFrameworkState(),
-		messages: [],
 		now: NOW,
 		...over
 	});
@@ -120,10 +119,11 @@ describe('why nothing happened', () => {
 
 describe('the day', () => {
 	test('comes back with its source, so a reader can see which answered', () => {
-		const dated = view({ state: markerState(), messages: ['<Time: 9:00 AM, October 31, 2026>'] });
-		expect(dated.day).toMatchObject({ source: 'time-marker', depth: 0 });
-		// Nothing dated, so the clock answered and no turn can be pointed at.
+		// The two sources are also two UNITS: a serial date and a story day. A surface that
+		// showed the number without saying which would be showing a number nobody can read.
 		expect(view({ state: markerState() }).day).toEqual({ day: TODAY, source: 'clock' });
+		const byHand = view({ state: { ...defaultChatFrameworkState(), day: 9 } });
+		expect(byHand.day).toEqual({ day: 9, source: 'manual' });
 	});
 
 	test('falls back to the stored one and says so', () => {
@@ -137,7 +137,7 @@ describe('the day', () => {
 		const framework: FrameworkDef = { ...DEMO, compute: ({ day }) => `day ${(seen = day)}` };
 		const out = view({ state: markerState({ day: 42 }), frameworks: [framework] });
 		expect(seen).toBe(out.day.day);
-		// Marker mode, nothing dated: the clock answered, and the stored 42 is not it.
+		// Real time: the clock answered, and the stored 42 is never reached.
 		expect(rows(out)[0].text).toBe(`day ${TODAY}`);
 	});
 });
@@ -252,12 +252,7 @@ describe('only the entries that fired', () => {
 	test('the day is unaffected by the filter', () => {
 		// The day is a fact about the story, not about which entries fired.
 		const bk = twoEntries();
-		const filtered = view({
-			books: [bk],
-			injectedEntryIds: new Set<string>(),
-			state: markerState(),
-			messages: ['<Time: 9:00 AM, October 31, 2026>']
-		});
-		expect(filtered.day).toMatchObject({ source: 'time-marker' });
+		const filtered = view({ books: [bk], injectedEntryIds: new Set<string>(), state: markerState() });
+		expect(filtered.day).toEqual({ day: TODAY, source: 'clock' });
 	});
 });
