@@ -147,6 +147,7 @@ export const DATE_BLOCKS: readonly FrameworkBlockDef[] = [
 		required: DATE_REQUIRED_PLACEHOLDERS,
 		gate: true,
 		defaultOn: true,
+		alwaysOn: true,
 		placement: { atDepth: false, depth: 0, role: 'system', order: 0 }
 	},
 	{

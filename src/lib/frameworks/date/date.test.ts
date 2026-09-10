@@ -128,6 +128,7 @@ describe('what it declares', () => {
 		// not something anything here can guess.
 		const declared = resolveBlocks(DATE_FRAMEWORK.blocks, undefined);
 		expect(declared.find((b) => b.def.slot === 'instructions')?.on).toBe(true);
+		expect(declared.find((b) => b.def.slot === 'instructions')?.def.alwaysOn).toBe(true);
 		expect(declared.find((b) => b.def.slot === 'reminder')?.on).toBe(false);
 	});
 
@@ -162,8 +163,18 @@ describe('when it says nothing', () => {
 		expect(frameworkBooks(undefined, available(), NOW)).toEqual([]);
 	});
 
-	test('a block switched off is not sent', () => {
-		expect(block(withBlock('instructions', { on: false }))).toBeUndefined();
+	test('the instructions cannot be switched off on their own, because they ARE the framework', () => {
+		// A stored `off` from an older build is ignored rather than honoured: Date with its
+		// instructions off is Date doing nothing, which is what turning Date off is for, and a
+		// second switch for one decision leaves a state where it looks on and does nothing.
+		expect(block(withBlock('instructions', { on: false }))).toBeDefined();
+	});
+
+	test('an optional block DOES honour its switch', () => {
+		// The reminder is the case the switch exists for: wanting the framework without
+		// wanting it to spend tokens nagging every turn is a real preference.
+		const declared = resolveBlocks(DATE_FRAMEWORK.blocks, { blocks: { reminder: { on: false } } });
+		expect(declared.find((b) => b.def.slot === 'reminder')?.on).toBe(false);
 	});
 });
 
