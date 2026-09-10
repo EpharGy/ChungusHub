@@ -3,61 +3,101 @@
  *
  * The day belongs to the base rather than to any framework: story time is infrastructure, and
  * an age that advances, a season turning and a debt coming due all want the same integer from
- * the same place.
+ * the same place. A framework may OWN the instructions that put a marker in the transcript
+ * (see the date framework), but the number those markers resolve to is read here, once, so
+ * that two frameworks can never disagree about what day it is.
  *
- * Three sources, resolved as a ladder. The chat is scanned backwards from the newest turn and
- * the FIRST turn carrying a marker decides; the stored manual day is the floor when no turn
- * carries one. That ordering is what makes the tracker follow the story rather than the other
- * way round, and it is why a reader who never touches `/day` still gets a correct day as soon
- * as the story states one.
+ * **The mode decides which question is being asked, and the two do not overlap.** `manual` is
+ * a day the reader sets and nothing else may move; `marker` is a day the story states and the
+ * stored number is never consulted. An earlier version had no mode and resolved a ladder
+ * across both, which was wrong in a way that took a while to see: a chat resumed after a real
+ * week found the newest turn carrying a marker and answered with the date that turn was
+ * written, so a tracker downstream kept computing against a day the story had already left.
+ * Nothing in a ladder can fix that, because the stale marker is a perfectly good answer to
+ * "what is the newest thing the transcript says".
  *
- * Pure: it is handed the path and answers from it. Assembly runs at least twice and the two
- * runs must agree, so nothing here may read a clock. **`clock` as a day source is deliberately
- * absent**, and this is why: a real-time source would put the meter and the send either side
- * of midnight. What replaces it is the `<Time: ...>` marker below, which is the story's own
- * clock written into the transcript and therefore stable.
+ * In `marker` mode the answer is the LATEST date in play, not the newest turn's: the clock is
+ * always a candidate, and a transcript date beats it only by being further ahead, which is
+ * what makes a narrated jump forward stick without a real week of silence dragging the day
+ * backwards. See {@link resolveDay}.
+ *
+ * Pure: it is handed the path, the mode and today, and answers from them. Assembly runs at
+ * least twice and the two runs must agree, so nothing here reads a clock itself; `today`
+ * arrives as a number the caller measured. {@link todaySerial} is where that measurement is
+ * written down, and it takes the `Date` rather than making one for the same reason.
  *
  * See architecture/frameworks.md.
  */
 
 /**
+ * How a chat decides what day it is. Per chat, because it is a fact about ONE story.
+ *
+ * The two are exclusive on purpose and there is no ladder between them. A story running on
+ * the reader's own calendar and a story counting its own days want opposite things from the
+ * same transcript, and a mode that fell back from one to the other would answer with the
+ * wrong unit rather than with nothing: `marker` yields a serial date in the hundreds of
+ * thousands and `manual` yields whatever small number the reader typed, so a fallback across
+ * them shifts every cycle that reads `day mod length` to an unrelated point without a word.
+ */
+export type DayMode = 'manual' | 'marker';
+
+/**
  * Which source answered, kept so a reader can be shown why the day is what it is.
  *
- * It also says what KIND of number came back, which a framework has to know to make sense of
- * its own fields: `time-marker` yields a serial date (days since 0001-01-01) while the other
- * two yield a story day the author chose. A cycle only needs `day mod length`, so both work,
- * but an anchor written for one is meaningless against the other.
+ * `clock` and `time-marker` both yield a serial date (days since 0001-01-01) and are freely
+ * comparable; `manual` yields the story day the reader chose. A framework whose anchor is
+ * written against one is meaningless against the other, which is what the mode exists to
+ * stop, and the two serial sources differ only in WHICH date won: `clock` is today, and
+ * `time-marker` means the story has stated a date further ahead than today.
  */
-export type DaySource = 'day-marker' | 'time-marker' | 'manual';
+export type DaySource = 'clock' | 'time-marker' | 'manual';
 
 export interface ResolvedDay {
 	day: number;
 	source: DaySource;
 	/**
-	 * How far back the deciding turn was, 0 being the newest. Absent for `manual`, which
-	 * came from the chat's stored state rather than from any turn.
+	 * How far back the deciding turn was, 0 being the newest. Present for `time-marker`
+	 * only: `clock` and `manual` came from outside the transcript, so no turn can be named.
 	 */
 	depth?: number;
 }
 
-/**
- * `<Day 47>`, anywhere in a turn.
- *
- * Bracketed on purpose. An unbracketed "day 47" appears in ordinary prose constantly ("it had
- * been day 47 of the siege"), and a tracker that reads those is a tracker that jumps to
- * whatever number a character last reminisced about. The brackets are the author saying this
- * one is a statement of fact rather than a line of narration.
- */
-const DAY_MARKER = /<\s*day\s+(-?\d{1,7})\s*>/gi;
+/** Everything {@link resolveDay} needs, handed in rather than reached for. */
+export interface DayInput {
+	/** The chat path, oldest to newest, exactly as the lorebook scan receives it. */
+	messages: readonly string[];
+	mode: DayMode;
+	/** The chat's stored day. Read in `manual` mode and ignored in `marker`. */
+	manual: number;
+	/**
+	 * Today as a serial, from {@link todaySerial}. Read in `marker` mode and ignored in
+	 * `manual`, so a caller with no clock to offer may pass anything there.
+	 */
+	today: number;
+}
 
 /**
- * `<Time: 11:53 AM, Sunday September 6, 2026>`, anywhere in a turn.
+ * `<Time: 11:53 AM, Sunday September 6, 2026>`, anywhere in a turn, in either shape.
  *
- * Only the DATE is read; the clock time inside is for the story's benefit and says nothing
- * about which day it is. The weekday is ignored too: it is redundant against the date and
- * trusting it would mean disagreeing with a model that got it wrong.
+ * Only the DATE is read. The clock time inside says nothing about which day it is, and the
+ * weekday is ignored too: it is redundant against the date, and trusting it would mean
+ * disagreeing with a model that got it wrong. It is written anyway, because a weekday beside
+ * a long-form date gives the model something to check itself against, and models are
+ * noticeably worse at naming the weekday for a bare ISO date.
+ *
+ * **Both shapes are accepted, permanently, whichever one is currently being asked for.**
+ * `<Time: ...>` renders as visible text in the transcript; `<!-- Time: ... -->` is an HTML
+ * comment, which the markdown pipeline emits as a comment node and no browser draws. Which
+ * one the model is TOLD to write is the date framework's setting, and a reader who changes
+ * it leaves a chat whose older turns are all in the other shape. A parser that read only the
+ * current shape would go blind to that history the moment the switch was flipped, so it
+ * reads both and only the instruction ever changes.
+ *
+ * The comment form works out because `[^>]*` stops at the first `>`, which in `-->` is the
+ * last character of the marker: the trailing `--` is swallowed as body text and the date
+ * inside is found regardless.
  */
-const TIME_MARKER = /<\s*time\s*:[^>]*>/gi;
+const TIME_MARKER = /<(?:!--)?\s*time\s*:[^>]*>/gi;
 
 /** `September 6, 2026` and its abbreviated forms, inside a time marker. */
 const DATE_IN_MARKER =
@@ -148,59 +188,78 @@ export function formatDate(serial: number): string {
 	return `${yyyy}-${mm}-${dd}`;
 }
 
-/** Every date a turn states, in the order they appear. */
-function datesIn(text: string): number[] {
-	const out: number[] = [];
+/** The latest date a turn states, or null. The LATEST rather than the last written, because
+ *  a turn is prose and nothing orders the sentences in it. */
+function latestDateIn(text: string): number | null {
+	let best: number | null = null;
 	for (const match of text.matchAll(new RegExp(TIME_MARKER.source, TIME_MARKER.flags))) {
 		const serial = parseDate(match[0]);
-		if (serial !== null) out.push(serial);
+		if (serial !== null && (best === null || serial > best)) best = serial;
 	}
-	return out;
+	return best;
 }
 
-/** The last `<Day N>` a turn states, or null. The LAST because a turn that moves the story
- *  through two days states the later one second. */
-function dayMarkerIn(text: string): number | null {
-	let last: number | null = null;
-	for (const match of text.matchAll(new RegExp(DAY_MARKER.source, DAY_MARKER.flags))) {
-		last = Number(match[1]);
-	}
-	return last;
+/**
+ * Today, as a serial, from a `Date` the caller made.
+ *
+ * It takes the `Date` rather than calling `new Date()` so that this module still reads no
+ * clock: the impurity is one argument at three call sites instead of a hidden read inside a
+ * function two meters and a send all run.
+ *
+ * **Local accessors, deliberately**, where everything else here is UTC. This has to agree
+ * with what `{{date}}` renders into the marker the model is shown, and that goes through
+ * `toLocaleDateString`, which is the reader's own wall clock. Reading UTC here would put the
+ * day the framework counts and the date the model was told an hour apart either side of
+ * midnight, for anyone not on UTC.
+ */
+export function todaySerial(at: Date): number {
+	return serialOf(at.getFullYear(), at.getMonth(), at.getDate());
 }
 
 /**
  * Resolve the day for one chat.
  *
- * `messages` is the chat path, oldest to newest, exactly as the lorebook scan receives it.
- * `manual` is the chat's stored day, used when the story states nothing.
+ * **`manual` mode never looks at the transcript, and `marker` mode never looks at the stored
+ * day.** That is the whole of the mode, and it is what keeps the two units from ever being
+ * mixed (see {@link DayMode}).
  *
- * **Only the NEWEST marker is read.** Nothing here depends on how far back the path reaches,
- * which is the property that matters: the array is whatever history is loaded and in budget,
- * so anything derived from its beginning walks forward as a chat grows. An earlier version
- * anchored `<Time: ...>` dates on the first dated turn, and every day number would have
- * shifted under a long story without a word.
+ * In `marker` mode the answer is the LATEST date in play: today, or a transcript date further
+ * ahead than today. Two things fall out of that, and both are the point rather than side
+ * effects:
  *
- * A `<Time: ...>` date therefore resolves to a serial date against a fixed epoch. The number is
- * large and that costs nothing: a cycle needs `day mod length`, and a framework whose anchor is
- * written as a date subtracts the same epoch straight back out.
+ *   - **A resumed chat is current.** The newest turn carrying a marker may be a real week
+ *     old, and under a newest-turn rule it would decide; here it simply loses to today.
+ *   - **A narrated jump forward sticks.** A turn that says the story is now three weeks on
+ *     states a date beyond today and keeps winning until the clock catches up to it.
+ *
+ * The cost is stated plainly because there is no guard against it: a date the model invents
+ * far in the future wins permanently, and no later turn can pull the day back, because
+ * nothing can be later than a date that has not happened. `manual` mode and an edit to the
+ * offending turn are the two ways out. A cap on how far ahead a marker may reach was
+ * considered and left out: every value for it is arbitrary, and a story legitimately set in
+ * 2400 is not rarer than a model typo.
+ *
+ * Nothing here depends on how far back the path reaches. The array is whatever history is
+ * loaded and in budget, so anything derived from its beginning walks forward as a chat grows;
+ * a maximum over the whole path does not, and neither does a fixed epoch.
  */
-export function resolveDay(messages: readonly string[], manual: number): ResolvedDay {
-	// Backwards from the newest: the first turn carrying either marker decides. Within one
-	// turn `<Day N>` wins, because it states the tracker's own unit outright where a date has
-	// to be converted to mean anything.
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const text = messages[i];
-		const depth = messages.length - 1 - i;
+export function resolveDay(input: DayInput): ResolvedDay {
+	if (input.mode === 'manual') return { day: input.manual, source: 'manual' };
 
-		const stated = dayMarkerIn(text);
-		if (stated !== null) return { day: stated, source: 'day-marker', depth };
-
-		const dates = datesIn(text);
-		if (dates.length > 0) {
-			// The LAST date in the turn: a turn spanning midnight states the later one second.
-			return { day: dates[dates.length - 1], source: 'time-marker', depth };
+	// Newest first, so a date matched by two turns is reported at the shallowest depth: the
+	// turn a reader would look at to see where the number came from.
+	let best: number | null = null;
+	let depth: number | undefined;
+	for (let i = input.messages.length - 1; i >= 0; i--) {
+		const stated = latestDateIn(input.messages[i]);
+		if (stated !== null && (best === null || stated > best)) {
+			best = stated;
+			depth = input.messages.length - 1 - i;
 		}
 	}
 
-	return { day: manual, source: 'manual' };
+	// Today wins ties. A transcript date EQUAL to today is the story keeping step with the
+	// clock rather than having jumped, and `clock` is the honest way to say that.
+	if (best === null || best <= input.today) return { day: input.today, source: 'clock' };
+	return { day: best, source: 'time-marker', depth };
 }
