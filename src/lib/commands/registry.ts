@@ -26,6 +26,7 @@ import type { ComponentProps } from 'svelte';
 import type Icon from '$lib/components/ui/Icon.svelte';
 import { chatCursor } from '$lib/stores/chatCursor.svelte';
 import { parseDayArg } from '$lib/frameworks/chat-state';
+import { frameworkPanelStore } from '$lib/stores/frameworkPanel.svelte';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { chatSearch } from '$lib/stores/chatSearch.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
@@ -384,6 +385,17 @@ export const COMMANDS: CommandDef[] = [
 		icon: 'flask',
 		describe: 'Open the prompt debug panel',
 		run: () => uiStore.openDebugPanel(flush)
+	},
+	{
+		// Beside the debug panel on purpose: both answer "what is the prompt actually doing",
+		// and this one answers it for the markers, whose whole effect can be an absence.
+		// A toggle rather than an open: it is a window that stays up while you read, so the
+		// same command has to be able to put it away.
+		name: 'frameworks',
+		group: 'open',
+		icon: 'clock',
+		describe: 'Show what every framework marker is doing',
+		run: () => frameworkPanelStore.toggle()
 	}
 ];
 
