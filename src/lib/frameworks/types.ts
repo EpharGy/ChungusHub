@@ -43,7 +43,7 @@ export interface FrameworkComputeInput {
 	state: unknown;
 }
 
-/** What a framework is handed to write its own block into the prompt. */
+/** What a framework is handed to write its own blocks into the prompt. */
 export interface FrameworkInjectInput {
 	/** The story day, the same number every `compute` on this assembly sees. */
 	day: number;
@@ -52,6 +52,9 @@ export interface FrameworkInjectInput {
 	mode: DayMode;
 	/** This framework's own slice of the chat's state, exactly as stored. */
 	state: unknown;
+	/** This framework's app-wide settings, exactly as stored. Opaque to the base, which never
+	 *  reads inside one: the framework that owns it normalizes it, the same rule as `state`. */
+	settings: unknown;
 	/**
 	 * The wall clock, handed in rather than read, so this stays as pure as `compute` and a
 	 * test can pin it. Present because an injected block is the one thing a framework
@@ -59,6 +62,56 @@ export interface FrameworkInjectInput {
 	 * decorated, so a framework emitting `{{date}}` would ship those braces to the model.
 	 */
 	now: Date;
+}
+
+/**
+ * One block a framework contributes, and where it goes.
+ *
+ * **A framework returns a LIST of these rather than one string**, and that is not generality
+ * for its own sake. A single framework routinely wants two placements at once: its
+ * instructions wherever the reader filed them, and a one-line reminder down at the generation
+ * point where a long prompt cannot bury it. Those are different depths, roles and orders, and
+ * a framework that could only say one thing would have to choose between them.
+ *
+ * It is also what lets a reminders framework exist without being a special case: it opens a
+ * section at a low order and closes it at a much later one, and every other framework's
+ * reminder line lands in between by ordering alone. Nothing has to know about anything else.
+ *
+ * The fields are the lorebook's own, because that is what these become (`apply.ts`): entries
+ * in a synthetic book, placed, priced against the shared lore budget and traced exactly as any
+ * other injected line.
+ */
+export interface FrameworkEntry {
+	/**
+	 * A stable name for this block, unique within the framework. It becomes part of the
+	 * entry's id, so it is how a reader tells one of a framework's blocks from another in the
+	 * prompt trace, and it must not be generated per assembly.
+	 */
+	slot: string;
+	content: string;
+	/**
+	 * Wrap the content in an XML gate named for the framework, so the model can see where one
+	 * system's rules start and stop.
+	 *
+	 * Per entry rather than per framework, and that distinction is load-bearing: an
+	 * instructions block wants its own gate, while a one-line reminder is meant to sit INSIDE
+	 * somebody else's section and must not bring a second pair of tags in with it.
+	 */
+	gate: boolean;
+	/** True to splice into the chat at {@link depth}; false to join the lorebook block. */
+	atDepth: boolean;
+	/** Turns back from the newest, 0 being hard against the generation point. Ignored when
+	 *  {@link atDepth} is false. */
+	depth: number;
+	role: 'system' | 'user' | 'assistant';
+	/**
+	 * Lower is injected first, and the budget admits greedily in this order.
+	 *
+	 * It is also the only coordination there is between frameworks: a section's opening
+	 * bracket takes a low order and its closing bracket a high one, and anything meant to sit
+	 * inside picks a number between them.
+	 */
+	order: number;
 }
 
 /**
@@ -84,6 +137,14 @@ export interface FrameworkDef {
 	/** The tooltip beside the name in the detail view: what it does and what it reads. */
 	description: string;
 	/**
+	 * Frameworks this one cannot work without, by id.
+	 *
+	 * Turning this one on turns those on, and they cannot be turned off while it is on. The
+	 * rule is enforced in the stored state as well as in the UI, so a blob that arrived
+	 * claiming an impossible combination is corrected rather than trusted.
+	 */
+	requires?: readonly string[];
+	/**
 	 * Compute this marker's line, or null for "nothing to say right now".
 	 *
 	 * Absent when the framework claims no marker. A marker addressed to one that does is
@@ -98,17 +159,17 @@ export interface FrameworkDef {
 	compute?(input: FrameworkComputeInput): string | null;
 
 	/**
-	 * The block this framework contributes to the prompt, or null for "nothing to add".
+	 * The blocks this framework contributes to the prompt. Empty for "nothing to add".
 	 *
 	 * Held to the same purity rule as `compute`, and for the same reason: the meter and the
 	 * send both build it and the two must agree byte for byte. The clock arrives in the
 	 * input rather than being read here.
 	 *
-	 * What comes back is entry CONTENT. It rides the lorebook's own pipeline from there, so
-	 * it is placed, priced against the shared lore budget and traced exactly as an entry is,
-	 * rather than being spliced in somewhere nothing can account for it.
+	 * What comes back rides the lorebook's own pipeline, so each block is placed, priced
+	 * against the shared lore budget and traced exactly as an entry is, rather than being
+	 * spliced in somewhere nothing can account for it.
 	 */
-	inject?(input: FrameworkInjectInput): string | null;
+	inject?(input: FrameworkInjectInput): FrameworkEntry[];
 }
 
 /** Why a marker did or did not put text in the prompt. */
