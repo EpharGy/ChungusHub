@@ -14,7 +14,7 @@
 import { NO_DECORATION, type LorebookDecorator } from '$lib/lorebook/engine';
 
 import type { ChatFrameworkState } from './chat-state';
-import { resolveDay } from './day';
+import { resolveDay, todaySerial } from './day';
 import { applyFrameworks } from './dispatch';
 import { FRAMEWORKS } from './registry';
 
@@ -32,7 +32,8 @@ import { FRAMEWORKS } from './registry';
  */
 export function frameworkDecorator(
 	state: ChatFrameworkState | undefined,
-	messages: readonly string[]
+	messages: readonly string[],
+	now: Date = new Date()
 ): LorebookDecorator {
 	if (!state) return NO_DECORATION;
 	// Built once per assembly rather than per entry: the list, the day and the suppression
@@ -44,10 +45,24 @@ export function frameworkDecorator(
 		// framework off, nothing is off, and an empty list says that honestly rather than
 		// pretending the question has not been asked.
 		disabled: [] as readonly string[],
-		// The story decides the day when it says one; the stored day is the floor. Resolved
-		// once per assembly rather than per entry: the path is fixed for the whole prompt, and
-		// re-scanning it per lorebook row would be the same answer computed once per row.
-		day: resolveDay(messages, state.day).day,
+		// The chat's mode decides which question is asked; nothing here mixes the two (day.ts).
+		// Resolved once per assembly rather than per entry: the path, the mode and today are
+		// fixed for the whole prompt, and re-scanning per lorebook row would be the same
+		// answer computed once per row.
+		//
+		// `now` defaults here rather than being demanded of every caller, and this is the one
+		// place a clock is read on the assembly path. The determinism contract the dispatcher
+		// is held to is unaffected: it is handed a NUMBER, and the same number twice gives the
+		// same prompt twice. What a clock costs is narrower and worth naming: a meter that ran
+		// at 23:59 and a send at 00:01 price different days. That window is a real-time mode
+		// asking to be told the real time, and it is the same window `{{date}}` in a lorebook
+		// entry has always had.
+		day: resolveDay({
+			messages,
+			mode: state.mode,
+			manual: state.day,
+			today: todaySerial(now)
+		}).day,
 		suppressed: state.suppressed,
 		byFramework: state.byFramework
 	};
