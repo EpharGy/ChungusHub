@@ -324,7 +324,10 @@
 
 				{#if dateOn}
 					<section class="fp-uses">
-						<h4 class="fp-h">Time</h4>
+						<h4 class="fp-h">Story day</h4>
+						<span class="fp-dim">
+							Every framework in this chat counts from this, not just Date.
+						</span>
 						<div class="fp-seg">
 							<button
 								class:is-on={frameworkState?.mode === 'marker'}
@@ -337,9 +340,11 @@
 						</div>
 						{#if frameworkState?.mode === 'marker'}
 							<span class="fp-dim">
-								The model is told the real time each turn, and asked to write it back so you can
-								see it. Nothing reads that marker: it is for you.
+								The day follows the calendar. The model is told the real time each turn and asked
+								to write it back, purely so you can see where the story thinks it is: nothing
+								reads that marker.
 							</span>
+							<span class="fp-dim">Date's time marker, in the transcript:</span>
 							<div class="fp-seg">
 								<button
 									class:is-on={dateState.shape === 'visible'}
@@ -352,7 +357,8 @@
 							</div>
 						{:else}
 							<span class="fp-dim">
-								The day is yours to set, below. Nothing reads the clock.
+								The day is yours to set, below, and it moves only when you move it. Nothing reads
+								the clock and the model is told no date.
 							</span>
 						{/if}
 					</section>
