@@ -26,6 +26,7 @@ import { chatStore } from '$lib/stores/chat.svelte';
 const KEY = 'framework-panel-open';
 const COLLAPSED_KEY = 'framework-panel-collapsed';
 const ONLY_FIRED_KEY = 'framework-panel-only-fired';
+const USES_KEY = 'framework-panel-uses-open';
 
 /** Reading it can throw outright in a private window or with site data blocked, so every
  *  access is guarded and an unreadable store simply reads as closed. */
@@ -63,6 +64,25 @@ function writeOnlyFired(on: boolean): void {
 		localStorage.setItem(ONLY_FIRED_KEY, on ? '1' : '0');
 	} catch {
 		// As with the open flag: not being able to remember it is not a reason to refuse it.
+	}
+}
+
+/** Whether the per-chat switches are unfolded. Per device with the rest of the panel's shape:
+ *  a fold is a fact about the screen in front of you, not about the story. Open by default,
+ *  because a reader who opened this panel at all is usually here to change something. */
+function readUsesOpen(): boolean {
+	try {
+		return localStorage.getItem(USES_KEY) !== '0';
+	} catch {
+		return true;
+	}
+}
+
+function writeUsesOpen(value: boolean): void {
+	try {
+		localStorage.setItem(USES_KEY, value ? '1' : '0');
+	} catch {
+		// Unwritable storage is a fold that does not persist, which is not worth a warning.
 	}
 }
 
@@ -125,6 +145,13 @@ class FrameworkPanelStore {
 	set(open: boolean): void {
 		this.open = open;
 		write(open);
+	}
+
+	usesOpen = $state(readUsesOpen());
+
+	toggleUses(): void {
+		this.usesOpen = !this.usesOpen;
+		writeUsesOpen(this.usesOpen);
 	}
 
 	toggle(): void {
