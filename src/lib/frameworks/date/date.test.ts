@@ -124,6 +124,13 @@ describe('the app-wide settings', () => {
 		expect(normalizeDateSettings({ instructions: 'mine' }).instructions).toBe('mine');
 	});
 
+	test('an absent placement reads as the block, not as at-depth', () => {
+		// The reverse would put a standing instruction into everyone's chat history without
+		// anyone choosing it, which is what it used to do.
+		expect(normalizeDateSettings({}).atDepth).toBe(false);
+		expect(normalizeDateSettings({ atDepth: 'yes' }).atDepth).toBe(false);
+	});
+
 	test('an unusable role or depth degrades rather than throwing', () => {
 		expect(normalizeDateSettings({ role: 'narrator' }).role).toBe('system');
 		expect(normalizeDateSettings({ depth: -5 }).depth).toBe(0);
@@ -168,23 +175,25 @@ describe('when it says nothing', () => {
 });
 
 describe('where the block lands', () => {
-	test('the default is hard against the generation point, as a system turn', () => {
-		// An instruction about what to write in THIS reply is worth nothing four turns up.
+	test('the default is the lorebook block, where a standing instruction belongs', () => {
+		// At-depth is the sharper tool, for a model that keeps losing the rule in a long
+		// prompt. It is worth reaching for deliberately rather than being the default nobody
+		// chose, which is what it was.
 		const entry = block();
-		expect(entry?.depth).toBe(0);
-		expect(entry?.role).toBe(0);
+		expect(entry?.position).toBeUndefined();
 		expect(entry?.constant).toBe(true);
 	});
 
 	test('placement follows the app-wide setting', () => {
-		const entry = block(available({ [DATE_FRAMEWORK_ID]: { depth: 3, role: 'user' } }));
+		const settings = available({ [DATE_FRAMEWORK_ID]: { atDepth: true, depth: 3, role: 'user' } });
+		const entry = block(settings);
 		expect(entry?.depth).toBe(3);
 		expect(entry?.role).toBe(1);
 	});
 
-	test('the block position joins the lorebook block instead of the chat', () => {
-		const entry = block(available({ [DATE_FRAMEWORK_ID]: { atDepth: false } }));
-		expect(entry?.position).toBeUndefined();
+	test('opting into the chat splices it there instead', () => {
+		const entry = block(available({ [DATE_FRAMEWORK_ID]: { atDepth: true } }));
+		expect(entry?.position).toBeDefined();
 	});
 
 	test('the entry id is stable across runs, so a trace row names its author', () => {
@@ -228,11 +237,11 @@ describe('the framework itself', () => {
 });
 
 describe('reaching the prompt through the lorebook pipeline', () => {
-	test('it comes out placed at its depth', () => {
+	test('it comes out placed at its depth when the reader asked for that', () => {
 		// Through the real engine, because riding that pipeline is the whole point: placed,
 		// priced and traced like any other injected line rather than spliced in beside it.
 		const out = resolveLorebooks({
-			books: inject(),
+			books: inject(available({ [DATE_FRAMEWORK_ID]: { atDepth: true } })),
 			messages: [],
 			decorate: (_entry, text) => text,
 			placeAtDepth: true
@@ -240,6 +249,17 @@ describe('reaching the prompt through the lorebook pipeline', () => {
 		expect(out.placed).toHaveLength(1);
 		expect(out.placed[0].depth).toBe(0);
 		expect(out.placed[0].text).toContain('6:02 PM, Saturday October 10, 2026');
+	});
+
+	test('by default it joins the block, even where the caller COULD splice', () => {
+		const out = resolveLorebooks({
+			books: inject(),
+			messages: [],
+			decorate: (_entry, text) => text,
+			placeAtDepth: true
+		});
+		expect(out.placed).toHaveLength(0);
+		expect(out.text).toContain('6:02 PM, Saturday October 10, 2026');
 	});
 
 	test('with no chat history to splice into, it joins the block rather than vanishing', () => {
