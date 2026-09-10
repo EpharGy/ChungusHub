@@ -23,6 +23,7 @@
  *
  * See architecture/frameworks.md.
  */
+import type { DayMode } from './day';
 import { normalizeSubjectKey } from './marker';
 
 /** Farthest a story day may sit from zero. A story numbering its days is not counting to a
@@ -39,14 +40,29 @@ export const MAX_FRAMEWORK_SLICES = 32;
 /**
  * One chat's framework state.
  *
- * There is deliberately no day SOURCE field, and there is not going to be one. The story
- * decides the day when it states one and this number is the floor when it does not (see
- * day.ts), so there is nothing for a reader to select between: a chat that never mentions
- * a day uses this, and one that does simply stops needing it. A selector would be a
- * control whose only job is to switch off a source that already stands aside on its own.
+ * **This carries a day MODE, and an earlier version of this comment said flatly that it never
+ * would.** The argument then was that the two sources never really compete: a chat that never
+ * states a day uses the stored one, a chat that does stops needing it, and a selector would be
+ * a control whose only job is to switch off a source that already stands aside.
+ *
+ * That was wrong, and the way it was wrong is worth keeping. The sources do not stand aside,
+ * they outrank each other, and the stale one wins: a chat resumed a real week later still had
+ * a `<Time: ...>` marker as the newest thing the transcript said, so the day stayed a week
+ * behind for as long as nobody wrote a fresh one. The reader could not correct it either,
+ * because the stored day is only consulted when NOTHING states one. A mode is not a switch for
+ * turning a redundant source off; it is the answer to a question the ladder was silently
+ * guessing at, and the two answers are in different units (see day.ts).
  */
 export interface ChatFrameworkState {
-	/** The story day every framework computes against. */
+	/**
+	 * Where this story's day comes from. `manual` by default, which is the conservative
+	 * reading of a chat that predates the field: it keeps `/day` in charge and reads no
+	 * clock, where defaulting to `marker` would put every existing chat onto the reader's
+	 * calendar without being asked.
+	 */
+	mode: DayMode;
+	/** The story day every framework computes against, in `manual` mode. Kept across a spell
+	 *  in `marker` mode rather than cleared, so switching back lands where it left off. */
 	day: number;
 	/** Subject keys this story holds out, across every framework. Lowercased, like the keys
 	 *  markers parse to, so the two can be compared directly. */
@@ -63,7 +79,13 @@ export interface ChatFrameworkState {
 }
 
 export function defaultChatFrameworkState(): ChatFrameworkState {
-	return { day: 1, suppressed: [], byFramework: {} };
+	return { mode: 'manual', day: 1, suppressed: [], byFramework: {} };
+}
+
+/** Anything that is not a mode this build knows reads as `manual`: the mode that touches no
+ *  clock and moves no day on its own is the safe thing to degrade to. */
+function normalizeDayMode(raw: unknown): DayMode {
+	return raw === 'marker' ? 'marker' : 'manual';
 }
 
 function normalizeDay(raw: unknown): number {
@@ -106,6 +128,7 @@ export function normalizeChatFrameworkState(raw: unknown): ChatFrameworkState {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaultChatFrameworkState();
 	const stored = raw as Record<string, unknown>;
 	return {
+		mode: normalizeDayMode(stored.mode),
 		day: normalizeDay(stored.day),
 		suppressed: normalizeSuppressed(stored.suppressed),
 		byFramework: normalizeByFramework(stored.byFramework)
