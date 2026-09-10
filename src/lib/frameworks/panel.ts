@@ -20,7 +20,7 @@
 import type { Lorebook } from '$lib/lorebook/types';
 
 import type { ChatFrameworkState } from './chat-state';
-import { resolveDay, type ResolvedDay } from './day';
+import { resolveDay, todaySerial, type ResolvedDay } from './day';
 import { applyFrameworks } from './dispatch';
 import type { FrameworkDef, FrameworkRecord } from './types';
 
@@ -63,6 +63,8 @@ export interface PanelInput {
 	state: ChatFrameworkState;
 	/** The chat path, oldest to newest, as the day resolver reads it. */
 	messages: readonly string[];
+	/** The clock the panel describes, injectable so a test can pin it. Defaults to now. */
+	now?: Date;
 	/**
 	 * Entry ids whose text reached the prompt, from a live scan. Given, only markers written
 	 * in those entries are listed; absent or null, every entry in every book is.
@@ -92,7 +94,12 @@ export interface PanelInput {
  * unfiltered view as proof the line reached the prompt would be wrong.
  */
 export function panelView(input: PanelInput): PanelView {
-	const day = resolveDay(input.messages, input.state.day);
+	const day = resolveDay({
+		messages: input.messages,
+		mode: input.state.mode,
+		manual: input.state.day,
+		today: todaySerial(input.now ?? new Date())
+	});
 	const ctx = {
 		frameworks: input.frameworks,
 		disabled: input.disabled,
