@@ -79,6 +79,31 @@ describe('gathering', () => {
 	});
 });
 
+describe('a reminder needs everything its framework needs', () => {
+	// It is not a separate channel with looser rules: it goes only when the framework that
+	// owns it would have spoken anyway. Date's fill returns empty for EVERY one of its blocks
+	// in manual mode, and the gathering pass drops empty text, so all three conditions hold
+	// without any of them being written down twice.
+
+	test('manual mode sends no date reminder, even with everything switched on', () => {
+		const manual = { ...chat(), mode: 'manual' as const };
+		expect(section(install(REMINDER_ON), manual)).toBeUndefined();
+	});
+
+	test('a chat that has not ticked Date sends none either', () => {
+		expect(section(install(REMINDER_ON), chat(REMINDERS_FRAMEWORK_ID))).toBeUndefined();
+	});
+
+	test('an install without Date sends none either', () => {
+		const settings = install(REMINDER_ON, REMINDERS_FRAMEWORK_ID);
+		expect(section(settings)).toBeUndefined();
+	});
+
+	test('all three together is what actually sends it', () => {
+		expect(section(install(REMINDER_ON))?.content).toContain('6:02 PM');
+	});
+});
+
 describe('when a piece is missing', () => {
 	test('nothing to gather means no section at all, not empty tags', () => {
 		// Empty tags tell the model there is a system here and then say nothing about it,
