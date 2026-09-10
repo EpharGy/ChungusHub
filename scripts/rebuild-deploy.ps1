@@ -114,6 +114,11 @@ $Topics = @(
     'feature/echochamber',
     'feature/image-popout',
     'feature/notepad',
+    # The frameworks panel: what every marker in this chat's books is doing, and the
+    # per-chat switches for the frameworks themselves. Cut from feature/frameworks and
+    # consumes the shell, so it needs BOTH above it and typechecks on neither alone.
+    # It sits here rather than beside frameworks for that reason.
+    'feature/frameworks-panel',
     # Memoized token counting. Touches only src/lib/tokenizer/, so it overlaps nothing else
     # in either list and sits last purely to keep every conflict shape above it unchanged.
     'fix/token-count-cache'
