@@ -16,6 +16,10 @@
  * this array -- every test injects its own `FrameworkContext.frameworks`, so an empty
  * registry was a convention rather than the proof it was taken for.
  *
+ * Reminders is here on the same terms: it is a place other frameworks write into, so it can no
+ * more live on a branch of its own than a shelf can. A framework declaring a reminder line and
+ * finding nothing to gather it would simply lose the line.
+ *
  * What the date framework has that a tracker does not is a counterpart already in the base:
  * `ChatFrameworkState.mode` offers `marker`, and only this framework can make a marker
  * appear. Shipping the mode on one branch and the thing that satisfies it on another would
@@ -24,9 +28,10 @@
  * anywhere else.
  */
 import { DATE_FRAMEWORK } from './date';
+import { REMINDERS_FRAMEWORK } from './reminders';
 import type { FrameworkDef } from './types';
 
-export const FRAMEWORKS: readonly FrameworkDef[] = [DATE_FRAMEWORK];
+export const FRAMEWORKS: readonly FrameworkDef[] = [DATE_FRAMEWORK, REMINDERS_FRAMEWORK];
 
 export function frameworkById(id: string): FrameworkDef | undefined {
 	return FRAMEWORKS.find((framework) => framework.id === id);
