@@ -24,7 +24,7 @@ import type { Lorebook, LorebookGlobalSettings, LorebookTrace, LorebookTrigger }
 import { EMPTY_LOREBOOK_TRACE, lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
-import { frameworkDecorator } from '$lib/frameworks/apply';
+import { frameworkBooks, frameworkDecorator } from '$lib/frameworks/apply';
 import {
 	expandMacros,
 	expandSelfRefs,
@@ -208,7 +208,10 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 	// the day the frameworks compute against is read from exactly the turns the scan saw.
 	const scanPath = chatMessages.map((m) => m.content);
 	const lore = resolveLorebooks({
-		books: input.lorebooks,
+		// The frameworks' own blocks join the books rather than being spliced in afterwards,
+		// so they are placed, priced and traced by the same code every other injected line
+		// goes through (frameworks/apply.ts).
+		books: [...input.lorebooks, ...frameworkBooks(input.frameworks, scanPath)],
 		// An at-depth entry needs a chat to sit inside. Without {{chatHistory}} in the enabled
 		// preset there is no such sequence, so those entries join the block instead of landing
 		// in a position nothing renders. Decided here, once, where the preset is already known.

@@ -471,6 +471,13 @@ class MemoryStore {
 		};
 		// One scan, through the same resolver as the prompt and the meters. No budget here: a
 		// memory template is its own request, priced against its own engine connection.
+		//
+		// **No framework books either**, unlike the prompt and the live meters. Those blocks
+		// are instructions addressed to the model about what to write in its NEXT reply, and a
+		// summariser is not writing one: telling it to open with a time marker would put a
+		// marker in the summary, which the day resolver would then read back as the story
+		// stating a date. The decoration below is still shared, because that rewrites text an
+		// author wrote and a summary must read it the way the prompt does.
 		// One derivation of the path, shared by the scan and the day resolution.
 		const scanPath = chatMessages.map((m) => m.content);
 		const lore = resolveLorebooks({

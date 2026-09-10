@@ -13,7 +13,7 @@
 import type { Message } from '$lib/types/chat';
 import { expandMacros, type MacroContext, type PromptCharacter } from '$lib/macros';
 import { resolveLorebooks } from '$lib/lorebook/engine';
-import { frameworkDecorator } from '$lib/frameworks/apply';
+import { frameworkBooks, frameworkDecorator } from '$lib/frameworks/apply';
 import { lorebookHistory, lorebookScanFields, type LorebookTrigger } from '$lib/lorebook/types';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -86,11 +86,19 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 	// One derivation of the path, shared by the scan and the day resolution.
 	const scanPath = chatMessages.map((m) => m.content);
 	const lore = resolveLorebooks({
-		books: lorebookStore.booksForChat({
-			cards: [...(characterData?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
-			chat: chatLorebookClaim(chatStore.activeChat),
-			muted: chatMutedLorebookClaim(chatStore.activeChat)
-		}),
+		// Same books the prompt beside this one builds, frameworks included: a meter that
+		// omitted the framework block would price a prompt the send does not send.
+		books: [
+			...lorebookStore.booksForChat({
+				cards: [...(characterData?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
+				chat: chatLorebookClaim(chatStore.activeChat),
+				muted: chatMutedLorebookClaim(chatStore.activeChat)
+			}),
+			...frameworkBooks(
+				chatStore.activeChat ? chatStore.featureState(chatStore.activeChat.id).frameworks : undefined,
+				scanPath
+			)
+		],
 		messages: scanPath,
 		fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
 		trigger: opts.lorebookTrigger,
