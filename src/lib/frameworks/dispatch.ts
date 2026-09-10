@@ -66,6 +66,13 @@ function resolveOne(
 		return { replacement: '', record: { ...base, status: 'suppressed' } };
 	}
 
+	// A framework that injects a block but claims no marker: it exists, and it has nothing to
+	// say about this. `noOutput` is the honest record, and it keeps `unknownFramework` meaning
+	// what it says, which is that nobody claims the id at all.
+	if (!framework.compute) {
+		return { replacement: '', record: { ...base, status: 'noOutput' } };
+	}
+
 	const out = framework.compute({
 		key,
 		subject: marker.subject as string,
