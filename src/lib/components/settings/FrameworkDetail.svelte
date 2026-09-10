@@ -3,21 +3,19 @@
 	 * One framework's detail view: what it does, whether this install carries it, and its own
 	 * tunables.
 	 *
-	 * **This is the one place per-framework settings UI is wired**, and it is a short `{#if}`
-	 * rather than something rendered off the registry. Engines can render their detail from a
-	 * list of prompt fields because every engine's settings ARE a list of prompt templates.
-	 * Frameworks' are not alike: one wants a template and a placement, the next wants a
-	 * threshold and a tone. A descriptor language general enough to express all of them would
-	 * be a worse thing to maintain than one line here per framework.
+	 * **It knows no framework by name.** An earlier version branched on the framework id, which
+	 * worked for exactly one framework and then stopped: a public file cannot carry a branch
+	 * for a framework whose name must not appear in a public file. Frameworks declare their
+	 * editable blocks instead and this renders them, so adding a tunable touches nothing here.
 	 *
-	 * A framework with no tunables needs no branch and says so, rather than rendering an empty
-	 * card that looks like something failed to load.
+	 * A framework with no blocks says so rather than rendering an empty card that looks like
+	 * something failed to load.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Toggle from '$lib/components/ui/Toggle.svelte';
-	import DateFrameworkSettings from './DateFrameworkSettings.svelte';
+	import FrameworkBlockEditor from './FrameworkBlockEditor.svelte';
 	import { FRAMEWORKS } from '$lib/frameworks/registry';
-	import { DATE_FRAMEWORK_ID } from '$lib/frameworks/date';
+	import { resolveBlocks } from '$lib/frameworks/blocks';
 	import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
@@ -26,6 +24,33 @@
 
 	const framework = $derived(FRAMEWORKS.find((f) => f.id === id));
 	const available = $derived(framework ? frameworkSettingsStore.isAvailable(framework.id) : false);
+
+	const blocks = $derived(
+		framework ? resolveBlocks(framework.blocks, frameworkSettingsStore.configFor(framework.id)) : []
+	);
+
+	/** True when a reminder line has nothing running to gather it, so its editor can say the
+	 *  text is being written and not sent rather than leaving that to be discovered. */
+	const gatherAbsent = $derived(
+		!FRAMEWORKS.some(
+			(f) =>
+				frameworkSettingsStore.isAvailable(f.id) && f.blocks?.some((b) => b.gathersReminders)
+		)
+	);
+
+	function patchBlock(slot: string, patch: Record<string, unknown>) {
+		if (!framework) return;
+		const config = frameworkSettingsStore.configFor(framework.id);
+		const current =
+			config && typeof config === 'object' && !Array.isArray(config)
+				? ((config as Record<string, unknown>).blocks ?? {})
+				: {};
+		const existing = (current as Record<string, unknown>)[slot];
+		const base = existing && typeof existing === 'object' && !Array.isArray(existing) ? existing : {};
+		frameworkSettingsStore.patchConfig(framework.id, {
+			blocks: { ...(current as Record<string, unknown>), [slot]: { ...base, ...patch } }
+		});
+	}
 
 	function nameOf(other: string): string {
 		return FRAMEWORKS.find((f) => f.id === other)?.name ?? other;
@@ -76,10 +101,16 @@
 			</p>
 		{/if}
 
-		{#if framework.id === DATE_FRAMEWORK_ID}
-			<DateFrameworkSettings />
-		{:else}
+		{#if blocks.length === 0}
 			<p class="note">This framework has nothing to tune.</p>
+		{:else}
+			{#each blocks as block (block.def.slot)}
+				<FrameworkBlockEditor
+					{block}
+					gatherAbsent={block.def.reminder ? gatherAbsent : false}
+					onpatch={(patch) => patchBlock(block.def.slot, patch)}
+				/>
+			{/each}
 		{/if}
 	{/if}
 </div>

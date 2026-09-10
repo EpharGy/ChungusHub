@@ -18,6 +18,7 @@
  * See architecture/frameworks.md.
  */
 import type { DayMode } from './day';
+import type { FrameworkBlockDef } from './blocks';
 
 
 /** What a framework is handed to compute one marker's line. */
@@ -62,6 +63,16 @@ export interface FrameworkInjectInput {
 	 * decorated, so a framework emitting `{{date}}` would ship those braces to the model.
 	 */
 	now: Date;
+	/**
+	 * Every running framework's reminder line, already filled, in registry order.
+	 *
+	 * Empty for all but the framework that gathers them. A reminders section is the one place
+	 * several frameworks write into at once, and nothing else in this contract can express
+	 * that: a block cannot be injected where it stands and also end up inside somebody else's
+	 * tags. Gathering them here means one entry with one placement, rather than a bracket, a
+	 * scattering of lines and an ordering convention holding them together.
+	 */
+	reminders: readonly string[];
 }
 
 /**
@@ -148,6 +159,24 @@ export interface FrameworkDef {
 	 * claiming an impossible combination is corrected rather than trusted.
 	 */
 	requires?: readonly string[];
+	/**
+	 * The editable blocks this framework contributes, declared rather than built.
+	 *
+	 * The base stores them, renders their editors and injects them, so a framework gains a
+	 * tunable without a line changing anywhere else, and the settings page never learns whose
+	 * settings it is drawing. See blocks.ts.
+	 */
+	blocks?: readonly FrameworkBlockDef[];
+	/**
+	 * Substitute this framework's own placeholders in a block's text.
+	 *
+	 * Needed because an injected block is the one text in a prompt that macro expansion never
+	 * reaches: entry content is expanded and THEN decorated. Absent means the text is sent as
+	 * written, which is right for a framework whose blocks are plain prose.
+	 *
+	 * Held to the same purity rule as everything else here: the clock arrives in the input.
+	 */
+	fill?(text: string, input: FrameworkInjectInput): string;
 	/**
 	 * Compute this marker's line, or null for "nothing to say right now".
 	 *
