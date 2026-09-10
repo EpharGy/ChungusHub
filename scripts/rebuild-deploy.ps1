@@ -81,12 +81,15 @@ $Topics = @(
     'feature/docker',
     'feature/corrections',
     'feature/random-roll-macros',
-    # The frameworks base. A framework is a deterministic calculation over story state
-    # that rewrites a marker inside a lorebook entry as that entry reaches the prompt.
-    # This branch holds the base and no framework at all, so with nothing registered a
-    # marker is recognised, claimed by nobody, and stripped before the prompt goes out.
+    # The frameworks base, and the date framework. A framework is a deterministic
+    # calculation over story state that rewrites a marker inside a lorebook entry as
+    # that entry reaches the prompt, or injects a block of its own.
     # The base may not know what any framework is about, which is what keeps it reusable
-    # and what makes it the half that could go upstream.
+    # and what makes it the half that could go upstream. Date is the one framework it
+    # carries anyway: the per-chat day mode is a BASE field, and nothing else can
+    # produce the markers that mode reads, so shipping the two apart would leave half a
+    # feature sitting here. Every other framework still registers itself on its own
+    # branch and needs no edit to the base.
     'feature/frameworks',
     # The floating window shell, and the features built on it. All are cut from main; the
     # consumers are cut from the shell, which makes them SIBLINGS rather than a stack.
