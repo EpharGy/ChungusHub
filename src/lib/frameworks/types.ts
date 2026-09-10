@@ -132,6 +132,10 @@ export interface FrameworkDef {
 	/** Also the marker's name: `@<id>[...]`. Lowercase, hyphen-separated. */
 	id: string;
 	name: string;
+	/** The framework's row icon, and the orb in its detail view. A closed union rather than a
+	 *  free string, so a name that does not draw is a build error rather than a blank circle
+	 *  nobody notices; the same trade `EngineDef` makes. */
+	icon: 'clock' | 'sliders';
 	/** One line for the framework's row: what it computes. */
 	summary: string;
 	/** The tooltip beside the name in the detail view: what it does and what it reads. */

@@ -17,6 +17,8 @@
 import { llmService } from '$lib/services/llm/provider';
 import { connectionStore } from '$lib/stores/connections.svelte';
 import { ENGINES } from '$lib/engines/registry';
+import { FRAMEWORKS } from '$lib/frameworks/registry';
+import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 import { backupStore } from '$lib/stores/backups.svelte';
 import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 import { APP_VERSION } from '$lib/version';
@@ -47,6 +49,7 @@ export type SettingsPage =
 	// App
 	| 'general'
 	| 'engines'
+	| 'frameworks'
 	| 'security'
 	| 'import'
 	| 'backups'
@@ -98,6 +101,13 @@ function connectionsSummary(): string {
 	return count > 1 ? `${model} · ${count} connections` : model;
 }
 
+/** The row preview: how many frameworks this install CARRIES, not how many any chat uses.
+ *  Availability is what this page controls, so it is what the row should count. */
+function frameworksSummary(): string {
+	const on = FRAMEWORKS.filter((f) => frameworkSettingsStore.isAvailable(f.id)).length;
+	return `${on} of ${FRAMEWORKS.length} on`;
+}
+
 function enginesSummary(): string {
 	const on = ENGINES.filter((e) => e.enabled.get()).length;
 	return `${on} of ${ENGINES.length} on`;
@@ -125,6 +135,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		rows: [
 			{ page: 'general', label: 'General', icon: 'settings' },
 			{ page: 'engines', label: 'Engines', icon: 'bolt', preview: enginesSummary },
+			{ page: 'frameworks', label: 'Frameworks', icon: 'sliders', preview: frameworksSummary },
 			{ page: 'security', label: 'Security', icon: 'shield' },
 			{ page: 'backups', label: 'Backups', icon: 'archive', preview: backupsSummary },
 			{ page: 'import', label: 'Import', icon: 'download' }
@@ -217,6 +228,8 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	'backup-history': 'backups',
 	// Engines
 	engines: 'engines',
+	// Frameworks
+	frameworks: 'frameworks',
 	// Workshop
 	'prompt-builder': 'prompt-builder',
 	'regex-rules': 'regex',
