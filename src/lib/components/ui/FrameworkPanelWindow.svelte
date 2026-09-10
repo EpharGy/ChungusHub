@@ -192,6 +192,22 @@
 	 *
 	 * A book left with no rows goes with them, rather than sitting there as an empty heading.
 	 */
+	/**
+	 * Whether the marker list is worth showing at all.
+	 *
+	 * A framework switched off should take ITS FURNITURE with it, not just its rows. The
+	 * filter tick, the empty state and the hint about writing a marker are all about markers,
+	 * and with no framework running that answers one they are controls for a thing that cannot
+	 * happen: "only entries that reached the prompt" offers to narrow a list that is empty for
+	 * a reason the tick has nothing to do with.
+	 *
+	 * Keyed on whether a running framework CLAIMS markers rather than on any framework in
+	 * particular, so a later one that only injects never brings this section back on its own.
+	 */
+	let showMarkers = $derived(
+		FRAMEWORKS.some((f) => f.compute && running.includes(f.id))
+	);
+
 	let visibleBooks = $derived(
 		view.books
 			.map((bk) => ({ ...bk, rows: bk.rows.filter((r) => running.includes(r.frameworkId)) }))
@@ -431,6 +447,7 @@
 				</div>
 				{/if}
 
+				{#if showMarkers}
 				<label class="fp-filter">
 					<input
 						type="checkbox"
@@ -496,6 +513,7 @@
 							{/if}
 						</section>
 					{/each}
+				{/if}
 				{/if}
 			{/if}
 		</div>
