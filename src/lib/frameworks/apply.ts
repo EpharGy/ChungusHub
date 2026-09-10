@@ -20,7 +20,8 @@ import { resolveDay, todaySerial } from './day';
 import { applyFrameworks } from './dispatch';
 import { FRAMEWORKS } from './registry';
 import { defaultFrameworkSettings, frameworkAvailable, type FrameworkSettings } from './settings';
-import type { FrameworkEntry } from './types';
+import { resolveBlocks } from './blocks';
+import type { FrameworkDef, FrameworkEntry, FrameworkInjectInput } from './types';
 
 /**
  * The story day this chat is on, from its mode.
@@ -130,18 +131,52 @@ export function frameworkBooks(
 	if (!state) return [];
 	const on = runningFrameworks(state, settings);
 	const day = dayFor(state, now);
+	const running = FRAMEWORKS.filter((f) => on.includes(f.id));
 
+	const inputFor = (id: string, reminders: readonly string[] = []) => ({
+		day,
+		mode: state.mode,
+		state: state.byFramework[id],
+		settings: settings.config[id],
+		now,
+		reminders
+	});
+
+	// Two passes, because a reminder is not injected where it stands: it is handed to whoever
+	// gathers reminders, and that framework cannot be asked for its entry until every line
+	// that belongs inside it has been collected.
+	const gathered: string[] = [];
+	for (const framework of running) {
+		for (const block of resolveBlocks(framework.blocks, settings.config[framework.id])) {
+			if (!block.def.reminder || !block.on) continue;
+			const text = fill(framework, block.text, inputFor(framework.id));
+			if (text.trim()) gathered.push(text.trim());
+		}
+	}
 	const entries: LorebookEntry[] = [];
-	for (const framework of FRAMEWORKS) {
-		if (!framework.inject || !on.includes(framework.id)) continue;
-		const blocks = framework.inject({
-			day,
-			mode: state.mode,
-			state: state.byFramework[framework.id],
-			settings: settings.config[framework.id],
-			now
-		});
-		for (const block of blocks) {
+	for (const framework of running) {
+		const input = inputFor(framework.id, framework.blocks?.some((b) => b.gathersReminders) ? gathered : []);
+		for (const block of resolveBlocks(framework.blocks, settings.config[framework.id])) {
+			if (block.def.reminder || !block.on) continue;
+			// A section with nothing to put in it is not injected: empty tags tell the model
+			// there is a system here and then say nothing about it.
+			if (block.def.gathersReminders && gathered.length === 0) continue;
+			const text = fill(framework, block.text, input);
+			if (!text.trim()) continue;
+			entries.push(
+				toEntry(framework.id, framework.name, {
+					slot: block.def.slot,
+					content: text,
+					gate: block.def.gate,
+					atDepth: block.atDepth,
+					depth: block.depth,
+					role: block.role,
+					order: block.def.placement?.order ?? 0
+				})
+			);
+		}
+		// Anything a framework builds itself rather than declaring.
+		for (const block of framework.inject?.(input) ?? []) {
 			if (!block.content.trim()) continue;
 			entries.push(toEntry(framework.id, framework.name, block));
 		}
@@ -164,6 +199,12 @@ export function frameworkBooks(
 			updatedAt: at
 		}
 	];
+}
+
+/** A block's text with the framework's own placeholders filled. Identity for a framework
+ *  whose blocks are plain prose. */
+function fill(framework: FrameworkDef, text: string, input: FrameworkInjectInput): string {
+	return framework.fill ? framework.fill(text, input) : text;
 }
 
 function toEntry(frameworkId: string, name: string, block: FrameworkEntry): LorebookEntry {
