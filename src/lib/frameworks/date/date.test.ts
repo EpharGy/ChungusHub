@@ -1,48 +1,66 @@
 /**
  * Date framework tests. Run with `bun test`.
  *
- * The load-bearing one is the round trip: this framework writes the marker the model is asked
- * to copy, and day.ts reads it back. Those two are a pair, and if they ever disagree the day
- * silently stops moving while every surface still looks correct.
+ * What matters here is that the block says what time it is and lands where it was told to.
+ * Nothing asserts that the marker is parseable, because nothing parses it: it is written for
+ * the reader, and the framework already knows the time it just wrote down.
  */
 
 import { describe, expect, test } from 'bun:test';
 
 import { resolveLorebooks } from '$lib/lorebook/engine';
 
-import { frameworkBooks, FRAMEWORK_BOOK_ID } from '../apply';
+import { frameworkBooks, frameworkEntryId } from '../apply';
 import { defaultChatFrameworkState } from '../chat-state';
-import { resolveDay, todaySerial } from '../day';
-import { applyFrameworks } from '../dispatch';
 import { FRAMEWORKS } from '../registry';
+import { defaultFrameworkSettings, type FrameworkSettings } from '../settings';
+import { applyFrameworks } from '../dispatch';
 import {
 	DATE_FRAMEWORK,
 	DATE_FRAMEWORK_ID,
-	dateInstructions,
-	defaultDateFrameworkState,
-	normalizeDateFrameworkState,
+	DATE_REQUIRED_PLACEHOLDERS,
+	DEFAULT_DATE_INSTRUCTIONS,
+	defaultDateSettings,
+	fillDateTemplate,
+	normalizeDateChatState,
+	normalizeDateSettings,
 	renderTimeMarker,
 	type MarkerShape
 } from './index';
 
-/** A pinned clock, so nothing here depends on when it runs. 6:02 PM, Sat 10 Oct 2026. */
+/** A pinned clock: 6:02 PM, Saturday 10 October 2026. */
 const NOW = new Date(2026, 9, 10, 18, 2);
 
-function inject(over: { mode?: 'manual' | 'marker'; shape?: MarkerShape } = {}) {
-	return dateInstructions({
-		day: 1,
-		mode: over.mode ?? 'marker',
-		state: over.shape ? { shape: over.shape } : undefined,
-		now: NOW
-	});
+/** An install with Date available, which is what every injection case here assumes. */
+function available(config: Record<string, unknown> = {}): FrameworkSettings {
+	return { ...defaultFrameworkSettings(), enabled: { [DATE_FRAMEWORK_ID]: true }, config };
 }
 
-function chatState(over: Partial<ReturnType<typeof defaultChatFrameworkState>> = {}) {
-	return { ...defaultChatFrameworkState(), ...over };
+/** A chat that has opted in and is running on real time. */
+function realTimeChat(over: Partial<ReturnType<typeof defaultChatFrameworkState>> = {}) {
+	return {
+		...defaultChatFrameworkState(),
+		enabled: [DATE_FRAMEWORK_ID],
+		mode: 'marker' as const,
+		...over
+	};
 }
 
-describe('what the marker looks like', () => {
-	test('the visible shape is the one markdown draws as written', () => {
+function inject(
+	settings: FrameworkSettings = available(),
+	state = realTimeChat()
+): ReturnType<typeof frameworkBooks> {
+	return frameworkBooks(state, settings, NOW);
+}
+
+/** The one entry the date framework contributes, through the real builder. */
+function block(settings?: FrameworkSettings, state?: ReturnType<typeof realTimeChat>) {
+	const [book] = inject(settings, state);
+	return book?.entries[0];
+}
+
+describe('the marker', () => {
+	test('the visible shape is what markdown draws as written', () => {
 		expect(renderTimeMarker(NOW, 'visible')).toBe('<Time: 6:02 PM, Saturday October 10, 2026>');
 	});
 
@@ -50,100 +68,140 @@ describe('what the marker looks like', () => {
 		expect(renderTimeMarker(NOW, 'hidden')).toBe('<!-- Time: 6:02 PM, Saturday October 10, 2026 -->');
 	});
 
-	test('the two carry an identical body, which is what lets one parser read both', () => {
+	test('the two carry an identical body, so the choice is purely cosmetic', () => {
 		const visible = renderTimeMarker(NOW, 'visible');
-		const hidden = renderTimeMarker(NOW, 'hidden');
-		expect(hidden).toBe(`<!-- ${visible.slice(1, -1)} -->`);
-	});
-
-	test('the month is written by NAME, because the parser reads no other form', () => {
-		// day.ts's ISO branch is anchored and cannot match inside a marker. A digit month here
-		// would produce a marker that parses to nothing and a day that silently stops moving.
-		expect(renderTimeMarker(NOW, 'visible')).toContain('October');
-		expect(renderTimeMarker(NOW, 'visible')).not.toContain('2026-10');
+		expect(renderTimeMarker(NOW, 'hidden')).toBe(`<!-- ${visible.slice(1, -1)} -->`);
 	});
 });
 
-describe('the round trip against the day resolver', () => {
-	// The coupling this framework exists to keep. What it writes, day.ts must read.
-	for (const shape of ['visible', 'hidden'] as const) {
-		test(`a ${shape} marker resolves back to the day it was written on`, () => {
-			const marker = renderTimeMarker(NOW, shape);
-			const out = resolveDay({ messages: [marker], mode: 'marker', manual: 1, today: 0 });
-			expect(out).toMatchObject({ day: todaySerial(NOW), source: 'time-marker' });
-		});
-	}
-
-	test('the marker inside the instruction block parses too, not just a bare one', () => {
-		// The block is prose around a marker, and prose is where a parser goes wrong.
-		const block = inject() as string;
-		const out = resolveDay({ messages: [block], mode: 'marker', manual: 1, today: 0 });
-		expect(out.day).toBe(todaySerial(NOW));
+describe('the template', () => {
+	test('the placeholders are substituted, because macro expansion never reaches this text', () => {
+		// Entry content is expanded and THEN decorated, so a framework emitting {{date}} would
+		// ship those braces to the model. This framework fills its own.
+		const filled = fillDateTemplate('{{time}} / {{weekday}} / {{date}} / {{marker}}', NOW, 'visible');
+		expect(filled).toBe(
+			'6:02 PM / Saturday / October 10, 2026 / <Time: 6:02 PM, Saturday October 10, 2026>'
+		);
 	});
 
-	test('it holds across a run of days, not just the one the suite was written on', () => {
-		for (let offset = 0; offset < 400; offset += 7) {
-			const at = new Date(2026, 0, 1 + offset, 9, 30);
-			const marker = renderTimeMarker(at, 'visible');
-			const out = resolveDay({ messages: [marker], mode: 'marker', manual: 1, today: 0 });
-			expect(out.day).toBe(todaySerial(at));
+	test('an unknown macro survives as written rather than becoming an empty string', () => {
+		// Blanking it would hide the mistake; leaving it lets the reader see what they typed.
+		expect(fillDateTemplate('{{char}} at {{time}}', NOW, 'visible')).toBe('{{char}} at 6:02 PM');
+	});
+
+	test('the marker follows the chat shape, so the model is asked for what the reader wants', () => {
+		const hidden = realTimeChat({ byFramework: { [DATE_FRAMEWORK_ID]: { shape: 'hidden' } } });
+		expect(block(available(), hidden)?.content).toContain('<!-- Time: 6:02 PM');
+		expect(block()?.content).toContain('<Time: 6:02 PM');
+	});
+
+	test('the shipped default says what time it is, which is the whole job', () => {
+		for (const placeholder of DATE_REQUIRED_PLACEHOLDERS) {
+			expect(DEFAULT_DATE_INSTRUCTIONS).toContain(placeholder);
 		}
 	});
-});
 
-describe('when it says nothing', () => {
-	test('manual mode injects nothing at all', () => {
-		// A reader driving the day with /day has not asked to be told the real date, and
-		// would be actively misled by one.
-		expect(inject({ mode: 'manual' })).toBeNull();
-	});
-
-	test('marker mode injects a block', () => {
-		expect(inject({ mode: 'marker' })).toContain('6:02 PM');
+	test('the shipped default carries the gap rule, which is what it is actually for', () => {
+		expect(DEFAULT_DATE_INSTRUCTIONS).toContain('30 minutes');
+		expect(DEFAULT_DATE_INSTRUCTIONS).toContain('8 hours');
 	});
 });
 
-describe('the block itself', () => {
-	test('states the current time and asks for the same shape back', () => {
-		const block = inject({ shape: 'visible' }) as string;
-		expect(block).toContain(renderTimeMarker(NOW, 'visible'));
-		expect(block).toContain('<Time: h:mm AM/PM, Weekday Month D, YYYY>');
+describe('the app-wide settings', () => {
+	test('an absent blob reads as the defaults', () => {
+		expect(normalizeDateSettings(undefined)).toEqual(defaultDateSettings());
+		expect(normalizeDateSettings('nonsense')).toEqual(defaultDateSettings());
+		expect(normalizeDateSettings([])).toEqual(defaultDateSettings());
 	});
 
-	test('the example follows the shape setting, or the model is told the wrong thing', () => {
-		const block = inject({ shape: 'hidden' }) as string;
-		expect(block).toContain('<!-- Time: h:mm AM/PM, Weekday Month D, YYYY -->');
-		expect(block).not.toContain('<Time: h:mm');
+	test('an empty template reads as unset, not as "inject nothing"', () => {
+		// A reader who wants nothing injected turns the framework off. That control says so;
+		// an empty box does not, and would look identical to a save that went wrong.
+		expect(normalizeDateSettings({ instructions: '   ' }).instructions).toBe(DEFAULT_DATE_INSTRUCTIONS);
 	});
 
-	test('it says what to do when story time has moved, which a clock cannot know', () => {
-		const block = inject() as string;
-		expect(block.toLowerCase()).toContain('gap');
+	test('a stored template comes back verbatim', () => {
+		expect(normalizeDateSettings({ instructions: 'mine' }).instructions).toBe('mine');
 	});
 
-	test('the same input twice gives the same block, which the meter and the send rely on', () => {
-		expect(inject()).toBe(inject());
+	test('an unusable role or depth degrades rather than throwing', () => {
+		expect(normalizeDateSettings({ role: 'narrator' }).role).toBe('system');
+		expect(normalizeDateSettings({ depth: -5 }).depth).toBe(0);
+		expect(normalizeDateSettings({ depth: 'deep' }).depth).toBe(defaultDateSettings().depth);
 	});
 });
 
-describe('the stored slice', () => {
+describe('the per-chat slice', () => {
 	test('a chat that has never been asked reads as visible', () => {
-		expect(defaultDateFrameworkState()).toEqual({ shape: 'visible' });
-		expect(normalizeDateFrameworkState(undefined)).toEqual({ shape: 'visible' });
+		expect(normalizeDateChatState(undefined)).toEqual({ shape: 'visible' });
 	});
 
 	test('anything unusable degrades rather than throwing', () => {
 		for (const raw of [null, 'hidden', [], 7, { shape: 'sideways' }]) {
-			expect(normalizeDateFrameworkState(raw)).toEqual({ shape: 'visible' });
+			expect(normalizeDateChatState(raw)).toEqual({ shape: 'visible' });
 		}
 	});
 
 	test('a stored shape comes back', () => {
-		expect(normalizeDateFrameworkState({ shape: 'hidden' })).toEqual({ shape: 'hidden' });
+		expect(normalizeDateChatState({ shape: 'hidden' })).toEqual({ shape: 'hidden' });
 	});
 });
 
-describe('the framework claims no marker', () => {
+describe('when it says nothing', () => {
+	test('manual mode injects nothing', () => {
+		// A reader driving the day by hand has not asked to be told the real date.
+		expect(inject(available(), realTimeChat({ mode: 'manual' }))).toEqual([]);
+	});
+
+	test('a chat that has not opted in gets nothing, even with Date available', () => {
+		expect(inject(available(), realTimeChat({ enabled: [] }))).toEqual([]);
+	});
+
+	test('a chat that opted in gets nothing while the install has Date off', () => {
+		// Two switches, and the install one is the outer bound.
+		expect(inject(defaultFrameworkSettings())).toEqual([]);
+	});
+
+	test('a surface with no chat gets nothing rather than assuming a story', () => {
+		expect(frameworkBooks(undefined, available(), NOW)).toEqual([]);
+	});
+});
+
+describe('where the block lands', () => {
+	test('the default is hard against the generation point, as a system turn', () => {
+		// An instruction about what to write in THIS reply is worth nothing four turns up.
+		const entry = block();
+		expect(entry?.depth).toBe(0);
+		expect(entry?.role).toBe(0);
+		expect(entry?.constant).toBe(true);
+	});
+
+	test('placement follows the app-wide setting', () => {
+		const entry = block(available({ [DATE_FRAMEWORK_ID]: { depth: 3, role: 'user' } }));
+		expect(entry?.depth).toBe(3);
+		expect(entry?.role).toBe(1);
+	});
+
+	test('the block position joins the lorebook block instead of the chat', () => {
+		const entry = block(available({ [DATE_FRAMEWORK_ID]: { atDepth: false } }));
+		expect(entry?.position).toBeUndefined();
+	});
+
+	test('the entry id is stable across runs, so a trace row names its author', () => {
+		expect(block()?.id).toBe(frameworkEntryId(DATE_FRAMEWORK_ID, 'instructions'));
+		expect(block()?.id).toBe(inject()[0].entries[0].id);
+	});
+
+	test('the content is gated in a tag named for the framework', () => {
+		// Generated rather than typed into the template: a reader editing instructions should
+		// not have to remember to close a tag, and a mismatched pair is worse than none.
+		const content = block()?.content ?? '';
+		expect(content.startsWith('<Date>\n')).toBe(true);
+		expect(content.endsWith('\n</Date>')).toBe(true);
+	});
+});
+
+describe('the framework itself', () => {
 	test('it is registered by default, unlike every other framework', () => {
 		expect(FRAMEWORKS.map((f) => f.id)).toContain(DATE_FRAMEWORK_ID);
 	});
@@ -152,10 +210,12 @@ describe('the framework claims no marker', () => {
 		expect(DATE_FRAMEWORK.compute).toBeUndefined();
 	});
 
+	test('its name is one word, because the XML gate is named for it', () => {
+		expect(DATE_FRAMEWORK.name).not.toContain(' ');
+	});
+
 	test('a marker addressed to it reads as noOutput, not as an unknown framework', () => {
-		// The framework exists and simply has nothing to say. `unknownFramework` would send
-		// someone hunting for a misspelling that is not there.
-		const out = applyFrameworks('@date[anything]', {
+		const out = applyFrameworks(`@${DATE_FRAMEWORK_ID}[anything]`, {
 			frameworks: FRAMEWORKS,
 			disabled: [],
 			day: 1,
@@ -167,48 +227,12 @@ describe('the framework claims no marker', () => {
 	});
 });
 
-describe('how the block reaches the prompt', () => {
-	test('manual mode contributes no book, so nothing empty rides the trace', () => {
-		expect(frameworkBooks(chatState({ mode: 'manual' }), [], NOW)).toEqual([]);
-	});
-
-	test('a surface with no chat contributes nothing either', () => {
-		expect(frameworkBooks(undefined, [], NOW)).toEqual([]);
-	});
-
-	test('marker mode contributes one constant entry, addressed to the model', () => {
-		const [book] = frameworkBooks(chatState({ mode: 'marker' }), [], NOW);
-		expect(book.id).toBe(FRAMEWORK_BOOK_ID);
-		expect(book.entries).toHaveLength(1);
-		// Constant: it is addressed to the model, so there is nothing for a key to match on.
-		expect(book.entries[0].constant).toBe(true);
-		expect(book.entries[0].key).toEqual([]);
-	});
-
-	test('the entry id is stable across runs, so a trace can be read back to its author', () => {
-		const first = frameworkBooks(chatState({ mode: 'marker' }), [], NOW)[0];
-		const second = frameworkBooks(chatState({ mode: 'marker' }), [], NOW)[0];
-		expect(first.entries[0].id).toBe(second.entries[0].id);
-		expect(first.entries[0].id).toBe(`framework:${DATE_FRAMEWORK_ID}`);
-	});
-
-	test('it lands at depth zero: an instruction about THIS reply is worth nothing four turns up', () => {
-		const [book] = frameworkBooks(chatState({ mode: 'marker' }), [], NOW);
-		expect(book.entries[0].depth).toBe(0);
-	});
-
-	test('the shape setting rides through from the chat slice', () => {
-		const state = chatState({ mode: 'marker', byFramework: { date: { shape: 'hidden' } } });
-		const [book] = frameworkBooks(state, [], NOW);
-		expect(book.entries[0].content).toContain('<!-- Time: 6:02 PM');
-	});
-
-	test('the block actually comes out of the lorebook resolver', () => {
+describe('reaching the prompt through the lorebook pipeline', () => {
+	test('it comes out placed at its depth', () => {
 		// Through the real engine, because riding that pipeline is the whole point: placed,
 		// priced and traced like any other injected line rather than spliced in beside it.
-		const books = frameworkBooks(chatState({ mode: 'marker' }), [], NOW);
 		const out = resolveLorebooks({
-			books,
+			books: inject(),
 			messages: [],
 			decorate: (_entry, text) => text,
 			placeAtDepth: true
@@ -219,11 +243,25 @@ describe('how the block reaches the prompt', () => {
 	});
 
 	test('with no chat history to splice into, it joins the block rather than vanishing', () => {
-		// placeAtDepth false is a surface that cannot splice turns. An at-depth entry has to
-		// fall back to the block there, or it lands in a position nothing renders.
-		const books = frameworkBooks(chatState({ mode: 'marker' }), [], NOW);
-		const out = resolveLorebooks({ books, messages: [], decorate: (_e, t) => t });
+		const out = resolveLorebooks({ books: inject(), messages: [], decorate: (_e, t) => t });
 		expect(out.placed).toHaveLength(0);
 		expect(out.text).toContain('6:02 PM, Saturday October 10, 2026');
 	});
+
+	test('the same inputs twice give the same text, which the meter and the send rely on', () => {
+		const once = resolveLorebooks({ books: inject(), messages: [], decorate: (_e, t) => t });
+		const twice = resolveLorebooks({ books: inject(), messages: [], decorate: (_e, t) => t });
+		expect(once.text).toBe(twice.text);
+	});
+});
+
+describe('the shapes a reader can pick', () => {
+	for (const shape of ['visible', 'hidden'] as const) {
+		test(`${shape} produces a marker inside the injected block`, () => {
+			const state = realTimeChat({ byFramework: { [DATE_FRAMEWORK_ID]: { shape } } });
+			expect(block(available(), state)?.content).toContain(
+				renderTimeMarker(NOW, shape as MarkerShape)
+			);
+		});
+	}
 });
