@@ -17,6 +17,8 @@
  *
  * See architecture/frameworks.md.
  */
+import type { DayMode } from './day';
+
 
 /** What a framework is handed to compute one marker's line. */
 export interface FrameworkComputeInput {
@@ -41,12 +43,37 @@ export interface FrameworkComputeInput {
 	state: unknown;
 }
 
+/** What a framework is handed to write its own block into the prompt. */
+export interface FrameworkInjectInput {
+	/** The story day, the same number every `compute` on this assembly sees. */
+	day: number;
+	/** How the chat decides its day. A framework asking the model for something may want
+	 *  nothing at all under one mode: the date framework says nothing in `manual`. */
+	mode: DayMode;
+	/** This framework's own slice of the chat's state, exactly as stored. */
+	state: unknown;
+	/**
+	 * The wall clock, handed in rather than read, so this stays as pure as `compute` and a
+	 * test can pin it. Present because an injected block is the one thing a framework
+	 * writes that macro expansion never reaches: entry content is expanded and THEN
+	 * decorated, so a framework emitting `{{date}}` would ship those braces to the model.
+	 */
+	now: Date;
+}
+
 /**
- * One framework's identity and its computation.
+ * One framework's identity and what it contributes.
  *
- * Pure data plus one function, the shape `EngineDef` uses for the same reason: a settings
+ * Pure data plus its functions, the shape `EngineDef` uses for the same reason: a settings
  * page can be rendered from the list alone, and no per-framework wiring lives anywhere
  * else. Unlike an engine, a framework has no prompt template and makes no model call.
+ *
+ * **A framework may answer markers, inject a block, or both**, and the two are separate
+ * jobs rather than a required one and an optional extra. A tracker answers markers and
+ * injects nothing: it decorates text an author already wrote. The date framework injects
+ * and answers no marker: what it contributes is an instruction, addressed to the model,
+ * that belongs to no character. A framework with neither is a row in a settings page and
+ * nothing else, which is not an error but is almost certainly a mistake.
  */
 export interface FrameworkDef {
 	/** Also the marker's name: `@<id>[...]`. Lowercase, hyphen-separated. */
@@ -59,12 +86,29 @@ export interface FrameworkDef {
 	/**
 	 * Compute this marker's line, or null for "nothing to say right now".
 	 *
+	 * Absent when the framework claims no marker. A marker addressed to one that does is
+	 * recorded as `noOutput`: the framework exists and simply had nothing to say, which is
+	 * the truth and reads very differently from `unknownFramework`.
+	 *
 	 * MUST be pure and deterministic: the same input has to produce the same string every
 	 * time, because prompt assembly runs at least twice (the token meter, then the send)
 	 * and the two must agree exactly. Nothing here may read a clock, call a random number
 	 * generator, or touch a store.
 	 */
-	compute(input: FrameworkComputeInput): string | null;
+	compute?(input: FrameworkComputeInput): string | null;
+
+	/**
+	 * The block this framework contributes to the prompt, or null for "nothing to add".
+	 *
+	 * Held to the same purity rule as `compute`, and for the same reason: the meter and the
+	 * send both build it and the two must agree byte for byte. The clock arrives in the
+	 * input rather than being read here.
+	 *
+	 * What comes back is entry CONTENT. It rides the lorebook's own pipeline from there, so
+	 * it is placed, priced against the shared lore budget and traced exactly as an entry is,
+	 * rather than being spliced in somewhere nothing can account for it.
+	 */
+	inject?(input: FrameworkInjectInput): string | null;
 }
 
 /** Why a marker did or did not put text in the prompt. */
