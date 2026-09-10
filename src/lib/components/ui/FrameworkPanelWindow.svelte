@@ -182,6 +182,22 @@
 
 	let dateOn = $derived(running.includes(DATE_FRAMEWORK_ID));
 
+	/**
+	 * The books, with rows for frameworks this chat has switched off removed.
+	 *
+	 * A marker for a framework nobody asked for is not a finding. Listing it says "here is
+	 * something not happening", which is the same shape as a real problem and buries the real
+	 * problems underneath it: a shelf of character entries would fill this panel with rows
+	 * about a tracker the reader turned off on purpose.
+	 *
+	 * A book left with no rows goes with them, rather than sitting there as an empty heading.
+	 */
+	let visibleBooks = $derived(
+		view.books
+			.map((bk) => ({ ...bk, rows: bk.rows.filter((r) => running.includes(r.frameworkId)) }))
+			.filter((bk) => bk.rows.length > 0)
+	);
+
 	async function patchChat(patch: Partial<typeof frameworkState>) {
 		if (!chat || !frameworkState) return;
 		await chatStore.updateChatFeatureState(chat.id, { frameworks: { ...frameworkState, ...patch } });
@@ -294,7 +310,7 @@
 	hideLabel="Hide the window"
 >
 	{#snippet header()}
-		<span class="fp-title"><Icon name="clock" class="w-4 h-4" /> Frameworks</span>
+		<span class="fp-title"><Icon name="sliders" class="w-4 h-4" /> Frameworks</span>
 	{/snippet}
 
 	{#snippet children()}
@@ -303,67 +319,87 @@
 				<p class="fp-empty">Open a chat to see what its frameworks are doing.</p>
 			{:else}
 				<section class="fp-uses">
-					<h4 class="fp-h">In this chat</h4>
-					{#each chatFrameworks as row (row.def.id)}
-						<label class="fp-use" class:is-unavailable={!row.available}>
-							<input
-								type="checkbox"
-								checked={row.on}
-								disabled={!row.available}
-								onchange={(e) => toggleFramework(row.def.id, e.currentTarget.checked)}
-							/>
-							<span class="fp-use-text">
-								<span class="fp-use-name">{row.def.name}</span>
-								<span class="fp-dim">
-									{row.available ? row.def.summary : 'Off for the whole app, in Settings > Frameworks'}
+					<button
+						type="button"
+						class="fp-h fp-fold"
+						aria-expanded={frameworkPanelStore.usesOpen}
+						onclick={() => frameworkPanelStore.toggleUses()}
+					>
+						<Icon
+							name={frameworkPanelStore.usesOpen ? 'chevronDown' : 'chevronRight'}
+							class="w-3 h-3"
+							strokeWidth={2}
+						/>
+						In this chat
+					</button>
+					{#if frameworkPanelStore.usesOpen}
+						{#each chatFrameworks as row (row.def.id)}
+							<label class="fp-use" class:is-unavailable={!row.available}>
+								<input
+									type="checkbox"
+									checked={row.on}
+									disabled={!row.available}
+									onchange={(e) => toggleFramework(row.def.id, e.currentTarget.checked)}
+								/>
+								<span class="fp-use-text">
+									<span class="fp-use-name">{row.def.name}</span>
+									<span class="fp-dim">
+										{row.available
+											? row.def.summary
+											: 'Off for the whole app, in Settings > Frameworks'}
+									</span>
 								</span>
-							</span>
-						</label>
-					{/each}
+							</label>
+
+							<!-- A framework's own per-chat controls sit UNDER its tick, so folding the
+							     section away takes them with it and an unticked framework shows none of
+							     the settings it is not using. -->
+							{#if row.def.id === DATE_FRAMEWORK_ID && row.on}
+								<div class="fp-sub">
+									<span class="fp-dim">
+										Every framework in this chat counts its days from this, not just Date.
+									</span>
+									<div class="fp-seg">
+										<button
+											class:is-on={frameworkState?.mode === 'marker'}
+											onclick={() => patchChat({ mode: 'marker' })}>Real time</button
+										>
+										<button
+											class:is-on={frameworkState?.mode !== 'marker'}
+											onclick={() => patchChat({ mode: 'manual' })}>Manual</button
+										>
+									</div>
+									{#if frameworkState?.mode === 'marker'}
+										<span class="fp-dim">
+											The day follows the calendar. The model is told the real time each turn
+											and asked to write it back, purely so you can see where the story thinks
+											it is: nothing reads that marker.
+										</span>
+										<span class="fp-dim">Date's time marker, in the transcript:</span>
+										<div class="fp-seg">
+											<button
+												class:is-on={dateState.shape === 'visible'}
+												onclick={() => setShape('visible')}>Marker visible</button
+											>
+											<button
+												class:is-on={dateState.shape === 'hidden'}
+												onclick={() => setShape('hidden')}>Hidden</button
+											>
+										</div>
+									{:else}
+										<span class="fp-dim">
+											The day moves only when you move it, with the arrows below or
+											<code>/day 42</code>, <code>/day +1</code>, <code>/day -1</code>. Nothing
+											reads the clock and the model is told no date.
+										</span>
+									{/if}
+								</div>
+							{/if}
+						{/each}
+					{/if}
 				</section>
 
 				{#if dateOn}
-					<section class="fp-uses">
-						<h4 class="fp-h">Story day</h4>
-						<span class="fp-dim">
-							Every framework in this chat counts from this, not just Date.
-						</span>
-						<div class="fp-seg">
-							<button
-								class:is-on={frameworkState?.mode === 'marker'}
-								onclick={() => patchChat({ mode: 'marker' })}>Real time</button
-							>
-							<button
-								class:is-on={frameworkState?.mode !== 'marker'}
-								onclick={() => patchChat({ mode: 'manual' })}>Manual</button
-							>
-						</div>
-						{#if frameworkState?.mode === 'marker'}
-							<span class="fp-dim">
-								The day follows the calendar. The model is told the real time each turn and asked
-								to write it back, purely so you can see where the story thinks it is: nothing
-								reads that marker.
-							</span>
-							<span class="fp-dim">Date's time marker, in the transcript:</span>
-							<div class="fp-seg">
-								<button
-									class:is-on={dateState.shape === 'visible'}
-									onclick={() => setShape('visible')}>Marker visible</button
-								>
-								<button
-									class:is-on={dateState.shape === 'hidden'}
-									onclick={() => setShape('hidden')}>Hidden</button
-								>
-							</div>
-						{:else}
-							<span class="fp-dim">
-								The day is yours to set, below, and it moves only when you move it. Nothing reads
-								the clock and the model is told no date.
-							</span>
-						{/if}
-					</section>
-				{/if}
-
 				<div class="fp-day">
 					<div class="fp-day-said">
 						{#if storyDecides}
@@ -393,6 +429,7 @@
 						</div>
 					{/if}
 				</div>
+				{/if}
 
 				<label class="fp-filter">
 					<input
@@ -403,7 +440,7 @@
 					Only entries that reached the prompt
 				</label>
 
-				{#if view.books.length === 0}
+				{#if visibleBooks.length === 0}
 					<p class="fp-empty">
 						{#if frameworkPanelStore.onlyFired}
 							No markers in the entries that reached the prompt. Untick above to see every marker
@@ -423,7 +460,7 @@
 							an entry fired is the lorebook's own trace to answer.
 						{/if}
 					</p>
-					{#each view.books as bk (bk.bookId)}
+					{#each visibleBooks as bk (bk.bookId)}
 						{@const folded = frameworkPanelStore.isCollapsed(bk.bookId)}
 						<section class="fp-book">
 							<button class="fp-bookhead" onclick={() => toggleBook(bk)} aria-expanded={!folded}>
@@ -466,8 +503,13 @@
 </FloatingWindow>
 
 <style>
+	/* `flex: 1` is what puts the layer's hide control at the FAR right rather than tucked in
+	   beside the title: the header is a flex row, and a title that does not grow leaves the
+	   control sitting wherever the text happens to end. Every other panel's title grows. */
 	.fp-title {
-		display: inline-flex;
+		flex: 1;
+		min-width: 0;
+		display: flex;
 		align-items: center;
 		gap: 0.4rem;
 		font-weight: 600;
@@ -527,6 +569,33 @@
 		font-family: var(--font-ui);
 		font-size: 0.75rem;
 		color: var(--color-text-primary);
+	}
+
+	.fp-fold {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.fp-fold:hover {
+		color: var(--color-text-secondary);
+	}
+
+	/* A framework's own controls, indented under its tick so the association is structural
+	   rather than a matter of reading order. */
+	.fp-sub {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 0.1rem 0 0.5rem 1.35rem;
+		padding-left: 0.6rem;
+		border-left: 2px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
 	}
 
 	.fp-seg {
