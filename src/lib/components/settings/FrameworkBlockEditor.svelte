@@ -38,11 +38,16 @@
 			<h4>{block.def.label}</h4>
 			<p class="hint">{block.def.hint}</p>
 		</div>
-		<Toggle
-			checked={block.on}
-			onchange={(v) => onpatch({ on: v })}
-			label="Send the {block.def.label.toLowerCase()}"
-		/>
+		{#if !block.def.alwaysOn}
+			<!-- A block that IS the framework has no switch: the framework's own already
+			     answers that question, and a second one leaves a state where the thing looks
+			     on and does nothing. -->
+			<Toggle
+				checked={block.on}
+				onchange={(v) => onpatch({ on: v })}
+				label="Send the {block.def.label.toLowerCase()}"
+			/>
+		{/if}
 	</div>
 
 	{#if block.on && gatherAbsent}
