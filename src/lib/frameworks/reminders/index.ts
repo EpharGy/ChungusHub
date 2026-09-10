@@ -51,6 +51,7 @@ export const REMINDERS_BLOCKS: readonly FrameworkBlockDef[] = [
 		// The template carries its own tags, so a generated gate would wrap tags in tags.
 		gate: false,
 		defaultOn: true,
+		alwaysOn: true,
 		gathersReminders: true,
 		// Depth 0 by default: a reminder four turns up is a reminder of nothing. Both the depth
 		// and the role are the reader's to move, because which position a given model actually
