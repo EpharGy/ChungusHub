@@ -42,6 +42,19 @@ describe('an untouched block', () => {
 	});
 });
 
+describe('a block that IS the framework', () => {
+	test('has no switch of its own, so a stored off is ignored', () => {
+		// Two switches for one decision is worse than one: it leaves a state where the thing
+		// looks on and does nothing.
+		const always: FrameworkBlockDef = { ...DEF, alwaysOn: true, defaultOn: false };
+		expect(resolveBlock(always, { on: false }).on).toBe(true);
+	});
+
+	test('an optional block still honours one', () => {
+		expect(resolveBlock({ ...DEF, defaultOn: true }, { on: false }).on).toBe(false);
+	});
+});
+
 describe('what a reader changed', () => {
 	test('a stored value wins over the declaration', () => {
 		const out = resolveBlock(DEF, { on: false, text: 'mine {{thing}}', atDepth: true, depth: 4 });

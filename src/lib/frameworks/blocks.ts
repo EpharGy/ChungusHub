@@ -50,8 +50,22 @@ export interface FrameworkBlockDef {
 	required?: readonly string[];
 	/** Wrap in an XML gate named for the framework. */
 	gate: boolean;
-	/** Whether a chat that has never touched this gets the block. */
+	/** Whether a chat that has never touched this gets the block. Ignored when
+	 *  {@link alwaysOn}. */
 	defaultOn: boolean;
+	/**
+	 * This block IS the framework, so it has no switch of its own.
+	 *
+	 * The framework's own switch already says whether it is sent, and a second one beside it
+	 * asks a question with no meaningful second answer: a Date framework whose instructions
+	 * are off is a Date framework that does nothing, which is what turning Date off is for.
+	 * Two switches for one decision is worse than one, because it leaves a state where the
+	 * thing looks on and does nothing.
+	 *
+	 * An OPTIONAL block keeps its switch. A reminder is the case: wanting a framework without
+	 * wanting it to also spend tokens nagging every turn is a real preference.
+	 */
+	alwaysOn?: boolean;
 	/**
 	 * A REMINDER line rather than a block of its own.
 	 *
@@ -150,7 +164,7 @@ export function resolveBlock(def: FrameworkBlockDef, stored: StoredBlock | undef
 	const text = stored?.text ?? def.defaultText;
 	return {
 		def,
-		on: stored?.on ?? def.defaultOn,
+		on: def.alwaysOn ? true : (stored?.on ?? def.defaultOn),
 		text,
 		atDepth: stored?.atDepth ?? place.atDepth,
 		depth: stored?.depth ?? place.depth,
