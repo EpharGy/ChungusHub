@@ -105,10 +105,17 @@ Do not stretch the previous scene across a long gap. Cut to the real time instea
 
 Write the scene the hour actually calls for. Late night is dim and slow and people are in nightwear or already asleep; early morning is groggy; mornings are routines and daylight; evenings wind down. A single reply covers a few minutes of story time, so do not race the clock forward within it.`;
 
-/** The reminder line, for the section a reminders framework gathers. One sentence: it is a
- *  nudge for a model that has read the instructions and drifted, not a second copy of them. */
+/**
+ * The reminder line, for the section a reminders framework gathers. One sentence: it is a
+ * nudge for a model that has read the instructions and drifted, not a second copy of them.
+ *
+ * The list marker is part of the TEXT rather than something the section adds on the way in.
+ * Gathered lines are joined verbatim, so formatting belongs to whoever wrote the line: a
+ * reminder that wants two lines, or no bullet, or a different one, can simply have it, and
+ * nothing has to be told what shape somebody else's line is.
+ */
 export const DEFAULT_DATE_REMINDER =
-	'The current real time is {{time}}, {{weekday}} {{date}}. This takes precedence over simply continuing from the last reply.';
+	'- The current real time is {{time}}, {{weekday}} {{date}}. This takes precedence over simply continuing from the last reply.';
 
 /**
  * One time marker, in the shape asked for.
@@ -153,7 +160,7 @@ export const DATE_BLOCKS: readonly FrameworkBlockDef[] = [
 	{
 		slot: 'reminder',
 		label: 'Reminder',
-		hint: 'One line in the Reminders section, for a model that has drifted. Needs the Reminders framework; without it nothing is sent.',
+		hint: 'One line in the Reminders section, for a model that has drifted. Sent exactly as written, list marker and all. Needs the Reminders framework; without it nothing is sent.',
 		defaultText: DEFAULT_DATE_REMINDER,
 		placeholders: DATE_PLACEHOLDERS,
 		gate: false,
