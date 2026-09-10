@@ -21,6 +21,7 @@ import { memoryStore } from '$lib/memory/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
+import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 import {
 	chatLorebookClaim,
 	chatMutedLorebookClaim,
@@ -177,7 +178,12 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 			: undefined,
 		// Read off the chat row that was just loaded, exactly as the meter reads it off the
 		// store's copy. Absent when there is no chat, which runs no framework at all.
-		frameworks: chat ? normalizeChatFeatureState(chat.featureState).frameworks : undefined
+		frameworks: chat
+			? {
+					state: normalizeChatFeatureState(chat.featureState).frameworks,
+					settings: frameworkSettingsStore.settings
+				}
+			: undefined
 	});
 
 	return { messages, target: promptTarget.target, lorebook, continuationSent, oneShotSteering };
