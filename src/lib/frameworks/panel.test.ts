@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { createEmptyLorebook, createEmptyLorebookEntry } from '$lib/lorebook/types';
 
 import { defaultChatFrameworkState } from './chat-state';
+import { todaySerial } from './day';
 import { panelView, ROW_STATUS, type PanelRow, type PanelView } from './panel';
 import type { FrameworkDef } from './types';
 
@@ -37,6 +38,16 @@ function rows(out: PanelView): PanelRow[] {
 	return out.books.flatMap((b) => b.rows);
 }
 
+/** The clock every marker-mode view here is measured against, pinned so the suite reads the
+ *  same whenever it runs. */
+const NOW = new Date(2026, 9, 10);
+const TODAY = todaySerial(NOW);
+
+/** A chat reading its day off the story rather than off the stored number. */
+function markerState(over: Partial<ReturnType<typeof defaultChatFrameworkState>> = {}) {
+	return { ...defaultChatFrameworkState(), mode: 'marker' as const, ...over };
+}
+
 function view(over: Partial<Parameters<typeof panelView>[0]> = {}) {
 	return panelView({
 		books: [book(['Vale', 'Red hair.\n@demo[Ada Vale]'])],
@@ -44,6 +55,7 @@ function view(over: Partial<Parameters<typeof panelView>[0]> = {}) {
 		disabled: [],
 		state: defaultChatFrameworkState(),
 		messages: [],
+		now: NOW,
 		...over
 	});
 }
@@ -108,7 +120,10 @@ describe('why nothing happened', () => {
 
 describe('the day', () => {
 	test('comes back with its source, so a reader can see which answered', () => {
-		expect(view({ messages: ['<Day 42>'] }).day).toMatchObject({ day: 42, source: 'day-marker', depth: 0 });
+		const dated = view({ state: markerState(), messages: ['<Time: 9:00 AM, October 31, 2026>'] });
+		expect(dated.day).toMatchObject({ source: 'time-marker', depth: 0 });
+		// Nothing dated, so the clock answered and no turn can be pointed at.
+		expect(view({ state: markerState() }).day).toEqual({ day: TODAY, source: 'clock' });
 	});
 
 	test('falls back to the stored one and says so', () => {
@@ -120,9 +135,10 @@ describe('the day', () => {
 		// If these could differ, the panel would be describing a prompt nobody sent.
 		let seen = -1;
 		const framework: FrameworkDef = { ...DEMO, compute: ({ day }) => `day ${(seen = day)}` };
-		const out = view({ frameworks: [framework], messages: ['<Day 42>'] });
+		const out = view({ state: markerState({ day: 42 }), frameworks: [framework] });
 		expect(seen).toBe(out.day.day);
-		expect(rows(out)[0].text).toBe('day 42');
+		// Marker mode, nothing dated: the clock answered, and the stored 42 is not it.
+		expect(rows(out)[0].text).toBe(`day ${TODAY}`);
 	});
 });
 
@@ -236,7 +252,12 @@ describe('only the entries that fired', () => {
 	test('the day is unaffected by the filter', () => {
 		// The day is a fact about the story, not about which entries fired.
 		const bk = twoEntries();
-		const filtered = view({ books: [bk], injectedEntryIds: new Set<string>(), messages: ['<Day 42>'] });
-		expect(filtered.day).toMatchObject({ day: 42, source: 'day-marker' });
+		const filtered = view({
+			books: [bk],
+			injectedEntryIds: new Set<string>(),
+			state: markerState(),
+			messages: ['<Time: 9:00 AM, October 31, 2026>']
+		});
+		expect(filtered.day).toMatchObject({ source: 'time-marker' });
 	});
 });
