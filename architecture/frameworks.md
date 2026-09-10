@@ -143,31 +143,67 @@ from the first turn and stores nothing.
 `compute` and `inject` are separate jobs rather than a required one and an optional extra, and
 a framework may have either or both:
 
-| | Answers `@id[...]` | Injects blocks |
+| | Answers `@id[...]` | Contributes blocks |
 |---|---|---|
-| a marker-driven tracker | yes | no |
-| date | no | yes |
+| a marker-driven tracker | yes | a reminder line |
+| date | no | instructions, and a reminder line |
+| reminders | no | the section the others land in |
 
 A tracker decorates text an author already wrote. The date framework contributes an
 **instruction addressed to the model**, which belongs to no lorebook entry and no character, so
 there is nothing for a marker to sit inside.
 
-### `inject` returns a LIST, and that is not generality for its own sake
+### Blocks are DECLARED, not built
 
-A single framework routinely wants two placements at once: its instructions wherever the reader
-filed them, and a one-line reminder down at the generation point where a long prompt cannot
-bury it. Those are different depths, roles and orders.
+A framework that writes into the prompt wants the same three things every time: a piece of text
+the reader can edit, a switch, and somewhere for it to land. So a framework declares its blocks
+([`blocks.ts`](../src/lib/frameworks/blocks.ts)) and the base stores them, renders their editors
+and injects them.
 
-It is also what lets a reminders framework exist without being a special case. Such a framework
-opens a section at a low order and closes it at a much later one; every other framework's
-reminder line picks an order in between and lands inside it. Nothing has to know about anything
-else, and ordering is the only coordination there is.
+That is not tidiness. The settings detail view used to branch on the framework id, which worked
+for exactly one framework and then stopped: **a public file cannot carry a branch for a
+framework whose name must not appear in a public file**, so anything on a private branch could
+never have tunables at all. Declared blocks mean the settings page draws any framework's
+settings without learning whose they are.
 
-Each entry says whether it wants an **XML gate**, generated from the framework's name rather
-than typed into a template: a reader editing instructions should not have to remember to close
-a tag, and a mismatched pair is worse than none. Per entry rather than per framework, because a
-reminder line is meant to sit inside somebody else's section and must not bring a second pair
-of tags with it.
+**Order is fixed by the declaration and is not the reader's to set.** Everything else about
+placement can be. Order is the only coordination frameworks have with each other, and a control
+for it is a control for putting a line somewhere it does not belong.
+
+`inject` survives for anything a framework builds itself rather than declaring. It returns a
+LIST, because a framework routinely wants two placements at once.
+
+### The reminders section
+
+One short block near the reply that every framework can put a line into. It exists because a
+long prompt buries things: instructions perfectly clear a hundred turns up still lose to
+whatever the model read most recently, and the fix is not more instructions, it is one line
+where the model is looking.
+
+**It gathers rather than being written into.** Every framework declares its own reminder line
+(`reminder: true`); the reminders framework declares the section (`gathersReminders: true`) and
+receives them already filled in `FrameworkInjectInput.reminders`.
+
+The alternative is how the same thing is done by hand in lorebook entries: an opening bracket
+at a low order, a closing bracket at a high one, and everyone else's lines ordered in between.
+That comes apart. One framework picking a bad order, or being switched off, leaves a section
+hanging open or a line loose in the prompt. One entry cannot come apart.
+
+Three absences are handled deliberately, because each has a wrong answer that looks fine in a
+prompt and therefore survives a long time:
+
+- **A reminder with nothing gathering it is dropped**, not injected bare. Outside its section a
+  lone line is noise rather than a reminder, and the settings editor says so rather than leaving
+  it to be discovered.
+- **A section with nothing gathered is not injected at all.** Empty tags announce a system and
+  then say nothing about it, which is worse than silence.
+- **Every framework's reminder is off by default, even when the section is on.** A reminder is
+  a cost paid every turn, and which systems a given model keeps forgetting is not something
+  anything here can guess.
+
+This is the one thing the base knows about a specific framework, and it is deliberate: a
+section several frameworks write into at once is not something the rest of this contract can
+express.
 
 ### They ride the lorebook's own pipeline
 
@@ -178,10 +214,15 @@ answers all three. A second channel beside it would answer them again, different
 second answer is the one that goes wrong: a block outside the lore budget is a block the meter
 does not count, and the meter and the send stop agreeing with nothing on screen saying so.
 
+It runs in **two passes**, because a reminder is not injected where it stands: the gathering
+framework cannot be asked for its entry until every line that belongs inside it exists.
+
 **Macro expansion never reaches an injected block.** Entry content is expanded and THEN
 decorated, so a framework emitting `{{date}}` would ship those braces to the model. That is why
-`FrameworkInjectInput` carries `now`, and why the date framework substitutes its own
-placeholders and documents that only those work.
+`FrameworkInjectInput` carries `now`, and why a framework fills its own placeholders through
+`fill` and declares which ones it understands. A framework whose `fill` returns empty is saying
+"nothing this time", and the base drops the block: that is how the date framework says nothing
+in manual mode.
 
 **The memory store deliberately injects no framework books**, unlike the prompt and the live
 meters. Those blocks tell the model what to write in its next reply, and a summariser is not
@@ -225,7 +266,7 @@ Its settings split by what kind of fact each one is:
 
 | Setting | Lives in | Why there |
 |---|---|---|
-| instructions, placement | `FrameworkSettings.config.date` (app-wide) | a template and a position are configuration |
+| instructions, reminder, placement | declared blocks, stored under `config.date.blocks` | a template and a position are configuration |
 | day mode | `ChatFrameworkState.mode` | the base's own resolver reads it |
 | marker shape | `byFramework.date` (per chat) | only this framework reads it |
 
@@ -321,16 +362,19 @@ Clamped in the normalizer rather than only at the input, because `getAllChats` i
 - [`chat-state.ts`](../src/lib/frameworks/chat-state.ts): the per-chat blob, its normalizer and caps, and `parseDayArg`.
 - [`registry.ts`](../src/lib/frameworks/registry.ts): every framework this build carries. Pure data, deliberately store-free (prompt assembly reads it).
 - [`apply.ts`](../src/lib/frameworks/apply.ts): the ONE place a chat's state becomes a `LorebookDecorator`, the ONE place it becomes injected books, and where the two switches are intersected.
+- [`blocks.ts`](../src/lib/frameworks/blocks.ts): what a framework declares about an editable block, and how a stored one resolves against it. Pure.
+- [`reminders/`](../src/lib/frameworks/reminders/index.ts): the section every other framework's reminder line is gathered into.
 - [`settings.ts`](../src/lib/frameworks/settings.ts): the app-wide shape and its normalizer. Pure; [`stores/frameworkSettings.svelte.ts`](../src/lib/stores/frameworkSettings.svelte.ts) persists it on the shared settings spine.
 - [`components/settings/FrameworksPage.svelte`](../src/lib/components/settings/FrameworksPage.svelte) and `FrameworkDetail.svelte`: the settings surface. `FrameworkDetail` is the ONE place per-framework settings UI is wired.
 - [`date/`](../src/lib/frameworks/date/index.ts): the date framework. The only one registered on this branch, because it is the counterpart to a base field.
-- Tests: [`frameworks.test.ts`](../src/lib/frameworks/frameworks.test.ts), which runs against a **fake** framework declared in the test, so the base is provable without a real one; [`day.test.ts`](../src/lib/frameworks/day.test.ts), [`settings.test.ts`](../src/lib/frameworks/settings.test.ts) and [`date/date.test.ts`](../src/lib/frameworks/date/date.test.ts); plus the seam's own cases in [`lorebook/engine.test.ts`](../src/lib/lorebook/engine.test.ts).
+- Tests: [`blocks.test.ts`](../src/lib/frameworks/blocks.test.ts), [`reminders/reminders.test.ts`](../src/lib/frameworks/reminders/reminders.test.ts), [`frameworks.test.ts`](../src/lib/frameworks/frameworks.test.ts), which runs against a **fake** framework declared in the test, so the base is provable without a real one; [`day.test.ts`](../src/lib/frameworks/day.test.ts), [`settings.test.ts`](../src/lib/frameworks/settings.test.ts) and [`date/date.test.ts`](../src/lib/frameworks/date/date.test.ts); plus the seam's own cases in [`lorebook/engine.test.ts`](../src/lib/lorebook/engine.test.ts).
 
 ## Before touching this
 
 - **The dispatcher and the parser stay pure.** No stores, no db, no Svelte, no clock, no randomness. The token meters and the real send both run them and must produce byte-identical output; `frameworks.test.ts` guards it. Run `bun test` after any change.
 - **A framework's `compute` and `inject` are held to the same rule.** Reading a clock or calling `Math.random` there makes the meter and the send disagree, and neither surface will look wrong. `inject` is handed `now` for exactly this reason: take the clock from the input, never from `new Date()`.
 - **A new framework is one entry in `FRAMEWORKS` and nothing else.** If it needs an edit anywhere in the base, the base is missing something and that is the change to make first. The date framework is the one exception, and only because it is the counterpart to `ChatFrameworkState.mode`, which is a base field.
+- **A tunable is a declared block wherever it can be**, not a bespoke settings component. The settings page renders declarations and knows no framework by name, which is what lets a framework that cannot be named in a public file have settings at all.
 - **A framework wanting per-chat state puts it under `byFramework[id]`**, never as a new field on `ChatFrameworkState`, and normalizes the inside of its own slice. The base guarantees only that a slice is a plain object or absent. The date framework's marker shape lives there; its `mode` does not, because the base's own resolver reads that one.
 - **Nothing parses what the model writes, and it should stay that way.** A marker in the transcript is for the reader. The moment something reads one back, the instruction text has to police its shape again, a model that forgets it starts mattering, and an invented date can move the day. All three were real and all three went away together.
 - **A framework's own settings are normalized by the framework**, both the per-chat slice and the app-wide config. The base guarantees only that each is a plain object or absent, so a framework that reads one without normalizing it is trusting a blob from another build.
