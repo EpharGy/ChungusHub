@@ -61,8 +61,6 @@ export interface PanelInput {
 	frameworks: readonly FrameworkDef[];
 	disabled: readonly string[];
 	state: ChatFrameworkState;
-	/** The chat path, oldest to newest, as the day resolver reads it. */
-	messages: readonly string[];
 	/** The clock the panel describes, injectable so a test can pin it. Defaults to now. */
 	now?: Date;
 	/**
@@ -95,7 +93,6 @@ export interface PanelInput {
  */
 export function panelView(input: PanelInput): PanelView {
 	const day = resolveDay({
-		messages: input.messages,
 		mode: input.state.mode,
 		manual: input.state.day,
 		today: todaySerial(input.now ?? new Date())
