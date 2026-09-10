@@ -48,6 +48,14 @@ function section(settings: FrameworkSettings, state = chat()) {
 }
 
 describe('gathering', () => {
+	test('a line keeps its own formatting, because the section joins verbatim', () => {
+		// The list marker is part of each framework's text rather than something the section
+		// adds. Losing it once turned a list into a run of sentences, which reads as prose the
+		// model can skim past rather than as rules.
+		expect(DEFAULT_DATE_REMINDER.startsWith('- ')).toBe(true);
+		expect(section(install(REMINDER_ON))?.content).toContain('- The current real time is');
+	});
+
 	test('a framework reminder lands inside the section', () => {
 		const content = section(install(REMINDER_ON))?.content ?? '';
 		expect(content).toContain('<Reminders>');
