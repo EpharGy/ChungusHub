@@ -133,7 +133,13 @@ $Topics = @(
     # Touches found() in engine.ts, which the frameworks branches also edit, so it sits last
     # for fix/token-count-cache's reason: every conflict shape above it is left unchanged.
     # Retire this the day upstream merges it.
-    'fix/duplicate-lore-keys'
+    'fix/duplicate-lore-keys',
+    # The other half of the same report: the keyword chips silently refused any alternate
+    # capitalisation of a key already on the entry, which a case-sensitive entry needs to be
+    # able to hold. Shares types.ts and architecture/lorebook.md with lore-scan-steering above,
+    # and sits after it so that conflict shape is the one rerere already knows.
+    # Retire this the day upstream merges it.
+    'fix/duplicate-key-input'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
