@@ -8,11 +8,11 @@ Each item is a branch of its own, cut from `main`, so any of them can be taken o
 sent upstream as a pull request. **Items are removed from this list once upstream implements
 them or they stop being needed**, so a short list is a good sign, not a stalled one.
 
-Three of them - the gallery window, the notepad and EchoChamber - are built on a shared
+Four of them - the gallery window, the notepad, EchoChamber and the frameworks panel - are built on a shared
 floating-panel layer that has a branch of its own (`feature/floating-window`, cut from `main`
 like the rest). It is not listed below because it adds nothing you can see on its own: it is
 the dragging, docking, placement memory, front-to-back order, title bar entry and full-screen
-phone layout that all three windows get for free. Taking any of those features means taking
+phone layout that all four windows get for free. Taking any of those features means taking
 that layer with it, and none of them drags the others.
 
 `deploy` is rebuilt from those branches rather than committed to, which means it is **force
@@ -30,8 +30,8 @@ is the one thing that will not work.
 | Notepad | `feature/notepad` | A page of your own notes about one chat, in a floating window raised from the title bar beside Preset Controls and Story Map. Per chat, not per character, so a character with six stories running has six sets of notes. The notes ride the chat row, so duplicating a chat copies them and deleting it reaps them; the window's size, place and dock are per device. Jump to the end, export as `.txt`, clear behind a confirmation. Nothing in it is ever sent to the model. On a phone it is a full-screen panel. See `architecture/notepad.md`. |
 | Random & dice macros | `feature/random-roll-macros` | `{{random::red::green::blue}}` picks one of the options and `{{roll::1d20}}` rolls dice, anywhere a macro resolves: preset items, lorebook entries, character fields. SillyTavern's own syntax and its whole spelling surface, so a preset imported from there works unchanged, including `{{roll::1d20}}` itself, which SillyTavern's default engine silently drops. Every occurrence rolls separately. Note that a roll is made fresh on each resolution, so the token meter and the message actually sent can differ by one pick. See `architecture/random-roll-macros.md`. |
 | Steering wakes lore | `feature/lore-scan-steering` | A **Steering** pill in a lorebook entry's *Also scan*, beside Description, Personality and the rest. The entry then searches the steering standing over this reply as well as the chat, so a line of guidance can pull in background the story itself has not mentioned yet: steer toward a place and the place's entry comes with it, on the very turn the steering first applies rather than a turn later. It reads the notes' own text, not the wrapper the preset puts around them, and it reads exactly the notes that reply will carry, so an entry never wakes on guidance that was not sent. Off by default on every entry, like every other scan source. On the way out to SillyTavern it rides `matchCharacterDepthPrompt`, which names the same job there. |
-| Story day & frameworks | `feature/frameworks` | A deterministic calculation over story state, spliced into a lorebook entry where an `@name[...]` marker sits, so an entry can state a fact the model would otherwise have to work out and get wrong. A framework can also inject a block of its own, placed and priced exactly as lore is. Settings > App > Frameworks says which ones this install carries and holds their tunables; each chat then chooses which it uses, so one story can run a system another does not. Ships with the date framework: set a chat to real time and it tells the model the current date each turn, with instructions for bridging a gap since the last reply, and asks for a time marker back so you can see where the story thinks it is. Nothing parses that marker; it is for you, and it can be visible or hidden inside an HTML comment. Set a chat to manual instead and `/day` drives the day, with nothing reading the clock. See `architecture/frameworks.md`. |
-| Frameworks panel | `feature/frameworks-panel` | A floating window raised from the title bar that says what every framework marker in this chat's books is doing, and why: computed, stripped as a typo, held out for this story, or claimed by nobody. It runs the real dispatcher rather than reading the markers a second time, so it cannot disagree with the prompt it is describing. It also carries the per-chat switches: which frameworks this story uses, whether time runs on the clock or by hand, and whether the time marker is visible. On a phone it is a full-screen panel. |
+| Story day & frameworks | `feature/frameworks` | A framework is a deterministic calculation over story state that writes into the prompt, so the model is told a fact instead of working it out and getting it wrong. Settings > App > Frameworks says which ones this install carries and holds their tunables; each chat then chooses which of them it uses, so one story can run a system another does not. **Two ship.** **Date** puts the day in the prompt: set a chat to real time and it states the current date each turn, with instructions for bridging a gap since the last reply, and asks the model for a time marker back so you can see where the story thinks it is - nothing parses that marker, it is for you, and it can be visible or hidden inside an HTML comment. Set the chat to manual instead and `/day` drives it (`42`, or `+1` / `-1` to step), with nothing reading the clock. **Reminders** is one short section that every other framework can put a single line into, placed where the reply begins rather than a hundred turns up where a long prompt buries it. It gathers rather than being written into, so a framework switched off cannot leave the section hanging open, and each framework's line stays off until you turn it on, because a reminder is a cost paid on every turn. A framework can also splice its line **into a lorebook entry**, where an `@framework[subject, name=value]` marker is both the configuration and the spot the line lands in; that is the seam a new framework is written against, and neither shipped framework uses it. See `architecture/frameworks.md`. |
+| Frameworks panel | `feature/frameworks-panel` | A floating window raised from the title bar carrying this story's framework switches: which frameworks it uses, whether time runs on the clock or by hand, and whether the time marker is visible. It also says what every framework marker in this chat's books is doing and why - computed, stripped as a typo, held out for this story, or claimed by nobody - which with no marker-consuming framework installed is mainly how a mistyped one gets caught. It runs the real dispatcher rather than reading the markers a second time, so it cannot disagree with the prompt it is describing. On a phone it is a full-screen panel. |
 | Docker | `feature/docker` | A container image and compose file for self-hosting, built on bun from source. Host networking, so the app's IP allowlist can still tell devices apart. |
 
 ## Fixes
@@ -50,14 +50,14 @@ and each is a candidate to go upstream and then disappear from this list.
 Docker needs two addresses specific to the machine it runs on, so they are not committed.
 Create a `.env` beside `docker-compose.yml`:
 
-```
+```env
 CHUNGUS_HOST=<this host's own IP>
 CHUNGUS_ALLOWLIST=<your client IPs, comma separated>
 ```
 
 `CHUNGUS_ALLOWLIST` may be left empty, in which case `allowlist.json` governs alone. Then:
 
-```
+```sh
 docker compose up -d --build
 ```
 
