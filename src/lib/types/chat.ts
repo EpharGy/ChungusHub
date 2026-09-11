@@ -11,6 +11,11 @@ import { normalizeAmbientConfig } from '$lib/types/ambient';
 import type { BackgroundConfig } from '$lib/types/background';
 import { normalizeBackgroundConfig } from '$lib/types/background';
 import type { GeneratedImageMeta } from '$lib/imagegen/types';
+import {
+	defaultEchoChamberChatState,
+	normalizeEchoChamberChatState,
+	type EchoChamberChatState
+} from '$lib/echochamber/feed-state';
 
 export interface Chat {
 	id: string;
@@ -153,6 +158,10 @@ export interface ChatFeatureState {
 	 *  CHARACTER lives in that character's lorebook entry instead, so this stays small.
 	 *  See $lib/frameworks/chat-state.ts. */
 	frameworks: ChatFrameworkState;
+	/** EchoChamber's generated reaction feeds, by the id of the message each reacted to.
+	 *  Here rather than in a table of its own so that deleting the chat deletes them with
+	 *  it, and so the port adds no schema migration (src/lib/echochamber/feed-state.ts). */
+	echoChamber: EchoChamberChatState;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
@@ -165,7 +174,8 @@ function defaultChatFeatureState(): ChatFeatureState {
 		preset: null,
 		lorebooks: [],
 		mutedLorebooks: [],
-		frameworks: defaultChatFrameworkState()
+		frameworks: defaultChatFrameworkState(),
+		echoChamber: defaultEchoChamberChatState()
 	};
 }
 
@@ -234,7 +244,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		preset: normalizeClaimedId(obj.preset),
 		lorebooks: normalizeClaimedIds(obj.lorebooks),
 		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks),
-		frameworks: normalizeChatFrameworkState(obj.frameworks)
+		frameworks: normalizeChatFrameworkState(obj.frameworks),
+		echoChamber: normalizeEchoChamberChatState(obj.echoChamber)
 	};
 }
 

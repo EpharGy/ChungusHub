@@ -52,7 +52,8 @@
 			| 'pencil'
 			| 'mask'
 			| 'compass'
-			| 'image';
+			| 'image'
+			| 'users';
 	}
 
 	// The two points the user talks to directly, slightly emphasized: the story and

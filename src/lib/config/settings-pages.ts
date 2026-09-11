@@ -21,6 +21,7 @@ import { FRAMEWORKS } from '$lib/frameworks/registry';
 import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 import { backupStore } from '$lib/stores/backups.svelte';
 import { imagegenStore } from '$lib/stores/imagegen.svelte';
+import { echoChamberStore } from '$lib/stores/echochamber.svelte';
 import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 import { APP_VERSION } from '$lib/version';
 
@@ -52,6 +53,7 @@ export type SettingsPage =
 	| 'engines'
 	| 'imagegen'
 	| 'frameworks'
+	| 'echochamber'
 	| 'security'
 	| 'import'
 	| 'backups'
@@ -78,7 +80,8 @@ export type SettingsRowIcon =
 	| 'download'
 	| 'archive'
 	| 'info'
-	| 'sliders';
+	| 'sliders'
+	| 'users';
 
 export interface SettingsRow {
 	page: SettingsPage;
@@ -116,6 +119,12 @@ function frameworksSummary(): string {
 	return `${on} of ${FRAMEWORKS.length} on`;
 }
 
+/** Off, or the style the crowd is currently wearing. */
+function echoChamberSummary(): string {
+	if (!echoChamberStore.settings.enabled) return 'Off';
+	return echoChamberStore.activeStyle.name;
+}
+
 function enginesSummary(): string {
 	const on = ENGINES.filter((e) => e.enabled.get()).length;
 	return `${on} of ${ENGINES.length} on`;
@@ -145,6 +154,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 			{ page: 'engines', label: 'Engines', icon: 'bolt', preview: enginesSummary },
 			{ page: 'imagegen', label: 'Image Generation', icon: 'image', preview: imagegenSummary },
 			{ page: 'frameworks', label: 'Frameworks', icon: 'sliders', preview: frameworksSummary },
+			{ page: 'echochamber', label: 'EchoChamber', icon: 'users', preview: echoChamberSummary },
 			{ page: 'security', label: 'Security', icon: 'shield' },
 			{ page: 'backups', label: 'Backups', icon: 'archive', preview: backupsSummary },
 			{ page: 'import', label: 'Import', icon: 'download' }

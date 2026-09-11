@@ -2,6 +2,7 @@
 	import Workspace from '$lib/components/layout/Workspace.svelte';
 	import TitleBar from '$lib/components/layout/TitleBar.svelte';
 	import AssistantFloatingWidget from '$lib/components/assistant/AssistantFloatingWidget.svelte';
+	import EchoChamberWidget from '$lib/components/echochamber/EchoChamberWidget.svelte';
 	import WelcomeDialog, { openWelcomeDialog } from '$lib/components/layout/WelcomeDialog.svelte';
 	import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
 	import DataAheadBar, { setDataAhead } from '$lib/components/layout/DataAheadBar.svelte';
@@ -18,6 +19,7 @@
 	import { backgroundStore } from '$lib/stores/background.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { imagegenStore } from '$lib/stores/imagegen.svelte';
+	import { echoChamberStore } from '$lib/stores/echochamber.svelte';
 	import { libraryViewPrefs, personasViewPrefs } from '$lib/stores/browseViewPrefs.svelte';
 	import { spriteSortPref } from '$lib/stores/spriteSort.svelte';
 	import { lorebookViewPrefs } from '$lib/stores/lorebookViewPrefs.svelte';
@@ -172,6 +174,9 @@
 			// a ComfyUI host and a sampler are not prompt templates - and the transcript asks
 			// it whether it is on while drawing the very first turn.
 			await imagegenStore.initialize();
+			// Its own settings blob rather than a prompt template, and the widget asks whether
+			// it is on before it paints anything at all.
+			await echoChamberStore.initialize();
 			await libraryViewPrefs.initialize();
 			await personasViewPrefs.initialize();
 			await spriteSortPref.initialize();
@@ -348,6 +353,14 @@
 		     floating widget/launcher paints above the title bar and the workspace's
 		     isolated stacking context. -->
 		<AssistantFloatingWidget />
+		<!-- EchoChamber's feed, on FloatingWindow and mounted at the shell for the reason
+		     every caller of that shell shares: it has to outlive whatever the reader has
+		     open, and the shell is where a panel's lifetime is longest. Where it PAINTS is
+		     not decided here - the window portals itself into the workspace's floating-panel
+		     layer, which is what puts it under Settings and the Library. It draws nothing at
+		     all while the engine is off, and it registers the title-bar entry that opens it
+		     by being imported. -->
+		<EchoChamberWidget />
 		<!-- Mounted with the workspace, not with the shell: it portals to body and owns
 		     its own open flag, and there is nothing to greet anyone about while a boot
 		     state card is still on screen. -->

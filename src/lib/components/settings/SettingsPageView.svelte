@@ -8,6 +8,7 @@
 	import EnginesPage from './EnginesPage.svelte';
 	import ImageGenPage from './ImageGenPage.svelte';
 	import FrameworksPage from './FrameworksPage.svelte';
+	import EchoChamberPage from './EchoChamberPage.svelte';
 	import ImportPage from './ImportPage.svelte';
 	import BackupsPage from './BackupsPage.svelte';
 	import RegexPage from './RegexPage.svelte';
@@ -39,6 +40,8 @@
 	<ImageGenPage />
 {:else if page === 'frameworks'}
 	<FrameworksPage />
+{:else if page === 'echochamber'}
+	<EchoChamberPage />
 {:else if page === 'security'}
 	<SecurityPage />
 {:else if page === 'import'}
