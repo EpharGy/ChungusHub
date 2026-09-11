@@ -116,6 +116,21 @@ export interface ChatScene {
  *  (`steering_notes`, src/lib/types/steering.ts) because one object has no room for a scope,
  *  so that key is simply not parsed: the blob still reads fine and drops it on the chat's
  *  next write. */
+/**
+ * A picture pinned up in a story's gallery window.
+ *
+ * Both halves or neither: without the source there is no set to page through, and reopening
+ * one image with no way back to its neighbours is a worse answer than not reopening at all.
+ * `normalizeGalleryPin` is what enforces that on the way in.
+ */
+export interface GalleryPin {
+	/** Server-relative path of the image. */
+	path: string;
+	/** The library entry whose gallery holds it. May be anybody, a persona included, so
+	 *  nothing here filters on entry type: the library is reachable from inside any chat. */
+	sourceId: string;
+}
+
 export interface ChatFeatureState {
 	/** The last 10 consumed one-shot steering texts, most-recent first, for quick reuse
 	 *  from the composer's popover. */
@@ -123,6 +138,29 @@ export interface ChatFeatureState {
 	impersonatePerspective: ImpersonatePerspective;
 	/** Null while this chat has never been given a scene of its own. */
 	scene: ChatScene | null;
+	/** The picture pinned up in the gallery window for this story, or null for none
+	 *  (architecture/image-popout.md). The path is server-relative and `sourceId` names the
+	 *  library entry whose gallery holds it, which need not be anybody in this chat.
+	 *
+	 *  **Named for the pin and not for the feature**, unlike its neighbours. The window's
+	 *  other fact - whether it is standing - is per device and lives in localStorage, so a
+	 *  field called `imagePopout` would invite the next reader to put it here, and a window
+	 *  left standing on a desktop would then take over a phone screen the moment that story
+	 *  opened. What is on the shelf is the story's; whether the frame is up is the screen's.
+	 *
+	 *  It lives on the chat row for the notepad's reason and not the geometry's: a rectangle
+	 *  means nothing on another machine, but a reference picture the reader pinned to a story
+	 *  is a fact about that story and has to be there on the phone. It was localStorage until
+	 *  it was not, and the bug was exactly that.
+	 *
+	 *  Costs the chat-list fetch two short strings, needs no cap because of it, and is reaped
+	 *  by the chat delete for free.
+	 *
+	 *  Sits beside `scene` rather than after the claim lists below, for the notepad's reason:
+	 *  those are claims on library entries and this is furniture of the chat itself. The two
+	 *  panels' fields are therefore adjacent in a rebuilt `deploy`, which reads correctly and
+	 *  keeps both clear of the pile-up at the end of these three blocks. */
+	galleryPin: GalleryPin | null;
 	/** The connection this story sends on, claimed from the composer's setup chip. A plain
 	 *  connection id, or null to follow whatever the Connections page routes Primary to.
 	 *  It covers the story's own calls and nothing else: the assistant and every engine
@@ -169,6 +207,7 @@ function defaultChatFeatureState(): ChatFeatureState {
 		steeringHistory: [],
 		impersonatePerspective: 'first',
 		scene: null,
+		galleryPin: null,
 		connection: null,
 		persona: null,
 		preset: null,
@@ -194,6 +233,21 @@ function normalizeImpersonatePerspective(raw: unknown): ImpersonatePerspective {
  *  could claim anything, which is why this needs no migration: missing reads as null. */
 function normalizeClaimedId(raw: unknown): string | null {
 	return typeof raw === 'string' && raw.length > 0 ? raw : null;
+}
+
+/**
+ * A pinned picture, or null.
+ *
+ * Half a pin is no pin: a path with no source cannot be paged through, so the pair survives
+ * together or not at all. Absent in every blob written before a story could pin one, which is
+ * why this needs no migration - missing reads as null, exactly like the claims below.
+ */
+function normalizeGalleryPin(raw: unknown): GalleryPin | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const { path, sourceId } = raw as Partial<GalleryPin>;
+	if (typeof path !== 'string' || !path) return null;
+	if (typeof sourceId !== 'string' || !sourceId) return null;
+	return { path, sourceId };
 }
 
 /** A claimed id list, empty for "adds nothing". Absent in every blob written before a chat
@@ -239,6 +293,7 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
 		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
 		scene: normalizeChatScene(obj.scene),
+		galleryPin: normalizeGalleryPin(obj.galleryPin),
 		connection: normalizeClaimedId(obj.connection),
 		persona: normalizeClaimedId(obj.persona),
 		preset: normalizeClaimedId(obj.preset),
