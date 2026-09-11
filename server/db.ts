@@ -21,6 +21,7 @@ import {
 } from './files';
 import type { SyncScope } from '../shared/sync';
 import type { AssistantFile } from '../shared/assistant-files';
+import type { ImagegenCacheReport } from '../shared/imagegen';
 
 /** Short stable digest, the chat-tree fingerprint's building block. Truncated SHA-1:
  *  64 bits is far past what "are these two chats the same" needs, and it only ever
@@ -1305,6 +1306,215 @@ class ServerDatabase {
 		return swept;
 	}
 
+	// ===== The generated-image cache =====
+	//
+	// Every sweep above reaps a picture nothing points at any more. This one is the other
+	// kind: it reaps pictures that ARE still pointed at, because there are too many of them.
+	// That is only defensible for generated art, and for one structural reason - the marker
+	// never leaves the message text (architecture/imagegen.md), so a picture taken away
+	// leaves behind a marker with a Generate button rather than a hole. The picture is
+	// recoverable by clicking it; a photo the reader attached is not, which is why the two
+	// are told apart by the `generated` block and never by the folder they share.
+	//
+	// Three rules carry the whole thing:
+	//
+	//  1. **Generated on both sides of the sum.** The budget is measured over exactly the
+	//     set the sweep may delete. Sizing against everything in images/chat/ and deleting
+	//     only the generated half is the bug that eats every picture the engine ever made
+	//     and still reports itself over budget, because the uploads it may not touch are
+	//     what put it there.
+	//  2. **Files, not references.** A branch or a fork copies the attachment list, so one
+	//     picture can be named by several turns and is freed only when the last of them
+	//     lets go. Counting references would promise bytes no delete can return.
+	//  3. **One transaction, one broadcast.** A sweep can rewrite hundreds of rows, and
+	//     putting each through `updateMessageAttachments` would fire a `messages` broadcast
+	//     per row for every other device to answer with a refetch.
+
+	/** How long a new picture is untouchable whatever the budget says. The same hour the
+	 *  abandoned-upload sweep grants, for a neighbouring reason: a small budget and a busy
+	 *  turn must not delete pictures out of the reply being read right now. */
+	private static readonly GENERATED_GRACE_MS = 60 * 60 * 1000;
+
+	/**
+	 * Every generated picture the rows still name AND that is still on disk, grouped by file.
+	 *
+	 * A row whose JSON will not parse is skipped rather than aborting the whole pass, which
+	 * is the opposite of `sweepAbandonedChatImages` and safe for the opposite reason: that
+	 * sweep deletes what it failed to find a reference for, so an unreadable row could cost
+	 * a file, while this one only ever deletes what it positively found. An unparseable row
+	 * still protects its own pictures, because `dropOrphanedChatImages` counts references by
+	 * searching the raw column text and never has to parse anything.
+	 */
+	private generatedImageFiles(): Map<string, { createdAt: number; size: number; messageIds: string[] }> {
+		const files = new Map<string, { createdAt: number; size: number; messageIds: string[] }>();
+		// The same root `deleteImage` resolves against (files.ts), which is what keeps "found
+		// it" and "deleted it" talking about one file.
+		const dir = join(IMAGES_ROOT, 'chat');
+		const rows = this.select<{ id: string; attachments_json: string | null }[]>(
+			'SELECT id, attachments_json FROM messages WHERE attachments_json IS NOT NULL'
+		);
+
+		for (const row of rows) {
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(row.attachments_json ?? '');
+			} catch {
+				continue;
+			}
+			if (!Array.isArray(parsed)) continue;
+
+			for (const item of parsed) {
+				const att = item as { path?: unknown; generated?: { createdAt?: unknown } | null };
+				// The one line that keeps a reader's own uploads out of this. They share the
+				// folder and the column; only this block says a picture can be made again.
+				if (!att?.generated || typeof att.generated !== 'object') continue;
+				const path = att.path;
+				if (typeof path !== 'string' || !path.startsWith('images/chat/')) continue;
+				const name = path.slice('images/chat/'.length);
+				if (!name || name.includes('/') || name.includes('\\')) continue;
+
+				const existing = files.get(path);
+				if (existing) {
+					existing.messageIds.push(row.id);
+					continue;
+				}
+
+				const abs = join(dir, name);
+				let size: number;
+				let mtimeMs: number;
+				try {
+					const st = statSync(abs);
+					if (!st.isFile()) continue;
+					size = st.size;
+					mtimeMs = st.mtimeMs;
+				} catch {
+					// Named by a row but not on disk. Nothing to free and nothing to delete;
+					// the reader sees a Generate button on that marker either way.
+					continue;
+				}
+
+				// The file's own mtime stands in for a picture written before `createdAt` was
+				// recorded, or by a hand-edited row. Falling back to 0 would sort it oldest
+				// and delete it first, which is the wrong way to be wrong about an age.
+				const stated = att.generated.createdAt;
+				const createdAt = typeof stated === 'number' && Number.isFinite(stated) && stated > 0 ? stated : mtimeMs;
+
+				files.set(path, { createdAt, size, messageIds: [row.id] });
+			}
+		}
+		return files;
+	}
+
+	/**
+	 * What a sweep down to `limitBytes` would take, oldest picture first.
+	 *
+	 * `limitBytes` of 0 or less means no budget: the plan is empty and the call is a pure
+	 * question about what the cache holds, which is what the settings page asks before the
+	 * reader has named a number.
+	 */
+	private planGeneratedImageSweep(limitBytes: number): { report: ImagegenCacheReport; doomed: string[] } {
+		const files = this.generatedImageFiles();
+		let totalBytes = 0;
+		for (const info of files.values()) totalBytes += info.size;
+
+		const report: ImagegenCacheReport = {
+			totalFiles: files.size,
+			totalBytes,
+			files: 0,
+			bytes: 0,
+			oldest: null,
+			newest: null
+		};
+		if (!(limitBytes > 0) || totalBytes <= limitBytes) return { report, doomed: [] };
+
+		const cutoff = Date.now() - ServerDatabase.GENERATED_GRACE_MS;
+		const oldestFirst = [...files.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
+
+		const doomed: string[] = [];
+		let remaining = totalBytes;
+		for (const [path, info] of oldestFirst) {
+			if (remaining <= limitBytes) break;
+			// The grace window ends the walk rather than skipping one picture, and that is
+			// sound rather than sloppy: the list is sorted by the very value the window
+			// tests, so everything behind a picture too new to take is newer still. What it
+			// means is that a budget only reachable through the last hour's work is left
+			// unmet - deliberately. The reader gets their pictures; the number waits.
+			if (info.createdAt > cutoff) break;
+			doomed.push(path);
+			remaining -= info.size;
+			report.bytes += info.size;
+			report.files += 1;
+			if (report.oldest === null || info.createdAt < report.oldest) report.oldest = info.createdAt;
+			if (report.newest === null || info.createdAt > report.newest) report.newest = info.createdAt;
+		}
+		return { report, doomed };
+	}
+
+	/** What the generated-image cache holds, and what a sweep to `limitBytes` would take.
+	 *  Read-only: this is the preview the Settings page draws before it deletes anything. */
+	imagegenCacheReport(limitBytes: number): ImagegenCacheReport {
+		return this.planGeneratedImageSweep(Number(limitBytes) || 0).report;
+	}
+
+	/**
+	 * Bring the generated-image cache under `limitBytes`, oldest picture first.
+	 *
+	 * The rows are rewritten in one transaction and the files are dropped AFTER it, on the
+	 * same rule every other caller here follows: the reference count asks the rows
+	 * themselves, so running it first would find them still holding what they are about to
+	 * release. A picture a surviving turn still names is kept by that count even if this
+	 * sweep listed it, which is what makes a half-shared file between a chat and its fork
+	 * safe to plan against.
+	 */
+	sweepGeneratedImageCache(limitBytes: number): ImagegenCacheReport {
+		const { report, doomed } = this.planGeneratedImageSweep(Number(limitBytes) || 0);
+		if (!doomed.length) return report;
+
+		const drop = new Set(doomed);
+		this.inTransaction(() => {
+			const rows = this.select<{ id: string; chat_id: string; attachments_json: string | null }[]>(
+				'SELECT id, chat_id, attachments_json FROM messages WHERE attachments_json IS NOT NULL'
+			);
+			// One rev per CHAT, not per row: every row this sweep rewrites in a given chat
+			// changed at the same moment, and a delta only asks whether a row is newer than
+			// the rev the client already holds.
+			const revs = new Map<string, number>();
+			for (const row of rows) {
+				let parsed: unknown;
+				try {
+					parsed = JSON.parse(row.attachments_json ?? '');
+				} catch {
+					continue;
+				}
+				if (!Array.isArray(parsed)) continue;
+				const kept = parsed.filter((item) => {
+					const att = item as { path?: unknown; generated?: unknown };
+					// Only a GENERATED attachment is ever dropped, even where an upload
+					// somehow shares its path: the plan's set is paths, and this is the
+					// second place that distinction has to hold.
+					if (!att?.generated) return true;
+					return !(typeof att.path === 'string' && drop.has(att.path));
+				});
+				if (kept.length === parsed.length) continue;
+				let rev = revs.get(row.chat_id);
+				if (rev === undefined) {
+					rev = this.bumpMessagesRev(row.chat_id);
+					revs.set(row.chat_id, rev);
+				}
+				// NULL for an empty list, the shape a turn that never had one wears.
+				this.execute('UPDATE messages SET attachments_json = ?, rev = ? WHERE id = ?', [
+					kept.length ? JSON.stringify(kept) : null,
+					rev,
+					row.id
+				]);
+			}
+		});
+
+		this.dropOrphanedChatImages(doomed);
+		console.log(`[db] imagegen cache sweep freed ${report.files} picture${report.files === 1 ? '' : 's'}`);
+		return report;
+	}
+
 	deleteChat(chatId: string): void {
 		const paths = this.imagePathsOfChat(chatId);
 		this.execute('DELETE FROM chats WHERE id = ?', [chatId]); // messages cascade
@@ -1980,6 +2190,35 @@ class ServerDatabase {
 			const rev = this.revForMessageWrite(messageId);
 			this.execute('UPDATE messages SET sprite_label = ?, rev = ? WHERE id = ?', [label ?? null, rev, messageId]);
 		});
+	}
+
+	/** Rewrite a turn's attachment list: how a picture the image engine generated is hung on
+	 *  the turn whose marker asked for it. Metadata like the two above, so it never touches
+	 *  content or edited_at and no summary is invalidated by a picture arriving. The list is
+	 *  written whole because it IS the record: the refcount sweep and the branch-copy path
+	 *  both read this column, and a partial write would strand a file or free a live one. An
+	 *  empty list is stored as NULL, the same shape a turn that never had one wears. */
+	updateMessageAttachments(messageId: string, attachments: unknown[] | null): void {
+		// What this row pointed at BEFORE the write. A retry replaces a picture and a remove
+		// drops one, and in both cases the old file is left referenced by nothing: without
+		// this it would sit on disk until the next boot sweep, which is a restart away and
+		// carries an hour's grace on top. The reference count is what decides, exactly as it
+		// does for a deleted message, so a file still held by a fork or a branch survives.
+		const before = this.imagePathsOfMessages([messageId]);
+
+		const json = Array.isArray(attachments) && attachments.length ? JSON.stringify(attachments) : null;
+		// Stamped like every other message write. Under delta refresh a row whose rev did not
+		// move is a row no device re-reads, so a generated picture would be hung on the turn
+		// here and never reach the open chat until something else happened to that chat.
+		this.inTransaction(() => {
+			const rev = this.revForMessageWrite(messageId);
+			this.execute('UPDATE messages SET attachments_json = ?, rev = ? WHERE id = ?', [json, rev, messageId]);
+		});
+
+		// AFTER the write, like every other caller: the sweep asks the rows themselves, so
+		// running it first would find this row still holding the file it is about to release.
+		const after = new Set(this.imagePathsOfMessages([messageId]));
+		this.dropOrphanedChatImages(before.filter((path) => !after.has(path)));
 	}
 
 	/** Bind every user turn in a chat to a persona at once (or clear with null). Powers the
@@ -3497,6 +3736,10 @@ export const MUTATION_SCOPES: Record<string, SyncScope> = {
 	applyMessageContinuation: 'messages',
 	updateMessagePersona: 'messages',
 	updateMessageSpriteLabel: 'messages',
+	updateMessageAttachments: 'messages',
+	// Rewrites every row it takes a picture from, so the scope is the same one a single
+	// attachment write broadcasts - once for the whole sweep rather than once per row.
+	sweepGeneratedImageCache: 'messages',
 	setChatUserPersona: 'messages',
 	updateMessageBranchLabel: 'messages',
 	deleteMessageOnly: 'messages',
@@ -3548,6 +3791,7 @@ const READ_METHODS = [
 	'getChatListStats', 'getChatContentGroups', 'searchChatMessages', 'getChatMemoryFootprint',
 	'getUserStats',
 	'getMessage', 'getNextSiblingIndex', 'getSetting', 'getChatDraft', 'getInputHistory', 'getConnectionCredentials',
+	'imagegenCacheReport',
 	'getImportedSources',
 	'getAllLibraryEntries', 'getLibraryEntry',
 	'getAllCharacterVersions', 'getCharacterVersion',

@@ -35,6 +35,13 @@ import { cancelPendingRestore, readJournal, resumeInterruptedRestore } from './b
 import { ensureBackupStoreMarkers, sweepAbandonedSnapshots } from './backup/snapshot';
 import { restoreBlockedReason } from '../shared/backups';
 import {
+	generateImage,
+	listCheckpoints,
+	listWorkflows,
+	pingHost,
+	type ComfyGenerateRequest
+} from './imagegen/comfy';
+import {
 	copyImage,
 	deleteDraft,
 	deleteImage,
@@ -924,6 +931,42 @@ async function handleApi(req: Request, url: URL, clientIp: string | null): Promi
 		deleteImage(rel);
 		backupService.markChanged();
 		return json({ ok: true });
+	}
+	// ----- Image generation (ComfyUI) -----
+	// The server dials ComfyUI rather than the page doing it, which is what spares the reader
+	// starting ComfyUI with `--enable-cors-header`, and what lets the picture be stored instead
+	// of hotlinked. See server/imagegen/comfy.ts.
+	if (path === '/api/imagegen/workflows' && req.method === 'GET') {
+		return json({ workflows: listWorkflows() });
+	}
+	// Both of these speak to a machine that may simply be off, which is an answer rather than
+	// an error: the settings page draws "not reachable" from it and asks for nothing else.
+	if (path === '/api/imagegen/ping' && req.method === 'POST') {
+		const { host } = (await req.json()) as { host?: string };
+		return json({ online: await pingHost(String(host ?? '')) });
+	}
+	if (path === '/api/imagegen/checkpoints' && req.method === 'POST') {
+		const { host } = (await req.json()) as { host?: string };
+		try {
+			return json({ checkpoints: await listCheckpoints(String(host ?? '')) });
+		} catch (error) {
+			return json({ error: (error as Error).message }, 502);
+		}
+	}
+	if (path === '/api/imagegen/generate' && req.method === 'POST') {
+		const request = (await req.json()) as ComfyGenerateRequest;
+		try {
+			const result = await generateImage(request);
+			// No sync hint: the picture reaches other devices with the message row that
+			// references it, which the client writes next. The backup schedule still hears
+			// about it, on the same rule as every other write into the data dir.
+			backupService.markChanged();
+			return json(result);
+		} catch (error) {
+			// 502, not 500: what failed is the machine at the other end of the reader's host
+			// setting, and the message it gave is the only thing that makes it fixable.
+			return json({ error: (error as Error).message }, 502);
+		}
 	}
 	// ----- Backgrounds (bundled defaults + user uploads) -----
 	if (path === '/api/backgrounds' && req.method === 'GET') {

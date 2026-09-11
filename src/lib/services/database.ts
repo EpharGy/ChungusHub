@@ -5,10 +5,19 @@
  * SQL (and the single source of truth) lives on the server; this is a thin, typed proxy,
  * so nothing above it knows where the data comes from.
  */
-import type { Chat, ChatListStats, ChatMemoryFootprint, Message, MessagesDelta, BranchLabel } from '$lib/types/chat';
+import type {
+	Chat,
+	ChatListStats,
+	ChatMemoryFootprint,
+	Message,
+	MessageAttachment,
+	MessagesDelta,
+	BranchLabel
+} from '$lib/types/chat';
 import type { CharacterVersion, LibraryEntry } from '$lib/types/library';
 import type { Lorebook } from '$lib/lorebook/types';
 import type { SteeringNote } from '$lib/types/steering';
+import type { ImagegenCacheReport } from '$shared/imagegen';
 import type { AssistantSession, AssistantMessage } from '$lib/types/assistant';
 import type { BatchResult, Episode, MemoryState, PromotionResult } from '$lib/memory/types';
 import type { UserStats } from '$lib/types/stats';
@@ -118,6 +127,18 @@ class DatabaseService {
 	}
 	updateMessageSpriteLabel(messageId: string, label: string | null): Promise<void> {
 		return this.call('updateMessageSpriteLabel', messageId, label);
+	}
+	updateMessageAttachments(messageId: string, attachments: MessageAttachment[] | null): Promise<void> {
+		return this.call('updateMessageAttachments', messageId, attachments);
+	}
+	/** What the generated-image cache holds, and what a sweep to `limitBytes` would take.
+	 *  Deletes nothing: this is the preview the Settings page shows before it asks. */
+	imagegenCacheReport(limitBytes: number): Promise<ImagegenCacheReport> {
+		return this.call('imagegenCacheReport', limitBytes);
+	}
+	/** Bring the generated-image cache under `limitBytes`, oldest picture first. */
+	sweepGeneratedImageCache(limitBytes: number): Promise<ImagegenCacheReport> {
+		return this.call('sweepGeneratedImageCache', limitBytes);
 	}
 	deleteMessageOnly(messageId: string): Promise<void> { return this.call('deleteMessageOnly', messageId); }
 	deleteMessageAndDescendants(messageId: string): Promise<void> { return this.call('deleteMessageAndDescendants', messageId); }
