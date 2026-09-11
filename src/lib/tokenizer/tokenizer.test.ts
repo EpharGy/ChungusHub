@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { resolveEncoding, encodingCount } from './encodings';
+import { resolveEncoding, encodingCount, COUNT_CACHE_MAX } from './encodings';
 import { countTokens, countMessages } from './count';
 import { blendRatio, clampRatio, sampleRatio, MIN_ESTIMATE, RATIO_MAX, RATIO_MIN } from './calibration-core';
 
@@ -52,6 +52,47 @@ describe('counting', () => {
 		const msgs = [{ content: 'alpha beta gamma' }, { content: 'delta epsilon' }];
 		const expected = countTokens('alpha beta gamma', 'gpt-4o') + countTokens('delta epsilon', 'gpt-4o');
 		expect(countMessages(msgs, 'gpt-4o')).toBe(expected);
+	});
+});
+
+describe('count cache', () => {
+	// Counting is memoized per encoding (encodings.ts). BPE is pure, so a cache can only ever
+	// be wrong by mixing two encodings up or by handing back a value it did not compute for
+	// that text; both are cheap to pin and neither would show up as a test failure anywhere
+	// else -- a wrong meter just quietly reads wrong.
+	test('a repeated count is stable and matches an equal string built separately', () => {
+		const literal = 'the quick brown fox jumps over the lazy dog';
+		const first = countTokens(literal, 'gpt-4o');
+		expect(countTokens(literal, 'gpt-4o')).toBe(first);
+		// Assembled at runtime, so it is a different string object with the same content: a
+		// cache keyed on identity rather than value would miss this and return a fresh count.
+		const assembled = ['the quick brown fox', ' jumps over the lazy dog'].join('');
+		expect(countTokens(assembled, 'gpt-4o')).toBe(first);
+	});
+
+	test('the same text under both encodings keeps both answers', () => {
+		// The one way a shared cache would break: whichever encoding asked first would win and
+		// the other would silently inherit its number.
+		const s = '这是一段用来测试分词器的中文文本，包含若干汉字与标点符号。';
+		const cl = encodingCount(s, 'cl100k_base');
+		const o2 = encodingCount(s, 'o200k_base');
+		expect(cl).not.toBe(o2);
+		expect(encodingCount(s, 'cl100k_base')).toBe(cl);
+		expect(encodingCount(s, 'o200k_base')).toBe(o2);
+	});
+
+	test('a value still counts correctly after the cache is dropped', () => {
+		const s = 'a sentence that outlives the cache it was stored in';
+		const before = countTokens(s, 'gpt-4o');
+		// Push past the cap so the map is dropped wholesale, then ask again: a miss must
+		// recompute rather than return a stale or absent entry.
+		for (let i = 0; i <= COUNT_CACHE_MAX; i++) encodingCount(`filler ${i}`, 'o200k_base');
+		expect(countTokens(s, 'gpt-4o')).toBe(before);
+	});
+
+	test('empty text is zero under either encoding', () => {
+		expect(encodingCount('', 'o200k_base')).toBe(0);
+		expect(encodingCount('', 'cl100k_base')).toBe(0);
 	});
 });
 
