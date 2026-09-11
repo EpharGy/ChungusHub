@@ -97,12 +97,12 @@ $Topics = @(
     # The shell must be merged before all of them, which is the only ordering constraint in
     # this list that is a real dependency rather than a habit.
     #
-    # That constraint REACHES ACROSS THE TWO LISTS: the frameworks panel is a third
-    # consumer and it lives in $PrivateTopics, which is merged in a later stage and so is
-    # ordered correctly for free. The trap is removal, not ordering. Dropping the shell from
-    # here would leave `deploy` building perfectly and `deploy-full` failing to compile, and
-    # the gate would report it as a failure in the private topic. Retire the shell only once
-    # nothing in EITHER list imports it.
+    # All four consumers sit in THIS list, so the ordering is plain: the shell, then any of
+    # them in any order. The trap is removal, not ordering. Dropping the shell while a
+    # consumer is still listed leaves that consumer unable to compile, and the gate reports
+    # it as a failure in the consumer rather than here. Check BOTH lists before retiring it:
+    # a private topic that took up the shell would fail `deploy-full` while `deploy` built
+    # clean, and the gate would name the private topic.
     #
     # A change to how those windows drag, dock or resize belongs on feature/floating-window,
     # never on a consumer: a copy on one of them is a copy the other cannot see, and the two
