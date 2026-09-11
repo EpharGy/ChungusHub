@@ -226,15 +226,25 @@
 	 * that needs it is on. The stored list is closed over on read anyway, so this is not what
 	 * makes the rule true; it is what makes the switch explain itself instead of appearing to
 	 * do nothing.
+	 *
+	 * A refusal has to put the tick back BY HAND, and the box is passed in for that. The
+	 * browser flips a checkbox itself before this handler runs, and `checked={row.on}` only
+	 * writes the DOM back when `row.on` CHANGES. A refusal is precisely the case where it does
+	 * not, so the box would sit unticked over a framework that is still running, beside the
+	 * rows and the day header that correctly go on saying it is.
 	 */
-	async function toggleFramework(id: string, value: boolean) {
-		if (!frameworkState) return;
+	async function toggleFramework(id: string, value: boolean, box: HTMLInputElement) {
+		if (!frameworkState) {
+			box.checked = !value;
+			return;
+		}
 		const current = frameworkState.enabled;
 		if (!value) {
 			const blockers = requiredBy(id, running);
 			if (blockers.length > 0) {
 				const names = blockers.map((b) => FRAMEWORKS.find((f) => f.id === b)?.name ?? b);
 				toastStore.error(`${names.join(', ')} needs this. Turn that off first.`);
+				box.checked = true;
 				return;
 			}
 			await patchChat({ enabled: current.filter((k) => k !== id) });
@@ -355,7 +365,7 @@
 									type="checkbox"
 									checked={row.on}
 									disabled={!row.available}
-									onchange={(e) => toggleFramework(row.def.id, e.currentTarget.checked)}
+									onchange={(e) => toggleFramework(row.def.id, e.currentTarget.checked, e.currentTarget)}
 								/>
 								<span class="fp-use-text">
 									<span class="fp-use-name">{row.def.name}</span>
