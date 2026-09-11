@@ -42,6 +42,7 @@ and each is a candidate to go upstream and then disappear from this list.
 | Fix | Branch | What it does |
 |---|---|---|
 | Token counting is cached | `fix/token-count-cache` | Memoizes BPE counting per encoding. The token meters re-assemble the whole prompt whenever any store they read changes, so typing into a lorebook entry re-counted every chat turn that memory had not yet archived, twice per keystroke. On a long chat whose memory has fallen behind, that was over a million tokens of encoding per character typed, and the composer visibly lagged behind the keyboard. Counting is pure, so the cache has nothing to invalidate. |
+| A lorebook key listed twice is read once | `fix/duplicate-lore-keys` | An entry can hold the same key string more than once: the editor refuses a repeat, but SillyTavern's own World Info files carry them and an import reads the list verbatim. The scan reported one match per copy, which broke the trace popup outright - clicking a turn's lorebook pill did nothing at all, because two identical matches are a duplicate key in a keyed each and Svelte throws there in production as well as in dev. The same repeat also inflated the entry's inclusion-group score past a rival that had genuinely matched more keys. Upstream issue #72. |
 
 ## Running it
 
