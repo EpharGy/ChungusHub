@@ -3,6 +3,7 @@
 	import TitleBar from '$lib/components/layout/TitleBar.svelte';
 	import AssistantFloatingWidget from '$lib/components/assistant/AssistantFloatingWidget.svelte';
 	import EchoChamberWidget from '$lib/components/echochamber/EchoChamberWidget.svelte';
+	import FrameworkPanelWindow from '$lib/components/ui/FrameworkPanelWindow.svelte';
 	import WelcomeDialog, { openWelcomeDialog } from '$lib/components/layout/WelcomeDialog.svelte';
 	import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
 	import ImagePopoutWindow from '$lib/components/ui/ImagePopoutWindow.svelte';
@@ -372,6 +373,16 @@
 		     all while the engine is off, and it registers the title-bar entry that opens it
 		     by being imported. -->
 		<EchoChamberWidget />
+		<!-- The frameworks panel, on FloatingWindow and mounted at the shell for the reason
+		     every caller of that shell shares: it is fixed-positioned and has to paint above
+		     the workspace's isolated stacking context. It draws nothing until `/frameworks`
+		     opens it.
+		     This line conflicts on every rebuild and that is expected. Four branches now hang
+		     a floating panel off this same short stretch of the shell, and sibling order means
+		     nothing to a fixed-position element, so there is no line here that is genuinely
+		     free and no arrangement worth arguing for. The resolution is always the same one:
+		     keep every side. rerere replays it, which is why the workflow requires rerere. -->
+		<FrameworkPanelWindow />
 		<!-- Mounted with the workspace, not with the shell: it portals to body and owns
 		     its own open flag, and there is nothing to greet anyone about while a boot
 		     state card is still on screen. -->
