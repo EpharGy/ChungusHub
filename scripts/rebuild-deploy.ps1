@@ -126,7 +126,14 @@ $Topics = @(
     'feature/lore-scan-steering',
     # Memoized token counting. Touches only src/lib/tokenizer/, so it overlaps nothing else
     # in either list and sits last purely to keep every conflict shape above it unchanged.
-    'fix/token-count-cache'
+    'fix/token-count-cache',
+    # A lorebook key listed twice is read once. An upstream bug (patcireamo#72): the repeat
+    # made two identical matches, which the trace renders as a duplicate key in a keyed each,
+    # and Svelte throws there in production too - so a turn's lorebook pill opened nothing.
+    # Touches found() in engine.ts, which the frameworks branches also edit, so it sits last
+    # for fix/token-count-cache's reason: every conflict shape above it is left unchanged.
+    # Retire this the day upstream merges it.
+    'fix/duplicate-lore-keys'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
