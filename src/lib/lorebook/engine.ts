@@ -366,7 +366,7 @@ function selectFromBooks(
 	trigger: LorebookTrigger,
 	history: LorebookPastScan[],
 	chatLength: number,
-	expand: (text: string) => string,
+	readEntry: (entry: LorebookEntry) => string,
 	maxSteps: number
 ): { entries: LorebookEntry[]; records: LorebookEntryRecord[] } {
 	const pool: PooledEntry[] = books.flatMap((book) => {
@@ -490,13 +490,15 @@ function selectFromBooks(
 			steps++;
 			for (const { book, entry } of feed) {
 				// Expanded like the card fields are, so an entry writing {{char}} is read as it
-				// reaches the model rather than as its own braces.
+				// reaches the model rather than as its own braces. Decorated for the same
+				// reason: an entry whose framework marker resolves to "Storm Season" should
+				// be able to wake an entry keyed on that, exactly as its prose can.
 				sources.push({
 					kind: 'entry',
 					entryId: entry.id,
 					title: entry.comment,
 					bookName: book.name,
-					text: expand(entry.content)
+					text: readEntry(entry)
 				});
 			}
 
@@ -652,6 +654,24 @@ function resolveGroups(
 }
 
 /** Everything one scan needs. */
+/**
+ * A last rewrite of one entry's text, applied after macro expansion, at both of the two
+ * places an entry's content is read: the recursion feed and the render.
+ *
+ * This is the seam the frameworks base hangs off ($lib/frameworks): a framework declares
+ * a tracked subject with a marker inside an entry, and this is what replaces that marker
+ * with the line it computed. The engine knows nothing about markers or frameworks. It
+ * only knows that a caller may have one more thing to say about an entry's text.
+ *
+ * MUST be pure and deterministic. Assembly runs at least twice (the token meter, then the
+ * send) and the two have to agree byte for byte, which is the same contract `expand` is
+ * already held to here.
+ */
+export type LorebookDecorator = (entry: LorebookEntry, text: string) => string;
+
+/** The decorator for a caller with nothing to add. */
+export const NO_DECORATION: LorebookDecorator = (_entry, text) => text;
+
 export interface LorebookScanInput {
 	books: Lorebook[];
 	/** Everything readable, from {@link messageScanSources} and {@link fieldScanSources}. */
@@ -667,6 +687,10 @@ export interface LorebookScanInput {
 	/** Macro expansion for the content recursion feeds back in; identity when the caller has
 	 *  no context to expand against. */
 	expand?: (text: string) => string;
+	/** Framework decoration for that same content; identity when the caller has no story
+	 *  state to compute against. Applied AFTER `expand`, so a marker cannot be assembled
+	 *  out of macro output. */
+	decorate?: LorebookDecorator;
 }
 
 /**
@@ -680,6 +704,11 @@ export function scanLorebooks(input: LorebookScanInput): LorebookSelection {
 	const history = input.history ?? [];
 	const settings = input.settings ?? DEFAULT_LOREBOOK_GLOBAL_SETTINGS;
 	const chatLength = input.sources.filter((s) => s.kind === 'message').length;
+	// The one way an entry's content is read for recursion: expanded, then decorated. Composed
+	// here rather than threaded as two parameters, because the pair is never wanted apart.
+	const expand = input.expand ?? ((t: string) => t);
+	const decorate = input.decorate ?? NO_DECORATION;
+	const readEntry = (entry: LorebookEntry) => decorate(entry, expand(entry.content));
 	const entries: LorebookEntry[] = [];
 	const records = new Map<string, LorebookEntryRecord>();
 	const run = (pool: Lorebook[], maxSteps: number) => {
@@ -691,7 +720,7 @@ export function scanLorebooks(input: LorebookScanInput): LorebookSelection {
 			input.trigger ?? 'normal',
 			history,
 			chatLength,
-			input.expand ?? ((t: string) => t),
+			readEntry,
 			maxSteps
 		);
 		entries.push(...picked.entries);
@@ -741,7 +770,8 @@ export function renderLorebookBlock(
 	selection: LorebookSelection,
 	expand: (text: string) => string = (t) => t,
 	budget?: LorebookBudget,
-	placeAtDepth = false
+	placeAtDepth = false,
+	decorate: LorebookDecorator = NO_DECORATION
 ): LorebookRender {
 	const parts: string[] = [];
 	/** Keyed by role and depth, so entries sharing both become one turn. */
@@ -751,9 +781,20 @@ export function renderLorebookBlock(
 	const placedAt = new Map<string, { role: LorebookRole; depth: number }>();
 	let spent = 0;
 	for (const entry of selection.entries) {
-		const content = expand(entry.content).trim();
-		if (!content) {
+		const expanded = expand(entry.content).trim();
+		if (!expanded) {
 			// Content that expanded to nothing: it fired, but there is nothing to inject.
+			// Checked BEFORE decoration, so a framework can never conjure text for an entry
+			// that had none of its own and cost it this honest `empty` verdict.
+			blank.add(entry.id);
+			continue;
+		}
+		// Decorated BEFORE the budget below, so what a framework adds is priced like any
+		// other lore rather than letting the block outgrow its allowance after the fact.
+		const content = decorate(entry, expanded).trim();
+		if (!content) {
+			// An entry that was nothing but a marker, and the marker resolved to nothing.
+			// Also empty: it fired and there is still nothing to inject.
 			blank.add(entry.id);
 			continue;
 		}
@@ -821,6 +862,16 @@ export function resolveLorebooks(opts: {
 	settings?: LorebookGlobalSettings;
 	/** Macro expansion for entry content; identity when the caller has no context to expand against. */
 	expand?: (text: string) => string;
+	/**
+	 * Framework decoration for entry content, applied after `expand` at BOTH places an
+	 * entry's text is read.
+	 *
+	 * **Required, deliberately, unlike every other option here.** It is the
+	 * `LorebookLinks` rule: a key a caller could leave out is a layer it can drop in
+	 * silence, and a surface that quietly skipped this would price and show a prompt the
+	 * send does not build. Pass `NO_DECORATION` to mean it on purpose.
+	 */
+	decorate: LorebookDecorator;
 	budget?: LorebookBudget;
 	rng?: () => number;
 	/** Whether this caller can splice turns into the chat. False (the default) folds every
@@ -839,9 +890,16 @@ export function resolveLorebooks(opts: {
 		settings: opts.settings,
 		trigger: opts.trigger,
 		history: opts.history,
-		expand
+		expand,
+		decorate: opts.decorate
 	});
-	const rendered = renderLorebookBlock(selection, expand, opts.budget, opts.placeAtDepth);
+	const rendered = renderLorebookBlock(
+		selection,
+		expand,
+		opts.budget,
+		opts.placeAtDepth,
+		opts.decorate
+	);
 	return {
 		text: rendered.text,
 		placed: rendered.placed,

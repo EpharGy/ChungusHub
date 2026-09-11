@@ -13,6 +13,8 @@
 import type { Message } from '$lib/types/chat';
 import { expandMacros, type MacroContext, type PromptCharacter } from '$lib/macros';
 import { resolveLorebooks } from '$lib/lorebook/engine';
+import { frameworkBooks, frameworkDecorator } from '$lib/frameworks/apply';
+import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 import { lorebookHistory, lorebookScanFields, type LorebookTrigger } from '$lib/lorebook/types';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -82,17 +84,33 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 	// One scan, resolved against a context that carries no lore yet: same shape as
 	// buildMacroContext, through the same resolver, so these surfaces cannot select
 	// differently from the prompt they sit beside.
+	// One derivation of the path, shared by the scan and the day resolution.
+	const scanPath = chatMessages.map((m) => m.content);
 	const lore = resolveLorebooks({
-		books: lorebookStore.booksForChat({
-			cards: [...(characterData?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
-			chat: chatLorebookClaim(chatStore.activeChat),
-			muted: chatMutedLorebookClaim(chatStore.activeChat)
-		}),
-		messages: chatMessages.map((m) => m.content),
+		// Same books the prompt beside this one builds, frameworks included: a meter that
+		// omitted the framework block would price a prompt the send does not send.
+		books: [
+			...lorebookStore.booksForChat({
+				cards: [...(characterData?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
+				chat: chatLorebookClaim(chatStore.activeChat),
+				muted: chatMutedLorebookClaim(chatStore.activeChat)
+			}),
+			...frameworkBooks(
+				chatStore.activeChat ? chatStore.featureState(chatStore.activeChat.id).frameworks : undefined,
+				frameworkSettingsStore.settings
+			)
+		],
+		messages: scanPath,
 		fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
 		trigger: opts.lorebookTrigger,
 		history: lorebookHistory(chatMessages),
 		settings: lorebookSettings,
+		// The store-sourced twin of the generation path's decorator, built through the same
+		// builder so these surfaces cannot decorate differently from the prompt beside them.
+		decorate: frameworkDecorator(
+			chatStore.activeChat ? chatStore.featureState(chatStore.activeChat.id).frameworks : undefined,
+			frameworkSettingsStore.settings
+		),
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget
 	});

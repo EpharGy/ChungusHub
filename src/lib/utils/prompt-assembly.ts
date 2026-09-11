@@ -23,6 +23,9 @@ import type { PromptControl, PromptItem, PromptPreset } from '$lib/types/databas
 import type { Lorebook, LorebookGlobalSettings, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
 import { EMPTY_LOREBOOK_TRACE, lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
 import { resolveLorebooks } from '$lib/lorebook/engine';
+import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
+import { frameworkBooks, frameworkDecorator } from '$lib/frameworks/apply';
+import type { FrameworkSettings } from '$lib/frameworks/settings';
 import {
 	expandMacros,
 	expandSelfRefs,
@@ -124,6 +127,24 @@ export interface AssembleInput {
 	 *  standing prompt state, so the chat meter passes it too, under the same engine
 	 *  gate as prompt-builder, or the meter would price a block the send won't send. */
 	steering?: { notes: ResolvedSteeringNote[]; wrapper: string };
+	/** The chat's framework state: the story day, the subjects it holds out, and each
+	 *  framework's own slice. Frameworks rewrite the markers a lorebook entry carries, so
+	 *  this reaches the prompt through the entry that fired rather than as a block of its
+	 *  own. Absent = no story to compute against (a library meter, or the prompt builder
+	 *  pricing a preset), which runs no framework at all rather than assuming day 1. */
+	/**
+	 * ONE field carrying both halves, because they are useless apart.
+	 *
+	 * Assembly intersects the chat's switches with the install's, so a caller that passed the
+	 * story state and forgot the settings found nothing available and quietly assembled a
+	 * prompt with no framework in it: markers stripped and left nothing behind, no block
+	 * injected, and every surface still looking correct. Two optional fields made that a
+	 * one-line omission; one field makes it unsayable.
+	 *
+	 * Absent means the caller has no story to speak for (a library meter, the prompt builder
+	 * pricing a preset), which runs no framework at all rather than assuming one.
+	 */
+	frameworks?: { state: ChatFrameworkState; settings: FrameworkSettings };
 }
 
 /** One item's contribution to the final prompt, with tokens attributed by provenance:
@@ -210,19 +231,29 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 	// The lorebook is scanned and rendered once, here, against a context that has no lore in it
 	// yet: that is what makes a stray {{lorebook}} inside an entry resolve to nothing instead of
 	// recursing, and it leaves ONE roll of the probabilistic entries per assembly.
+	// One derivation of the path, shared by the lorebook scan and the day resolution, so
+	// the day the frameworks compute against is read from exactly the turns the scan saw.
+	const scanPath = chatMessages.map((m) => m.content);
 	const lore = resolveLorebooks({
-		books: input.lorebooks,
+		// The frameworks' own blocks join the books rather than being spliced in afterwards,
+		// so they are placed, priced and traced by the same code every other injected line
+		// goes through (frameworks/apply.ts).
+		books: [...input.lorebooks, ...frameworkBooks(input.frameworks?.state, input.frameworks?.settings)],
 		// An at-depth entry needs a chat to sit inside. Without {{chatHistory}} in the enabled
 		// preset there is no such sequence, so those entries join the block instead of landing
 		// in a position nothing renders. Decided here, once, where the preset is already known.
 		placeAtDepth: base.injectsHistory,
-		messages: chatMessages.map((m) => m.content),
+		messages: scanPath,
 		fields: lorebookScanFields(input.resolvedCharacters, input.resolvedPersona),
 		trigger: input.lorebookTrigger,
 		// Sticky and cooldown read the traces the path's own turns stored, so a swipe measures
 		// them against the branch it lives on rather than against the attempt it replaced.
 		history: lorebookHistory(chatMessages),
 		settings: input.lorebookSettings,
+		// Frameworks rewrite their markers inside each entry that fired, before the budget
+		// prices it. Built through the one shared builder so the meter and the send cannot
+		// decorate differently.
+		decorate: frameworkDecorator(input.frameworks?.state, input.frameworks?.settings),
 		expand: (text) => expandMacros(text, base),
 		budget: lorebookBudget
 	});

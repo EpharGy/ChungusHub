@@ -34,6 +34,7 @@
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { steeringStore } from '$lib/stores/steering.svelte';
 	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
+	import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 	import { personaStore } from '$lib/stores/persona.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { assistantSessionStore } from '$lib/stores/assistantSessions.svelte';
@@ -187,6 +188,11 @@
 			await characterLibraryStore.load();
 			await lorebookStore.load();
 			await lorebookSettingsStore.initialize();
+			// Frameworks inject into the prompt through the lorebook pipeline, so their
+			// settings load beside the lorebook's own: the chat meter prices that block the
+			// moment a chat opens, and an unloaded store would price a prompt with nothing in
+			// it and then quietly disagree with the send a beat later.
+			await frameworkSettingsStore.initialize();
 			// Steering notes are prompt context like the lorebooks above: the composer's
 			// readout and the chat meter both resolve them the moment a chat opens, so
 			// they load before chatStore does.

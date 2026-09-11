@@ -7,6 +7,7 @@
 	import SecurityPage from './SecurityPage.svelte';
 	import EnginesPage from './EnginesPage.svelte';
 	import ImageGenPage from './ImageGenPage.svelte';
+	import FrameworksPage from './FrameworksPage.svelte';
 	import ImportPage from './ImportPage.svelte';
 	import BackupsPage from './BackupsPage.svelte';
 	import RegexPage from './RegexPage.svelte';
@@ -36,6 +37,8 @@
 	<EnginesPage />
 {:else if page === 'imagegen'}
 	<ImageGenPage />
+{:else if page === 'frameworks'}
+	<FrameworksPage />
 {:else if page === 'security'}
 	<SecurityPage />
 {:else if page === 'import'}

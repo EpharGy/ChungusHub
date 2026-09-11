@@ -8,6 +8,7 @@
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
+	import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
@@ -25,6 +26,7 @@
 	import { assemblePrompt } from '$lib/utils/prompt-assembly';
 	import {
 		chatLorebookClaim,
+		chatFrameworkState,
 		chatMutedLorebookClaim,
 		chatPersonaEntry,
 		chatPreset,
@@ -284,7 +286,14 @@
 					postProcessing: promptTarget.postProcessing,
 					contextBudget: promptTarget.contextBudget,
 					regexRules: regexRulesStore.effectiveFor(currentPreset),
-					steering: steeringForPrompt
+					steering: steeringForPrompt,
+					// Standing story state, like steering: the meter must price what a send will
+					// inject, and a framework line lands inside a lorebook entry that is already
+					// being counted here.
+					frameworks: {
+						state: chatFrameworkState(chatStore.activeChat),
+						settings: frameworkSettingsStore.settings
+					}
 				})
 			: null
 	);

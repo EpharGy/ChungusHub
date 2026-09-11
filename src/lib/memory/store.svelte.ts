@@ -22,6 +22,9 @@ import { personaEntryFor, presetForClaim, toPromptCharacter } from '$lib/utils/c
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { resolveLorebooks } from '$lib/lorebook/engine';
+import { frameworkDecorator } from '$lib/frameworks/apply';
+import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
+import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
 import { lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -68,6 +71,10 @@ export interface ChatCtx {
 	 *  pin does. Null is "follow the app", which is what memory extracts against unless the
 	 *  chat named someone else. */
 	personaId: string | null;
+	/** The chat's framework state, travelling with the ctx for the reason the version pin
+	 *  does: this module can never import chatStore, and a summary built against an entry
+	 *  whose framework marker was left raw would disagree with the prompt that resolved it. */
+	frameworks: ChatFrameworkState;
 	/** The preset this chat claimed, travelling with the ctx for the same reason. It decides
 	 *  both whether {{memory}} is placed at all and the controls a template expands against,
 	 *  so reading the app's here would let the engine run for a chat whose own preset never
@@ -465,16 +472,29 @@ class MemoryStore {
 		};
 		// One scan, through the same resolver as the prompt and the meters. No budget here: a
 		// memory template is its own request, priced against its own engine connection.
+		//
+		// **No framework books either**, unlike the prompt and the live meters. Those blocks
+		// are instructions addressed to the model about what to write in its NEXT reply, and a
+		// summariser is not writing one: telling it to open with a time marker would put a
+		// marker in the summary, which the day resolver would then read back as the story
+		// stating a date. The decoration below is still shared, because that rewrites text an
+		// author wrote and a summary must read it the way the prompt does.
+		// One derivation of the path, shared by the scan and the day resolution.
+		const scanPath = chatMessages.map((m) => m.content);
 		const lore = resolveLorebooks({
 			books: lorebookStore.booksForChat({
 				cards: [...(data?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
 				chat: ctx.lorebookIds,
 				muted: ctx.mutedLorebookIds
 			}),
-			messages: chatMessages.map((m) => m.content),
+			messages: scanPath,
 			fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
 			history: lorebookHistory(chatMessages),
 			settings: lorebookSettingsStore.settings,
+			// Memory analyses the same story the prompt does, through the same builder: an
+			// entry that reaches a summary with its marker resolved must not reach the prompt
+			// with it raw, or the two disagree about what the entry says.
+			decorate: frameworkDecorator(ctx.frameworks, frameworkSettingsStore.settings),
 			expand: (text) => expandMacros(text, base)
 		});
 		return { ...base, lorebook: lore.text, lorebookTrace: lore.trace };

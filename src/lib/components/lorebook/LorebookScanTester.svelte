@@ -10,7 +10,7 @@
 	 * It runs the real engine, never a second implementation of the matching rules, and it
 	 * writes nothing: no generation, no store, no row.
 	 */
-	import { resolveLorebooks } from '$lib/lorebook/engine';
+	import { NO_DECORATION, resolveLorebooks } from '$lib/lorebook/engine';
 	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 	import LorebookTraceList from './LorebookTraceList.svelte';
 	import type { Lorebook } from '$lib/lorebook/types';
@@ -40,6 +40,11 @@
 					books: [book],
 					messages: turns,
 					settings: lorebookSettingsStore.settings,
+					// No decoration here, for the same reason this box passes no `expand`: it
+					// scans one book against text the reader typed, with no chat, no card
+					// fields and no story day, so a framework line computed here would be
+					// computed against nothing. This box tests matching, and only matching.
+					decorate: NO_DECORATION,
 					rng: () => 0
 				})
 			: null

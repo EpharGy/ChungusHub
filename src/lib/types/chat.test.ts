@@ -53,7 +53,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			persona: null,
 			preset: null,
 			lorebooks: [],
-			mutedLorebooks: []
+			mutedLorebooks: [],
+			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} }
 		});
 	});
 
@@ -66,7 +67,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			persona: null,
 			preset: null,
 			lorebooks: [],
-			mutedLorebooks: []
+			mutedLorebooks: [],
+			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} }
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -88,7 +90,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			persona: null,
 			preset: null,
 			lorebooks: [],
-			mutedLorebooks: []
+			mutedLorebooks: [],
+			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} }
 		});
 		expect('steering' in result).toBe(false);
 	});

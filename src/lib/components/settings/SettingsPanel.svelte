@@ -49,7 +49,9 @@
 				? 'Connections'
 				: uiStore.settingsEngineId
 					? 'Engines'
-					: 'Settings'
+					: uiStore.settingsFrameworkId
+						? 'Frameworks'
+						: 'Settings'
 	);
 
 	function go(p: SettingsPage): void {
@@ -59,7 +61,7 @@
 
 	function back(): void {
 		// Peel sub-views deepest-first: the chip and Escape step routing ← editor ←
-		// list ← root (and engine detail ← list), one level per press.
+		// list ← root (and engine or framework detail ← list), one level per press.
 		if (uiStore.settingsRoutingModel) {
 			uiStore.settingsRoutingModel = null;
 			return;
@@ -70,6 +72,10 @@
 		}
 		if (uiStore.settingsEngineId) {
 			uiStore.settingsEngineId = null;
+			return;
+		}
+		if (uiStore.settingsFrameworkId) {
+			uiStore.settingsFrameworkId = null;
 			return;
 		}
 		navDir = -1;

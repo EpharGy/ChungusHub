@@ -16,6 +16,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
 	messageScanSources,
+	NO_DECORATION,
 	renderLorebookBlock,
 	resolveLorebooks,
 	scanLorebooks,
@@ -1098,5 +1099,95 @@ describe('an archive-sized book', () => {
 		const started = Date.now();
 		expect(resolveLorebooks({ books: [big], messages: ['nothing matches here'] }).text).toBe('');
 		expect(Date.now() - started).toBeLessThan(8000);
+	});
+});
+
+describe('the decorate seam', () => {
+	// One optional rewrite of an entry's text, applied at BOTH places the engine reads it. The
+	// frameworks base ($lib/frameworks) is its only consumer today: a marker written inside an
+	// entry is replaced with a line computed from story state. The engine knows none of that
+	// and these tests deliberately use a plain string swap instead.
+
+	test('the render applies it, so what reaches the block is the decorated text', () => {
+		const entries = [{ ...createEmptyLorebookEntry(), content: 'raw' }];
+		const out = renderLorebookBlock(selectionOf(entries), undefined, undefined, false, (_e, t) =>
+			t.replace('raw', 'decorated')
+		);
+		expect(out.text).toBe('decorated');
+	});
+
+	test('the recursion feed applies it too, so a decorated line can wake another entry', () => {
+		// Nothing in either entry's stored content mentions beta: the wake can only come from
+		// what decoration put there. Skip this at one call site and the feature silently loses
+		// half of what it is for.
+		const b = book([
+			{ content: 'MARKER', constant: true, order: 100 },
+			{ content: 'beta fact', key: ['beta'], order: 200 }
+		]);
+		const decorate = (_e: LorebookEntry, t: string) => t.replace('MARKER', 'beta');
+		const picked = scanLorebooks({ books: [b], sources: [], decorate });
+		expect(picked.entries.map((e) => e.content)).toEqual(['MARKER', 'beta fact']);
+		// Without it, the second entry has nothing to match on.
+		expect(scanLorebooks({ books: [b], sources: [] }).entries.map((e) => e.content)).toEqual(['MARKER']);
+	});
+
+	test('decoration cannot conjure text for an entry that had none of its own', () => {
+		// Checked before the decorator runs, so an entry whose own content expanded away keeps
+		// its honest `empty` verdict instead of being resurrected by a framework.
+		const entries = [{ ...createEmptyLorebookEntry(), content: '{{x}}' }];
+		const out = renderLorebookBlock(selectionOf(entries), () => '', undefined, false, () => 'conjured');
+		expect(out.text).toBe('');
+		expect(out.records[0].status).toBe('empty');
+	});
+
+	test('an entry decorated down to nothing is empty as well', () => {
+		// An entry that was nothing but a marker, whose marker resolved to nothing.
+		const entries = [{ ...createEmptyLorebookEntry(), content: 'MARKER' }];
+		const out = renderLorebookBlock(selectionOf(entries), undefined, undefined, false, () => '');
+		expect(out.text).toBe('');
+		expect(out.records[0].status).toBe('empty');
+	});
+
+	test('the budget prices the DECORATED content, not what was stored', () => {
+		// Decoration runs before the budget for the same reason expansion does: what a
+		// framework adds is lore, and lore that priced itself after the fact could push the
+		// block past the allowance the whole scan shares.
+		const entries = [{ ...createEmptyLorebookEntry(), content: 'ab' }];
+		const out = renderLorebookBlock(
+			selectionOf(entries),
+			undefined,
+			{ maxTokens: 5, count: (t) => t.length },
+			false,
+			(_e, t) => `${t} a very long addition`
+		);
+		expect(out.text).toBe('');
+		expect(out.records[0].status).toBe('trimmed');
+	});
+
+	test('the decorator is handed the entry, not just its text', () => {
+		// The entry is what a framework needs: its id, its title, and the content it is about
+		// to rewrite. A text-only callback could not tell two entries apart.
+		const entries = [{ ...createEmptyLorebookEntry(), content: 'x', comment: 'Rowan' }];
+		const out = renderLorebookBlock(selectionOf(entries), undefined, undefined, false, (e) => e.comment);
+		expect(out.text).toBe('Rowan');
+	});
+
+	test('resolveLorebooks threads it to both sites in one call', () => {
+		const b = book([
+			{ content: 'MARKER', constant: true, order: 100 },
+			{ content: 'beta fact', key: ['beta'], order: 200 }
+		]);
+		const out = resolveLorebooks({
+			books: [b],
+			messages: [],
+			decorate: (_e, t) => t.replace('MARKER', 'beta')
+		});
+		// The wake proves the scan site; the rendered text proves the render site.
+		expect(out.text).toBe('beta\n\nbeta fact');
+	});
+
+	test('NO_DECORATION leaves an entry exactly as it was', () => {
+		const b = book([{ content: 'plain', constant: true }]);
+		expect(resolveLorebooks({ books: [b], messages: [], decorate: NO_DECORATION }).text).toBe('plain');
 	});
 });
