@@ -27,9 +27,28 @@
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import { formatMessageTime } from '$lib/utils/time-format.svelte';
 	import { db } from '$lib/services/database';
+	import { chatStore } from '$lib/stores/chat.svelte';
 	import type { ImagegenCacheReport } from '$shared/imagegen';
 
 	const settings = $derived(imagegenStore.settings);
+
+	const openChat = $derived(chatStore.currentChatState?.chat ?? null);
+	const chatWorkflow = $derived(
+		openChat ? chatStore.featureState(openChat.id).imagegenWorkflow : null
+	);
+
+	/** An empty value is the "follow the default" option, and it is written as null rather
+	 *  than as the app's current workflow name. Writing the name would pin this story to
+	 *  whatever the default happens to be today and quietly stop it following, which looks
+	 *  identical on this page until the day the default is changed for every other chat. */
+	async function setChatWorkflow(value: string): Promise<void> {
+		if (!openChat) return;
+		try {
+			await chatStore.updateChatFeatureState(openChat.id, { imagegenWorkflow: value || null });
+		} catch (error) {
+			toastStore.failed("set this chat's workflow", error);
+		}
+	}
 
 	let workflows = $state<WorkflowEntry[]>([]);
 	let checkpoints = $state<string[]>([]);
@@ -302,6 +321,33 @@
 				<span class="hint">
 					Drop your own API-format workflows in <code>data/imagegen-workflows/</code>. See the
 					README beside the bundled one for the placeholders.
+				</span>
+			</label>
+
+			<label class="field">
+				<span class="field-label">This chat</span>
+				<Select
+					value={chatWorkflow ?? ''}
+					disabled={!openChat}
+					onchange={(e) => setChatWorkflow(e.currentTarget.value)}
+				>
+					<option value="">Following the default</option>
+					{#each workflows as workflow (workflow.name)}
+						<option value={workflow.name}>
+							{workflow.name}{workflow.source === 'user' ? ' (yours)' : ''}
+						</option>
+					{/each}
+					{#if chatWorkflow && !workflows.some((w) => w.name === chatWorkflow)}
+						<option value={chatWorkflow}>{chatWorkflow} (missing)</option>
+					{/if}
+				</Select>
+				<span class="hint">
+					{#if openChat}
+						Only this chat. Every other story keeps <code>{settings.workflow}</code>, so this is
+						how one character gets their own LoRA without the rest of them getting it too.
+					{:else}
+						Open a chat to give it a workflow of its own.
+					{/if}
 				</span>
 			</label>
 		</div>
