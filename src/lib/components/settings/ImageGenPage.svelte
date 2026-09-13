@@ -47,8 +47,11 @@
 	}
 
 	/** One button for both questions a reader has about the host: is it there, and what can
-	 *  it load. Asking them separately means two round trips to answer "is this set up". */
-	async function testConnection(): Promise<void> {
+	 *  it load. Asking them separately means two round trips to answer "is this set up".
+	 *
+	 *  `quiet` is for the probe on open: a settings page that raises a toast because the GPU
+	 *  box is asleep is noise, and the status line beside the button already says so. */
+	async function testConnection(quiet = false): Promise<void> {
 		checking = true;
 		try {
 			online = await pingComfy(settings.host);
@@ -61,7 +64,7 @@
 				imagegenStore.update({ checkpoint: checkpoints[0] });
 			}
 		} catch (error) {
-			toastStore.failed('read the checkpoint list', error);
+			if (!quiet) toastStore.failed('read the checkpoint list', error);
 		} finally {
 			checking = false;
 		}
@@ -69,6 +72,17 @@
 
 	$effect(() => {
 		void loadWorkflows();
+	});
+
+	/** Ask the host what it can load as soon as the page opens, rather than leaving the
+	 *  checkpoint list behind a button a reader has no reason to press. A plain `let`: this
+	 *  guard must not be a dependency of the effect that sets it. The host is, so filling in
+	 *  an address that was empty probes it without a click as well. */
+	let probed = false;
+	$effect(() => {
+		if (probed || !settings.host) return;
+		probed = true;
+		void testConnection(true);
 	});
 
 	/** null = not asked yet. Only the server can answer (the files are its), and drawing a
@@ -235,7 +249,7 @@
 			</label>
 
 			<div class="row">
-				<Button variant="secondary" size="sm" disabled={checking} onclick={testConnection}>
+				<Button variant="secondary" size="sm" disabled={checking} onclick={() => testConnection()}>
 					{checking ? 'Checking…' : 'Test connection'}
 				</Button>
 				{#if online === true}
@@ -261,10 +275,12 @@
 						class="input-base"
 						type="text"
 						value={settings.checkpoint}
-						placeholder="model.safetensors"
-						onchange={(e) => imagegenStore.update({ checkpoint: e.currentTarget.value })}
+						placeholder="No model picked yet"
+						readonly
 					/>
-					<span class="hint">Test the connection to pick from the models ComfyUI has.</span>
+					<span class="hint">
+						Test the connection to use a dropdown to pick from the models ComfyUI has available.
+					</span>
 				{/if}
 			</label>
 
