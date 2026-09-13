@@ -143,6 +143,19 @@ export interface ChatFeatureState {
 	 *  id sits in this list. Nothing else can exempt one story from a book the wider setup
 	 *  brings. Applied last, so it outranks every layer including the list above it. */
 	mutedLorebooks: string[];
+	/** The ComfyUI workflow this story generates its pictures with, or null to follow the
+	 *  app's. It exists so one story can carry a character's own LoRA without every other
+	 *  story getting it, which otherwise means swapping the app-wide workflow by hand on
+	 *  every chat switch.
+	 *
+	 *  A claim on a FILE rather than on a record, which is the one way it differs from the
+	 *  three above: a name no longer in the workflow folder cannot resolve to the app's,
+	 *  because a picture made from the wrong workflow is a picture without the LoRA the
+	 *  claim was made for, and nothing on screen would say so. It fails the generation
+	 *  naming the file instead, the same way a missing checkpoint does, and the picker
+	 *  marks it `(missing)` exactly as the app-wide one already does. Nothing stamps it at
+	 *  birth. */
+	imagegenWorkflow: string | null;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
@@ -154,7 +167,8 @@ function defaultChatFeatureState(): ChatFeatureState {
 		persona: null,
 		preset: null,
 		lorebooks: [],
-		mutedLorebooks: []
+		mutedLorebooks: [],
+		imagegenWorkflow: null
 	};
 }
 
@@ -222,7 +236,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		persona: normalizeClaimedId(obj.persona),
 		preset: normalizeClaimedId(obj.preset),
 		lorebooks: normalizeClaimedIds(obj.lorebooks),
-		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks)
+		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks),
+		imagegenWorkflow: normalizeClaimedId(obj.imagegenWorkflow)
 	};
 }
 

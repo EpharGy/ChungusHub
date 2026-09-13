@@ -94,15 +94,21 @@ export function effectiveSeedToken(markerSeed: SeedToken, settings: ImagegenSett
 /**
  * The final request. `seed` arrives already resolved to a number, because `LOCK` means
  * "whatever the last picture on this path used" and only the caller can see the path.
+ *
+ * `chatWorkflow` arrives resolved for the same reason: which story a marker sits in is a
+ * question only the caller can answer, and this module stays free of `$lib` and of Svelte
+ * so the whole of it is unit-testable with no DOM and no store. Null means this story made
+ * no claim, which is the normal case and follows the app's setting.
  */
 export function buildGenerateRequest(
 	effective: EffectiveSettings,
 	seed: number,
-	settings: ImagegenSettings
+	settings: ImagegenSettings,
+	chatWorkflow: string | null = null
 ): GenerateRequest {
 	return {
 		host: settings.host,
-		workflow: settings.workflow,
+		workflow: chatWorkflow ?? settings.workflow,
 		checkpoint: settings.checkpoint,
 		positivePrompt: effective.positivePrompt,
 		negativePrompt: settings.negativePrompt,

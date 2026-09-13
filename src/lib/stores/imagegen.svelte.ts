@@ -371,10 +371,17 @@ class ImagegenStore {
 		const settings = this.settings;
 		const effective = resolveEffective(parsed, settings);
 		const seed = opts.seed ?? this.resolveSeed(effective.seedToken, messageId);
+		// Read here rather than after the await, and for the seed's own reason: both answer
+		// "which story is this marker in", and a reader who walks to another chat while a
+		// picture is being made must not have that chat's workflow swapped under a job
+		// already in flight.
+		const chatWorkflow = this.chatWorkflow();
 
 		this.working.set(key, true);
 		try {
-			const result = await generateImage(buildGenerateRequest(effective, seed, settings));
+			const result = await generateImage(
+				buildGenerateRequest(effective, seed, settings, chatWorkflow)
+			);
 
 			// Re-read the row rather than trusting the copy this started with: a minute is long
 			// enough for the reader to have edited the turn, retried a neighbouring marker, or
@@ -460,6 +467,18 @@ class ImagegenStore {
 		// Nothing to lock onto yet: the first picture in a story asks for LOCK and means
 		// "the same as before", and before is nothing.
 		return randomSeed();
+	}
+
+	/** This story's own workflow claim, or null to follow the app's.
+	 *
+	 *  The OPEN chat is the right thing to ask, and it is not a shortcut: generation is
+	 *  already bounded to it on both sides. `ensureForMessage` resolves its row through the
+	 *  open chat and a row outside it resolves to nothing, and `resolveSeed` walks that
+	 *  chat's own message list. A claim read from anywhere else would be answering about a
+	 *  story this picture is not in. */
+	private chatWorkflow(): string | null {
+		const chatId = chatStore.currentChatState?.chat.id;
+		return chatId ? chatStore.featureState(chatId).imagegenWorkflow : null;
 	}
 
 	/** The row as the chat store currently holds it. Every read goes through here so nothing

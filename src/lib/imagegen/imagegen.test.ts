@@ -226,6 +226,26 @@ describe('locks and prompt assembly', () => {
 		expect(request.sampler).toBe('dpmpp_2m');
 		expect(request.checkpoint).toBe('model.safetensors');
 	});
+
+	test("a story's own workflow wins over the app's, and no claim follows the app's", () => {
+		const settings = resolveImagegenSettings({ workflow: 'default.json' });
+		const effective = resolveEffective(ok('1girl'), settings);
+
+		expect(buildGenerateRequest(effective, 1, settings).workflow).toBe('default.json');
+		expect(buildGenerateRequest(effective, 1, settings, null).workflow).toBe('default.json');
+		expect(buildGenerateRequest(effective, 1, settings, 'rowan.json').workflow).toBe('rowan.json');
+	});
+
+	test('a claim changes the workflow and nothing else about the request', () => {
+		const settings = resolveImagegenSettings({ workflow: 'default.json', steps: 30 });
+		const effective = resolveEffective(ok('1girl'), settings);
+		const plain = buildGenerateRequest(effective, 42, settings);
+		const claimed = buildGenerateRequest(effective, 42, settings, 'rowan.json');
+
+		// The claim is a per-chat swap of one file, so a reader comparing two stories' pictures
+		// is comparing the workflow and never a sampler that moved with it.
+		expect(claimed).toEqual({ ...plain, workflow: 'rowan.json' });
+	});
 });
 
 describe('settings resolution', () => {

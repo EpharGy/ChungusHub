@@ -14,7 +14,7 @@
  */
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test';
 
-import type { Message } from '$lib/types/chat';
+import { DEFAULT_CHAT_FEATURE_STATE, type Message } from '$lib/types/chat';
 
 const runeIdentity = <T>(value?: T): T | undefined => value;
 // `.raw` alongside the call itself: the real modules captured below reach for it, and it is the
@@ -114,6 +114,9 @@ mock.module('$lib/stores/toast.svelte', () => ({
 }));
 
 let message: Message;
+/** This story's own workflow, as the open chat's feature state would report it. Null is a
+ *  chat that has claimed nothing, which is every case but the two that say otherwise. */
+let chatWorkflow: string | null = null;
 
 mock.module('$lib/stores/chat.svelte', () => ({
 	...realChat,
@@ -121,6 +124,7 @@ mock.module('$lib/stores/chat.svelte', () => ({
 		get currentChatState() {
 			return { chat: { id: 'c1' }, allMessages: [message], activePath: [message] };
 		},
+		featureState: () => ({ ...DEFAULT_CHAT_FEATURE_STATE, imagegenWorkflow: chatWorkflow }),
 		refreshChat: async () => undefined
 	}
 }));
@@ -161,6 +165,7 @@ beforeEach(() => {
 	pingResult = true;
 	generateResult = 'ok';
 	generateDelayMs = 0;
+	chatWorkflow = null;
 	imagegenStore.update({ enabled: true, autoGenerate: true, host: 'http://gpu-box:8188' });
 });
 
@@ -279,5 +284,50 @@ describe('two passes over the same turn', () => {
 		await Promise.all([first, second]);
 
 		expect(generateCalls).toHaveLength(3);
+	});
+});
+
+describe("a story's own workflow", () => {
+	test("the open chat's claim reaches the request, and no claim follows the app's", async () => {
+		imagegenStore.update({ workflow: 'default.json' });
+
+		await imagegenStore.ensureForMessage(id);
+		expect(generateCalls.map((c) => (c as { workflow: string }).workflow)).toEqual([
+			'default.json',
+			'default.json',
+			'default.json'
+		]);
+
+		generateCalls.length = 0;
+		id = `m${nextId++}`;
+		message = threeMarkerMessage();
+		chatWorkflow = 'rowan.json';
+
+		await imagegenStore.ensureForMessage(id);
+		expect(generateCalls.map((c) => (c as { workflow: string }).workflow)).toEqual([
+			'rowan.json',
+			'rowan.json',
+			'rowan.json'
+		]);
+	});
+
+	test('a claim changes the workflow and nothing else about the request', async () => {
+		// The per-chat setting is one file, not a second settings page. A reader comparing two
+		// stories' pictures is comparing the workflow and never a sampler that travelled with it.
+		// The seed is the one field held out of the comparison: these markers name no seed, so
+		// each picture gets a fresh random one and two of them matching would be the bug.
+		imagegenStore.update({ workflow: 'default.json', steps: 30, sampler: 'dpmpp_2m' });
+		await imagegenStore.ensureForMessage(id);
+		const plain = generateCalls[0] as Record<string, unknown>;
+
+		generateCalls.length = 0;
+		id = `m${nextId++}`;
+		message = threeMarkerMessage();
+		chatWorkflow = 'rowan.json';
+
+		await imagegenStore.ensureForMessage(id);
+		const claimed = generateCalls[0] as Record<string, unknown>;
+
+		expect(claimed).toEqual({ ...plain, workflow: 'rowan.json', seed: claimed.seed });
 	});
 });
