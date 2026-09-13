@@ -139,7 +139,12 @@ $Topics = @(
     # able to hold. Shares types.ts and architecture/lorebook.md with lore-scan-steering above,
     # and sits after it so that conflict shape is the one rerere already knows.
     # Retire this the day upstream merges it.
-    'fix/duplicate-key-input'
+    'fix/duplicate-key-input',
+    # One story's own ComfyUI workflow, so a character can carry a LoRA the rest of them do
+    # not. Adds a field to ChatFeatureState, which four branches above already append to at
+    # the same three lines - so it sits LAST for the reason fix/token-count-cache does: every
+    # conflict shape above this point is left exactly as rerere already knows it.
+    'feature/imagegen-per-chat'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
