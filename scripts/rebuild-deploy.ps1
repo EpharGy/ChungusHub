@@ -124,26 +124,10 @@ $Topics = @(
     # feature/frameworks changes the neighbours of, so it sits AFTER it: the conflict is one
     # rerere shape and every shape above this point is left unchanged.
     'feature/lore-scan-steering',
-    # Memoized token counting. Touches only src/lib/tokenizer/, so it overlaps nothing else
-    # in either list and sits last purely to keep every conflict shape above it unchanged.
-    'fix/token-count-cache',
-    # A lorebook key listed twice is read once. An upstream bug (patcireamo#72): the repeat
-    # made two identical matches, which the trace renders as a duplicate key in a keyed each,
-    # and Svelte throws there in production too - so a turn's lorebook pill opened nothing.
-    # Touches found() in engine.ts, which the frameworks branches also edit, so it sits last
-    # for fix/token-count-cache's reason: every conflict shape above it is left unchanged.
-    # Retire this the day upstream merges it.
-    'fix/duplicate-lore-keys',
-    # The other half of the same report: the keyword chips silently refused any alternate
-    # capitalisation of a key already on the entry, which a case-sensitive entry needs to be
-    # able to hold. Shares types.ts and architecture/lorebook.md with lore-scan-steering above,
-    # and sits after it so that conflict shape is the one rerere already knows.
-    # Retire this the day upstream merges it.
-    'fix/duplicate-key-input',
     # One story's own ComfyUI workflow, so a character can carry a LoRA the rest of them do
     # not. Adds a field to ChatFeatureState, which four branches above already append to at
-    # the same three lines - so it sits LAST for the reason fix/token-count-cache does: every
-    # conflict shape above this point is left exactly as rerere already knows it.
+    # the same three lines - so it sits LAST: that leaves every conflict shape above this
+    # point exactly as rerere already knows it.
     'feature/imagegen-per-chat'
 )
 
