@@ -123,7 +123,13 @@ $Topics = @(
     # not. Adds a field to ChatFeatureState, which four branches above already append to at
     # the same three lines - so it sits LAST: that leaves every conflict shape above this
     # point exactly as rerere already knows it.
-    'feature/imagegen-per-chat'
+    'feature/imagegen-per-chat',
+    # The assistant's title-bar home, for when its floating launcher is switched off. It
+    # adds a button to the same TitleBar nav region the four floating-window consumers
+    # above already append to, so it sits after every one of them for the same reason the
+    # branch above sits where it does: that leaves every conflict shape ahead of this
+    # point exactly as rerere already knows it.
+    'feature/assistant-titlebar'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
