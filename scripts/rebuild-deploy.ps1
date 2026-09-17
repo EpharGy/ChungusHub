@@ -119,11 +119,6 @@ $Topics = @(
     # consumes the shell, so it needs BOTH above it and typechecks on neither alone.
     # It sits here rather than beside frameworks for that reason.
     'feature/frameworks-panel',
-    # An entry can scan the steering standing over the reply. Touches the three context
-    # builders on the line where each hands the scan its extra sources, and that is a line
-    # feature/frameworks changes the neighbours of, so it sits AFTER it: the conflict is one
-    # rerere shape and every shape above this point is left unchanged.
-    'feature/lore-scan-steering',
     # One story's own ComfyUI workflow, so a character can carry a LoRA the rest of them do
     # not. Adds a field to ChatFeatureState, which four branches above already append to at
     # the same three lines - so it sits LAST: that leaves every conflict shape above this
