@@ -7,6 +7,11 @@
 	 * `assistantSessionStore` getters the floating launcher's own busy/waiting marks use
 	 * (`AssistantFloatingWidget.svelte`), so the two surfaces never disagree about whether the
 	 * assistant is working.
+ *
+ * Two rows drive the one field. Settings > General asks it directly (show the floating
+ * launcher), and the assistant's own settings page asks the opposite question, "on top
+ * bar instead of floating icon", which is the way somebody hunting for this arrives at
+ * it. Neither row holds state of its own, so they cannot drift apart.
 	 *
 	 * The launcher's third mark, the "just finished" bounce, does NOT ride this button. That
 	 * badge latches on a busy-to-idle transition tracked by a `$state` local to the launcher
