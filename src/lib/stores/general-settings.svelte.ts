@@ -30,8 +30,10 @@ interface GeneralSettings {
 	 *  setup chip), so there is no app-wide switch to show or hide. The key is still parsed
 	 *  and written back so an install that recorded a value keeps it byte for byte. */
 	personaSwitcher: boolean;
-	/** Show the floating Chungus Assistant launcher in the workspace corner. Off hides
-	 *  the button only: the assistant itself is untouched, and Ctrl/⌘+J still opens it. */
+	/** Show the floating Chungus Assistant launcher in the workspace corner. Off swaps it for
+	 *  a plain button in the title bar instead (a phone reader otherwise has to keep dragging
+	 *  the corner mascot off the text it covers): the assistant itself, its sessions and every
+	 *  other setting are untouched, and Ctrl/⌘+J keeps opening it either way. */
 	assistantLauncher: boolean;
 	/** Give the Library's Characters and Personas shelves a row naming what the open chat is
 	 *  played with, one press from that entry's editor. */
