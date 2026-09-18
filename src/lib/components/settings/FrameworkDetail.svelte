@@ -6,7 +6,8 @@
 	 * **It knows no framework by name.** An earlier version branched on the framework id, which
 	 * worked for exactly one framework and then stopped: a public file cannot carry a branch
 	 * for a framework whose name must not appear in a public file. Frameworks declare their
-	 * editable blocks instead and this renders them, so adding a tunable touches nothing here.
+	 * editable blocks and their marker references instead and this renders them, so adding a
+	 * tunable, or documenting a marker's syntax, touches nothing here.
 	 *
 	 * A framework with no blocks says so rather than rendering an empty card that looks like
 	 * something failed to load.
@@ -93,6 +94,36 @@
 			</div>
 			<Toggle checked={available} onchange={toggle} label="Make {framework.name} available" />
 		</section>
+
+		{#each framework.reference ?? [] as ref (ref.title)}
+			<section class="card reference">
+				<details>
+					<summary>
+						<Icon name="chevronDown" class="w-3.5 h-3.5 chev" strokeWidth={2} />
+						<span>{ref.title}</span>
+					</summary>
+					<div class="ref-body">
+						<!-- Selectable rather than a copy button, deliberately: it is one short line,
+						     and a button would be a second way to fail on a page that has none. -->
+						<pre class="snippet">{ref.snippet}</pre>
+						<p class="ref-hint">{ref.hint}</p>
+						{#if ref.values?.length}
+							<dl class="values">
+								{#each ref.values as value (value.value)}
+									<div class="value">
+										<dt>
+											<code>{value.value}</code>
+											<span>{value.label}</span>
+										</dt>
+										<dd>{value.detail}</dd>
+									</div>
+								{/each}
+							</dl>
+						{/if}
+					</div>
+				</details>
+			</section>
+		{/each}
 
 		{#if !available}
 			<p class="note">
@@ -189,6 +220,111 @@
 		font-family: var(--font-ui);
 		font-size: 0.74rem;
 		line-height: 1.5;
+		color: var(--color-text-muted);
+	}
+
+	/* A marker reference: closed by default, because it is read once while writing a marker
+	   and never again, and a page that opens with a wall of syntax buries its own controls.
+	   The card supplies the surface; only the disclosure is styled here. */
+	.reference {
+		padding: 0.6rem;
+	}
+
+	.reference summary {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.15rem 0.1rem;
+		cursor: pointer;
+		list-style: none;
+		user-select: none;
+		font-family: var(--font-ui);
+		font-size: 0.78rem;
+		font-weight: 620;
+		color: var(--color-text-secondary);
+	}
+
+	.reference summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.reference :global(.chev) {
+		flex: none;
+		color: var(--color-text-muted);
+		transform: rotate(-90deg);
+		transition: transform 0.15s ease;
+	}
+
+	.reference details[open] :global(.chev) {
+		transform: rotate(0deg);
+	}
+
+	.ref-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		padding: 0.6rem 0.1rem 0.1rem;
+	}
+
+	/* There is no copy button, so `user-select` here is the feature rather than a default
+	   being restated: the summary above sets `none` and a nested element would inherit it. */
+	.snippet {
+		margin: 0;
+		padding: 0.5rem 0.6rem;
+		border: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 45%, transparent);
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		line-height: 1.6;
+		color: var(--color-text-primary);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		user-select: text;
+		cursor: text;
+	}
+
+	.ref-hint {
+		margin: 0;
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		line-height: 1.5;
+		color: var(--color-text-muted);
+	}
+
+	.values {
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+		margin: 0;
+	}
+
+	.value dt {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+
+	.value dt code {
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		color: var(--color-accent);
+		user-select: text;
+	}
+
+	.value dt span {
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+	}
+
+	.value dd {
+		margin: 0.1rem 0 0;
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		line-height: 1.45;
 		color: var(--color-text-muted);
 	}
 </style>
