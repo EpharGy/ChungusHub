@@ -22,6 +22,7 @@ import type { Lorebook } from '$lib/lorebook/types';
 import type { ChatFrameworkState } from './chat-state';
 import { resolveDay, todaySerial, type ResolvedDay } from './day';
 import { applyFrameworks } from './dispatch';
+import type { ModifierMap } from './modifiers';
 import type { FrameworkDef, FrameworkRecord } from './types';
 
 /** One marker, with where it was written and what it currently does. */
@@ -61,6 +62,18 @@ export interface PanelInput {
 	frameworks: readonly FrameworkDef[];
 	disabled: readonly string[];
 	state: ChatFrameworkState;
+	/**
+	 * What the chat's steering said, from `scanModifiers`.
+	 *
+	 * The panel has to be handed it rather than reading it, because this module knows nothing
+	 * about steering and must not start: it is given books and state and derives everything
+	 * from those. Absent means no modifiers, and the panel then shows the line a marker renders
+	 * with no steering over it, which is the honest answer for a caller that has none.
+	 *
+	 * A caller that HAS notes and omits it makes the panel disagree with the prompt beside it,
+	 * which is the one failure this whole module exists to prevent.
+	 */
+	modifiers?: ModifierMap;
 	/** The clock the panel describes, injectable so a test can pin it. Defaults to now. */
 	now?: Date;
 	/**
@@ -102,7 +115,8 @@ export function panelView(input: PanelInput): PanelView {
 		disabled: input.disabled,
 		day: day.day,
 		suppressed: input.state.suppressed,
-		byFramework: input.state.byFramework
+		byFramework: input.state.byFramework,
+		modifiers: input.modifiers ?? {}
 	};
 
 	const books: PanelBook[] = [];

@@ -42,6 +42,20 @@ export interface FrameworkComputeInput {
 	 * was stored. Opaque to the base, which never reads inside it.
 	 */
 	state: unknown;
+	/**
+	 * What other frameworks' markers said about THIS subject, keyed by their framework id
+	 * and carrying their fields verbatim.
+	 *
+	 * A modifier marker is one nothing computes: it renders nothing and exists to change what
+	 * another marker renders. `@demo[Her Name]` computes its line, and a `@tint[Her Name,
+	 * shade=warm]` written in the steering is read here and changes what that line says. Two
+	 * markers, one line, the second modifying the first rather than replacing it.
+	 *
+	 * The base stays ignorant of what any of it means, exactly as it does for `fields`: it
+	 * collects markers by subject and hands them over. Empty for a subject nobody modified,
+	 * which is the overwhelming majority.
+	 */
+	modifiers: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
 /** What a framework is handed to write its own blocks into the prompt. */
@@ -241,6 +255,17 @@ export interface FrameworkRecord {
 	text?: string;
 	/** Why the marker was rejected. Present for `malformed` only. */
 	reason?: string;
+	/**
+	 * The modifier markers that applied to this subject, by framework id, or absent when
+	 * nothing modified her.
+	 *
+	 * Carried on the record rather than looked up again by whoever displays it, for the reason
+	 * `text` is: a surface that re-derived this could re-derive it from a different scan, and
+	 * then the panel explains a line the prompt did not send. It rides every record for the
+	 * subject, not only the rendered one, because "she was on something and the marker was
+	 * suppressed anyway" is exactly the case a reader comes to the panel to understand.
+	 */
+	modifiers?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
 /** Everything the dispatcher needs, handed in rather than reached for, so it stays pure. */
@@ -260,6 +285,19 @@ export interface FrameworkContext {
 	suppressed: readonly string[];
 	/** Per-framework opaque state, keyed by framework id. */
 	byFramework: Readonly<Record<string, unknown>>;
+	/**
+	 * Modifier markers gathered for this assembly, by subject key and then by framework id.
+	 *
+	 * Collected BEFORE the lorebook is resolved, from the steering standing over this prompt,
+	 * because a marker that changes another marker's output has to be known before that other
+	 * one is computed and the dispatcher is deliberately a single pass over one entry. That
+	 * ordering is also why a modifier marker only takes effect in steering: dropped into a
+	 * lorebook entry it would be read after the entry it was meant to change.
+	 *
+	 * Optional, and absent means nothing modifies anything. Every surface that assembles must
+	 * pass the same one or the token meter prices a line the send does not emit.
+	 */
+	modifiers?: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
 }
 
 /** The dispatcher's answer: the rewritten text, and why each marker in it fared as it did. */

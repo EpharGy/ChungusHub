@@ -18,6 +18,7 @@ import { LOREBOOK_POSITION_AT_DEPTH, type Lorebook, type LorebookEntry } from '$
 import { enabledFrameworks, type ChatFrameworkState } from './chat-state';
 import { resolveDay, todaySerial } from './day';
 import { applyFrameworks } from './dispatch';
+import type { ModifierMap } from './modifiers';
 import { FRAMEWORKS } from './registry';
 import { defaultFrameworkSettings, frameworkAvailable, type FrameworkSettings } from './settings';
 import { resolveBlocks } from './blocks';
@@ -58,6 +59,18 @@ export function runningFrameworks(state: ChatFrameworkState, settings: Framework
 export function frameworkDecorator(
 	state: ChatFrameworkState | undefined,
 	settings: FrameworkSettings = defaultFrameworkSettings(),
+	/**
+	 * What the steering standing over this prompt said, from {@link scanModifiers}.
+	 *
+	 * It belongs here rather than in the chat state because it is not stored: it is read off
+	 * the notes on every assembly, so it is correct on a branch, a swipe and a regeneration
+	 * for the same reason everything else here is, which is that nothing accumulates.
+	 *
+	 * Defaults to none, which renders every marker exactly as it renders with no steering at
+	 * all. A surface that has notes and forgets to pass them therefore understates rather than
+	 * invents, and the call sites are the three that already resolve steering on the line above.
+	 */
+	modifiers: ModifierMap = {},
 	now: Date = new Date()
 ): LorebookDecorator {
 	if (!state) return NO_DECORATION;
@@ -74,7 +87,8 @@ export function frameworkDecorator(
 		disabled: FRAMEWORKS.map((f) => f.id).filter((id) => !on.includes(id)),
 		day: dayFor(state, now),
 		suppressed: state.suppressed,
-		byFramework: state.byFramework
+		byFramework: state.byFramework,
+		modifiers
 	};
 	return (_entry, text) => applyFrameworks(text, ctx).text;
 }

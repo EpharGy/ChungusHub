@@ -209,8 +209,70 @@ describe('the dispatcher', () => {
 			subject: 'rowan',
 			fields: { len: '27' },
 			day: 63,
-			state: { note: 'mine' }
+			state: { note: 'mine' },
+			modifiers: {}
 		});
+	});
+
+	test('a framework sees the modifiers for ITS subject and for nobody else', () => {
+		let seen: FrameworkComputeInput | null = null;
+		applyFrameworks(
+			'@demo[rowan]',
+			ctx({
+				frameworks: [
+					fake((input) => {
+						seen = input;
+						return 'x';
+					})
+				],
+				modifiers: {
+					rowan: { tint: { shade: 'warm' } },
+					beatrice: { tint: { shade: 'cold' } }
+				}
+			})
+		);
+		expect(seen!.modifiers).toEqual({ tint: { shade: 'warm' } });
+	});
+
+	test('a record carries what modified its subject, so a surface need not re-derive it', () => {
+		// A panel that looked the modifiers up again could look them up from a different scan,
+		// and would then explain a line the prompt did not send.
+		const out = applyFrameworks(
+			'@demo[rowan]',
+			ctx({ modifiers: { rowan: { tint: { shade: 'warm' } } } })
+		);
+		expect(out.records[0].modifiers).toEqual({ tint: { shade: 'warm' } });
+	});
+
+	test('a record for a subject nobody modified carries none', () => {
+		expect(applyFrameworks('@demo[rowan]', ctx()).records[0].modifiers).toBeUndefined();
+	});
+
+	test('a modifier rides a SUPPRESSED record too, since that is the confusing case', () => {
+		const out = applyFrameworks(
+			'@demo[rowan]',
+			ctx({ suppressed: ['rowan'], modifiers: { rowan: { tint: { shade: 'warm' } } } })
+		);
+		expect(out.records[0]).toMatchObject({ status: 'suppressed', modifiers: { tint: { shade: 'warm' } } });
+	});
+
+	test('a subject nobody modified gets an empty map rather than undefined', () => {
+		// So a framework can read straight through it. An optional map would make every
+		// reader carry a guard for a case the dispatcher can answer once.
+		let seen: FrameworkComputeInput | null = null;
+		applyFrameworks(
+			'@demo[rowan]',
+			ctx({
+				frameworks: [
+					fake((input) => {
+						seen = input;
+						return 'x';
+					})
+				],
+				modifiers: { beatrice: { tint: { shade: 'warm' } } }
+			})
+		);
+		expect(seen!.modifiers).toEqual({});
 	});
 
 	describe('an unconsumed marker is REMOVED, never passed through', () => {
