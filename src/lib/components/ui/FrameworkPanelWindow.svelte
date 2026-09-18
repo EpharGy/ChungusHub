@@ -38,6 +38,9 @@
 	import { DATE_FRAMEWORK_ID, normalizeDateChatState } from '$lib/frameworks/date';
 	import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 	import { panelView, ROW_STATUS, type PanelBook, type PanelRow } from '$lib/frameworks/panel';
+	import { scanModifiers } from '$lib/frameworks/modifiers';
+	import { steeringStore } from '$lib/stores/steering.svelte';
+	import { steeringTargetForChat } from '$lib/types/steering';
 	import { normalizeSubjectKey } from '$lib/frameworks/marker';
 	import { parseDayArg } from '$lib/frameworks/chat-state';
 	import { formatDate } from '$lib/frameworks/day';
@@ -112,6 +115,26 @@
 		return ids;
 	});
 
+	/**
+	 * What the steering standing over this chat says, scanned exactly as the prompt scans it.
+	 *
+	 * Through the store's gated resolver, so these are the notes the prompt would carry and
+	 * none at all when the engine is off. Deriving it here rather than accepting whatever a
+	 * caller happened to have is the whole reason the panel can be trusted: a panel reading a
+	 * different scan from the send would explain a line that was never built.
+	 */
+	let modifiers = $derived(scanModifiers(steeringStore.promptNotesFor(steeringTargetForChat(chat))).modifiers);
+
+	/** One modifier, as `id field=value`, for the chip beside a row's status. Generic on
+	 *  purpose: this component names no framework and no field, so a marker added later shows
+	 *  up here with no edit. */
+	function modifierChips(mods: PanelRow['modifiers']): string[] {
+		return Object.entries(mods ?? {}).map(([id, fields]) => {
+			const pairs = Object.entries(fields).map(([name, value]) => `${name}=${value}`);
+			return pairs.length ? `${id} ${pairs.join(' ')}` : id;
+		});
+	}
+
 	let view = $derived(
 		panelView({
 			books,
@@ -120,6 +143,7 @@
 			// `disabled` here means the same thing it would mean in the send.
 			disabled: FRAMEWORKS.map((f) => f.id).filter((id) => !running.includes(id)),
 			state: frameworkState,
+			modifiers,
 			injectedEntryIds
 		})
 	);
@@ -505,6 +529,9 @@
 											<div class="fp-head">
 												<strong>{row.subject ?? row.raw}</strong>
 												<span class="fp-status">{ROW_STATUS[row.status]}</span>
+												{#each modifierChips(row.modifiers) as chip (chip)}
+													<span class="fp-mod">{chip}</span>
+												{/each}
 												{#if row.key}
 													<button class="fp-hold" onclick={() => toggleSuppressed(row)}>
 														{frameworkState.suppressed.includes(normalizeSubjectKey(row.key)) ? 'Include' : 'Hold out'}
@@ -771,6 +798,19 @@
 	.fp-status {
 		color: var(--color-text-secondary, #888);
 		font-size: 0.75rem;
+	}
+	/* A modifier that applied to this subject. Set apart from the status rather than folded
+	   into it: the status says what became of the marker, this says what was standing over it,
+	   and a reader debugging a line needs to tell those two apart at a glance. */
+	.fp-mod {
+		padding: 0.05rem 0.3rem;
+		border: 1px solid color-mix(in srgb, var(--color-border-subtle, #444) 70%, transparent);
+		border-radius: var(--radius-sm, 0.35rem);
+		background: color-mix(in srgb, var(--color-bg-tertiary, #222) 55%, transparent);
+		color: var(--color-text-secondary, #888);
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		white-space: nowrap;
 	}
 	.fp-hold {
 		margin-left: auto;
