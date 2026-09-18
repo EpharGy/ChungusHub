@@ -139,6 +139,41 @@ export interface FrameworkEntry {
  * that belongs to no character. A framework with neither is a row in a settings page and
  * nothing else, which is not an error but is almost certainly a mistake.
  */
+/** One value a referenced marker's field accepts. */
+export interface FrameworkReferenceValue {
+	/** Typed verbatim into the marker. */
+	value: string;
+	/** What it is called in prose. */
+	label: string;
+	/** One line: what choosing it does. */
+	detail: string;
+}
+
+/**
+ * A marker reference a framework publishes for its detail view.
+ *
+ * It is documentation as DATA, which is what lets the settings page render it while knowing
+ * no framework by name. Deriving the values from whatever table already defines them is the
+ * point: a reference computed from the real list cannot drift from it, the same argument the
+ * macro reference makes for rendering itself out of the macro registry.
+ */
+export interface FrameworkReference {
+	/** What the box is called when it is closed. A few words, not a sentence. */
+	title: string;
+	/**
+	 * The marker as it should be typed, with a PLACEHOLDER where the subject goes.
+	 *
+	 * Rendered monospaced and selectable so it can be dragged over and copied by hand. Never
+	 * a real name: a placeholder reads better as a template, and it is the only spelling that
+	 * is safe in a file anyone might later read.
+	 */
+	snippet: string;
+	/** Under the snippet: where the marker goes, and anything it will not do. */
+	hint: string;
+	/** What one of its fields accepts. Omitted for a marker with nothing to choose between. */
+	values?: readonly FrameworkReferenceValue[];
+}
+
 export interface FrameworkDef {
 	/** Also the marker's name: `@<id>[...]`. Lowercase, hyphen-separated. */
 	id: string;
@@ -159,6 +194,18 @@ export interface FrameworkDef {
 	 * claiming an impossible combination is corrected rather than trusted.
 	 */
 	requires?: readonly string[];
+	/**
+	 * Marker references for the detail view: the shape to type, and what its values mean.
+	 *
+	 * Declared here rather than written into the settings page for the reason blocks are:
+	 * that page must know no framework by name, so anything framework-specific arrives as
+	 * data or it cannot arrive at all. A framework may publish more than one, because the
+	 * marker a reader needs is not always the one this framework claims.
+	 *
+	 * Absent for a framework with no marker to type, and the page then renders nothing
+	 * rather than an empty box that reads as something failing to load.
+	 */
+	reference?: readonly FrameworkReference[];
 	/**
 	 * The editable blocks this framework contributes, declared rather than built.
 	 *
