@@ -40,7 +40,7 @@ function resolveOne(
 	ctx: FrameworkContext,
 	byId: Map<string, FrameworkDef>
 ): Resolution {
-	const base = {
+	const plain = {
 		raw: marker.raw,
 		frameworkId: marker.frameworkId,
 		key: marker.key,
@@ -48,10 +48,16 @@ function resolveOne(
 	};
 
 	if (marker.error) {
-		return { replacement: '', record: { ...base, status: 'malformed', reason: marker.error } };
+		return { replacement: '', record: { ...plain, status: 'malformed', reason: marker.error } };
 	}
 	// Non-null once `error` is null, but the type does not know that.
 	const key = marker.key as string;
+
+	// What the steering said about HER, attached to every record from here on: a reader opens
+	// the panel to find out why a line says what it says, and "she is on something" is half
+	// that answer even when the marker went on to be suppressed or switched off.
+	const mods = ctx.modifiers?.[key];
+	const base = mods && Object.keys(mods).length > 0 ? { ...plain, modifiers: mods } : plain;
 
 	// Disabled is checked before unknown, so a framework that exists but is switched off
 	// never reads as a misspelling. The two send someone to completely different places.
@@ -78,7 +84,11 @@ function resolveOne(
 		subject: marker.subject as string,
 		fields: marker.fields,
 		day: ctx.day,
-		state: ctx.byFramework[framework.id]
+		state: ctx.byFramework[framework.id],
+		// This subject's modifier markers, not every subject's: a framework has no business
+		// knowing what was said about anyone else, and handing it the whole map would make
+		// that a mistake waiting to be made rather than one that cannot be.
+		modifiers: ctx.modifiers?.[key] ?? {}
 	});
 	// A framework answering with blank space is saying nothing, and recording that as
 	// `rendered` would put an empty row in the panel claiming text reached the prompt.
