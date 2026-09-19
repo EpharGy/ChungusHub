@@ -63,6 +63,7 @@
 		| 'image'
 		| 'crop'
 		| 'document'
+		| 'notepad'
 		| 'paperclip'
 		| 'brain'
 		| 'chart'
@@ -401,6 +402,17 @@
 		// staged, sent or read. Deliberately not `scroll`, which already means lore.
 		document: {
 			paths: ['M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z', 'M14 3v5h5', 'M9 13h6M9 17h4']
+		},
+		// A spiral-bound pad with two ruled lines: the reader's OWN writing about a story.
+		// Deliberately neither `document` above, whose folded corner means an attached file,
+		// nor `scroll`, which already means lore. The two ticks over the top edge are what
+		// carry the difference at 20px; without them this is just another rectangle.
+		notepad: {
+			paths: [
+				'M5 6a2 2 0 012-2h10a2 2 0 012 2v13a2 2 0 01-2 2H7a2 2 0 01-2-2V6z',
+				'M9 2v4M15 2v4',
+				'M9 12h6M9 16h4'
+			]
 		},
 		dice: {
 			paths: ['M5 4h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z', 'M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01']
