@@ -221,6 +221,19 @@ export interface ChatFeatureState {
 	 *  Here rather than in a table of its own so that deleting the chat deletes them with
 	 *  it, and so the port adds no schema migration (src/lib/echochamber/feed-state.ts). */
 	echoChamber: EchoChamberChatState;
+	/** The ComfyUI workflow this story generates its pictures with, or null to follow the
+	 *  app's. It exists so one story can carry a character's own LoRA without every other
+	 *  story getting it, which otherwise means swapping the app-wide workflow by hand on
+	 *  every chat switch.
+	 *
+	 *  A claim on a FILE rather than on a record, which is the one way it differs from the
+	 *  three above: a name no longer in the workflow folder cannot resolve to the app's,
+	 *  because a picture made from the wrong workflow is a picture without the LoRA the
+	 *  claim was made for, and nothing on screen would say so. It fails the generation
+	 *  naming the file instead, the same way a missing checkpoint does, and the picker
+	 *  marks it `(missing)` exactly as the app-wide one already does. Nothing stamps it at
+	 *  birth. */
+	imagegenWorkflow: string | null;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
@@ -236,7 +249,8 @@ function defaultChatFeatureState(): ChatFeatureState {
 		lorebooks: [],
 		mutedLorebooks: [],
 		frameworks: defaultChatFrameworkState(),
-		echoChamber: defaultEchoChamberChatState()
+		echoChamber: defaultEchoChamberChatState(),
+		imagegenWorkflow: null
 	};
 }
 
@@ -343,7 +357,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		lorebooks: normalizeClaimedIds(obj.lorebooks),
 		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks),
 		frameworks: normalizeChatFrameworkState(obj.frameworks),
-		echoChamber: normalizeEchoChamberChatState(obj.echoChamber)
+		echoChamber: normalizeEchoChamberChatState(obj.echoChamber),
+		imagegenWorkflow: normalizeClaimedId(obj.imagegenWorkflow)
 	};
 }
 

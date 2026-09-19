@@ -19,7 +19,7 @@
  */
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test';
 
-import type { Message } from '$lib/types/chat';
+import { DEFAULT_CHAT_FEATURE_STATE, type Message } from '$lib/types/chat';
 
 const runeIdentity = <T>(value?: T): T | undefined => value;
 // `.raw` alongside the call itself: the real modules captured below reach for it, and it is the
@@ -119,6 +119,7 @@ mock.module('$lib/stores/chat.svelte', () => ({
 		get currentChatState() {
 			return { chat: { id: 'c1' }, allMessages: path, activePath: path };
 		},
+		featureState: () => DEFAULT_CHAT_FEATURE_STATE,
 		refreshChat: async () => undefined
 	}
 }));
