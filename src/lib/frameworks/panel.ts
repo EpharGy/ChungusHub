@@ -164,6 +164,7 @@ export const ROW_STATUS: Record<FrameworkRecord['status'], string> = {
 	rendered: 'Active',
 	malformed: 'Not understood',
 	unknownFramework: 'No such framework',
+	modifier: 'Changes another marker',
 	disabled: 'Framework switched off',
 	suppressed: 'Held out of this story',
 	noOutput: 'Nothing to say'

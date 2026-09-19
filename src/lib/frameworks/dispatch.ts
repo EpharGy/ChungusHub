@@ -5,6 +5,13 @@
  * This is the whole of the base's runtime. It knows nothing about what any framework
  * computes: only how to find a marker, who claims it, and what to do when nobody does.
  *
+ * It runs in TWO passes over the entry, not one. The first collects the modifier markers a
+ * framework declared it reads (`FrameworkDef.modifierIds`); the second resolves everything
+ * line by line. That ordering is the whole reason the first pass exists: a modifier changes
+ * what another marker renders, so it has to be known before that other marker is computed,
+ * and two markers in one description have no order an author would think to get right.
+ * Steering's modifiers arrive already gathered, in `ctx.modifiers`, and sit on top.
+ *
  * **An unconsumed marker is REMOVED, never passed through.** Framework off, subject
  * suppressed, id misspelled, body malformed: the marker still goes, and what is left is
  * either the computed line or nothing. This is a deliberate departure from the macro
@@ -38,7 +45,12 @@ interface Resolution {
 function resolveOne(
 	marker: ReturnType<typeof findMarkers>[number],
 	ctx: FrameworkContext,
-	byId: Map<string, FrameworkDef>
+	byId: Map<string, FrameworkDef>,
+	/** Modifier marker id -> the framework that declared it reads that id. */
+	modifierOwner: Map<string, string>,
+	/** Everything modifying one subject: this entry's own modifier markers under the
+	 *  steering's, already merged. */
+	modifiersFor: (key: string) => Readonly<Record<string, Readonly<Record<string, string>>>>
 ): Resolution {
 	const plain = {
 		raw: marker.raw,
@@ -53,11 +65,33 @@ function resolveOne(
 	// Non-null once `error` is null, but the type does not know that.
 	const key = marker.key as string;
 
-	// What the steering said about HER, attached to every record from here on: a reader opens
-	// the panel to find out why a line says what it says, and "she is on something" is half
-	// that answer even when the marker went on to be suppressed or switched off.
-	const mods = ctx.modifiers?.[key];
-	const base = mods && Object.keys(mods).length > 0 ? { ...plain, modifiers: mods } : plain;
+	// What is known about HER, attached to every record from here on: a reader opens the panel
+	// to find out why a line says what it says, and "she is on something" is half that answer
+	// even when the marker went on to be suppressed or switched off.
+	const mods = modifiersFor(key);
+	const base = Object.keys(mods).length > 0 ? { ...plain, modifiers: mods } : plain;
+
+	// A MODIFIER marker: an id some framework declared in `modifierIds`. It renders nothing
+	// and is removed wherever it is written, which is the dispatcher's ordinary rule; what the
+	// declaration buys is that it is removed as something UNDERSTOOD rather than reported as a
+	// misspelling nobody claims. Its fields were read in the pre-pass and have already reached
+	// whatever computes for this subject, so there is nothing left to do but strip it.
+	//
+	// Checked before `disabled` and `byId` below, because a modifier id is deliberately not a
+	// framework id: neither of those lists can answer for it.
+	const owner = modifierOwner.get(marker.frameworkId);
+	if (owner) {
+		// Answered for by its OWNER's switch, not one of its own. A modifier id has no row on
+		// the settings page and no switch to throw, so a reader whose modifier stopped working
+		// has to be sent to the framework that reads it. That is the only switch there is.
+		if (ctx.disabled.includes(owner)) {
+			return { replacement: '', record: { ...base, status: 'disabled' } };
+		}
+		if (ctx.suppressed.includes(key)) {
+			return { replacement: '', record: { ...base, status: 'suppressed' } };
+		}
+		return { replacement: '', record: { ...base, status: 'modifier' } };
+	}
 
 	// Disabled is checked before unknown, so a framework that exists but is switched off
 	// never reads as a misspelling. The two send someone to completely different places.
@@ -88,7 +122,7 @@ function resolveOne(
 		// This subject's modifier markers, not every subject's: a framework has no business
 		// knowing what was said about anyone else, and handing it the whole map would make
 		// that a mistake waiting to be made rather than one that cannot be.
-		modifiers: ctx.modifiers?.[key] ?? {}
+		modifiers: mods
 	});
 	// A framework answering with blank space is saying nothing, and recording that as
 	// `rendered` would put an empty row in the panel claiming text reached the prompt.
@@ -96,6 +130,41 @@ function resolveOne(
 		return { replacement: '', record: { ...base, status: 'noOutput' } };
 	}
 	return { replacement: out, record: { ...base, status: 'rendered', text: out } };
+}
+
+/** Nothing modifies this subject. Frozen and shared, so the overwhelmingly common case
+ *  allocates nothing. */
+const NO_MODIFIERS: Readonly<Record<string, Readonly<Record<string, string>>>> = Object.freeze({});
+
+/**
+ * Every declared modifier marker in one entry's text, by subject key and then by marker id.
+ *
+ * Read in a pass of its own, over the WHOLE text, before a single line is resolved. That is
+ * the entire point of it: the dispatcher rewrites line by line, so a modifier written under
+ * the marker it changes would otherwise be read after that marker had already been computed,
+ * and an author has no reason to think the order of two lines in a description matters.
+ *
+ * Only ids a framework declared are collected. Steering can treat every marker as a modifier
+ * because nothing renders there, but an entry is the one place markers DO render, so a
+ * misspelt `@fertilty[...]` swallowed as a modifier here would lose the one report that tells
+ * the author what went wrong.
+ *
+ * Malformed markers contribute nothing. They are still stripped, and `resolveOne` reports them.
+ */
+function collectModifiers(
+	text: string,
+	modifierOwner: Map<string, string>
+): Record<string, Record<string, Record<string, string>>> {
+	const found: Record<string, Record<string, Record<string, string>>> = {};
+	if (modifierOwner.size === 0) return found;
+	for (const marker of findMarkers(text)) {
+		if (marker.error || marker.key === null) continue;
+		if (!modifierOwner.has(marker.frameworkId)) continue;
+		// Last one wins within an entry, matching what steering does with two notes that
+		// disagree: the later line is the author's more recent word on it.
+		(found[marker.key] ??= {})[marker.frameworkId] = { ...marker.fields };
+	}
+	return found;
 }
 
 /**
@@ -121,6 +190,31 @@ export function applyFrameworks(text: string, ctx: FrameworkContext): FrameworkA
 	if (!text || !hasMarker(text)) return { text, records: [] };
 
 	const byId = new Map(ctx.frameworks.map((framework) => [framework.id, framework]));
+	// Which ids are modifier markers, and whose. Derived from the context's own list rather
+	// than a second table, so a framework missing from this build takes its modifier ids out
+	// with it and they go back to reading as `unknownFramework`, which is then the truth.
+	const modifierOwner = new Map<string, string>();
+	for (const framework of ctx.frameworks) {
+		for (const id of framework.modifierIds ?? []) modifierOwner.set(id, framework.id);
+	}
+	const local = collectModifiers(text, modifierOwner);
+	/**
+	 * What modifies one subject: this entry's own modifier markers, with the steering's on
+	 * top.
+	 *
+	 * **Steering wins a disagreement**, and the direction is the point rather than an
+	 * accident. An entry is carried by every chat that triggers it, so a modifier written
+	 * there is the character's standing fact -- she is on this in general. A steering note
+	 * stands over one prompt in one story, so it is the narrower statement, and the narrower
+	 * statement is the one an author means when they bother to write both.
+	 */
+	const modifiersFor = (key: string) => {
+		const entry = local[key];
+		const steering = ctx.modifiers?.[key];
+		if (!entry) return steering ?? NO_MODIFIERS;
+		if (!steering) return entry;
+		return { ...entry, ...steering };
+	};
 	const records: FrameworkRecord[] = [];
 	const kept: string[] = [];
 
@@ -135,7 +229,7 @@ export function applyFrameworks(text: string, ctx: FrameworkContext): FrameworkA
 		let out = '';
 		let cursor = 0;
 		for (const marker of markers) {
-			const { replacement, record } = resolveOne(marker, ctx, byId);
+			const { replacement, record } = resolveOne(marker, ctx, byId, modifierOwner, modifiersFor);
 			let start = marker.index;
 			let end = start + marker.raw.length;
 			if (!replacement) {

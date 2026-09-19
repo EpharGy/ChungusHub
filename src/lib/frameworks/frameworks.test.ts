@@ -275,6 +275,88 @@ describe('the dispatcher', () => {
 		expect(seen!.modifiers).toEqual({});
 	});
 
+	describe('a modifier marker written in the ENTRY, not the steering', () => {
+		/** A framework that declares it reads `@tint`, and prints what it was told. */
+		const reader = (): FrameworkDef => ({
+			...fake((input) => `<${input.key}:${input.modifiers.tint?.shade ?? 'plain'}>`),
+			modifierIds: ['tint']
+		});
+		const reading = () => ctx({ frameworks: [reader()] });
+
+		test('reaches the framework that declared it', () => {
+			expect(applyFrameworks('@demo[rowan] @tint[rowan, shade=warm]', reading()).text).toBe(
+				'<rowan:warm>'
+			);
+		});
+
+		test('still reaches it when written BELOW the marker it changes', () => {
+			// The pre-pass exists for exactly this. The dispatcher rewrites line by line, so a
+			// single pass would read this modifier after the marker it was meant to change, and
+			// nothing tells an author that the order of two lines in a description matters.
+			const out = applyFrameworks(`@demo[rowan]
+@tint[rowan, shade=warm]`, reading());
+			expect(out.text).toBe('<rowan:warm>');
+		});
+
+		test('is stripped, and recorded as understood rather than as a misspelling', () => {
+			const out = applyFrameworks('@tint[rowan, shade=warm]', reading());
+			expect(out.text).toBe('');
+			expect(out.records[0]).toMatchObject({
+				frameworkId: 'tint',
+				key: 'rowan',
+				status: 'modifier'
+			});
+		});
+
+		test('an id nobody declared is still unknownFramework', () => {
+			// Why only DECLARED ids are collected here, where steering collects every marker:
+			// steering can afford it because nothing renders there, and an entry is the one place
+			// markers DO render. A typo swallowed as a modifier would lose the only report that
+			// says what went wrong.
+			const out = applyFrameworks('@tnit[rowan, shade=warm]', reading());
+			expect(out.records[0]).toMatchObject({ status: 'unknownFramework' });
+		});
+
+		test('applies to its own subject and to nobody else', () => {
+			expect(applyFrameworks('@tint[rowan, shade=warm] @demo[beatrice]', reading()).text).toBe(
+				'<beatrice:plain>'
+			);
+		});
+
+		test('loses to the steering, which is the narrower statement', () => {
+			// An entry is carried by every chat that triggers it, so a modifier written there is a
+			// standing fact. A steering note stands over one prompt in one story. An author who
+			// bothers to write both means the narrower one.
+			const out = applyFrameworks(
+				'@demo[rowan] @tint[rowan, shade=warm]',
+				ctx({ frameworks: [reader()], modifiers: { rowan: { tint: { shade: 'cold' } } } })
+			);
+			expect(out.text).toBe('<rowan:cold>');
+		});
+
+		test('answers for its OWNER switch, since it has none of its own', () => {
+			const out = applyFrameworks(
+				'@tint[rowan, shade=warm]',
+				ctx({ frameworks: [reader()], disabled: ['demo'] })
+			);
+			expect(out.records[0]).toMatchObject({ status: 'disabled' });
+		});
+
+		test('a held-out subject holds out her modifier too', () => {
+			const out = applyFrameworks(
+				'@tint[rowan, shade=warm]',
+				ctx({ frameworks: [reader()], suppressed: ['rowan'] })
+			);
+			expect(out.records[0]).toMatchObject({ status: 'suppressed' });
+		});
+
+		test('a framework absent from this build takes its modifier ids with it', () => {
+			// So the id goes back to reading as unclaimed, which is then the truth: nothing in
+			// this build reads it, and a record saying otherwise would explain a line nobody sent.
+			const out = applyFrameworks('@tint[rowan, shade=warm]', ctx({ frameworks: [] }));
+			expect(out.records[0]).toMatchObject({ status: 'unknownFramework' });
+		});
+	});
 	describe('an unconsumed marker is REMOVED, never passed through', () => {
 		const strips: [string, FrameworkContext, string][] = [
 			['unknownFramework', ctx({ frameworks: [] }), 'unknownFramework'],
