@@ -49,6 +49,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
 			scene: null,
+			galleryPin: null,
 			connection: null,
 			persona: null,
 			preset: null,
@@ -64,6 +65,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['x'],
 			impersonatePerspective: 'second' as const,
 			scene: null,
+			galleryPin: null,
 			connection: null,
 			persona: null,
 			preset: null,
@@ -87,6 +89,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
 			scene: null,
+			galleryPin: null,
 			connection: null,
 			persona: null,
 			preset: null,
@@ -146,6 +149,65 @@ describe('normalizeChatFeatureState: scene', () => {
 		// because a half-written blob was read generously.
 		const scene = normalizeChatFeatureState({ scene: { background: {}, ambient: {} } }).scene;
 		expect(scene?.enabled).toBe(false);
+	});
+});
+
+describe('normalizeChatFeatureState: galleryPin', () => {
+	// The gallery window's picture lives here rather than in localStorage, which is the whole
+	// of what makes a pin made on a desktop visible from a phone. It was local once and the
+	// bug was invisible from either device: neither had the other's record, and a device with
+	// no record restores nothing and reports nothing.
+	test('a story with nothing pinned reads as null', () => {
+		// Needs no migration for the reason the claims below give: every blob written before a
+		// story could pin a picture simply has no key, and a missing key is "nothing pinned".
+		expect(normalizeChatFeatureState({}).galleryPin).toBeNull();
+		expect(normalizeChatFeatureState('{"steeringHistory":[]}').galleryPin).toBeNull();
+	});
+
+	test('a pin survives the trip through the column it is stored in', () => {
+		const state = normalizeChatFeatureState({
+			galleryPin: { path: 'images/one.png', sourceId: 'src-1' }
+		});
+		expect(state.galleryPin).toEqual({ path: 'images/one.png', sourceId: 'src-1' });
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+	});
+
+	test('the source may be nobody in the chat the pin is on', () => {
+		// Character A's art, pinned while reading a story about B. The library is reachable
+		// from inside any chat, so this is ordinary and nothing here filters on entry type.
+		const pin = normalizeChatFeatureState({
+			galleryPin: { path: 'a.png', sourceId: 'char-a' }
+		}).galleryPin;
+		expect(pin).toEqual({ path: 'a.png', sourceId: 'char-a' });
+	});
+
+	test('half a pin is no pin', () => {
+		// Without the source there is no set to page through, and one image with no way back
+		// to its neighbours is a worse answer than nothing coming back at all.
+		expect(normalizeChatFeatureState({ galleryPin: { path: 'a.png' } }).galleryPin).toBeNull();
+		expect(normalizeChatFeatureState({ galleryPin: { sourceId: 's' } }).galleryPin).toBeNull();
+		expect(
+			normalizeChatFeatureState({ galleryPin: { path: '', sourceId: 's' } }).galleryPin
+		).toBeNull();
+	});
+
+	test('anything that is not an object with two strings is no pin', () => {
+		expect(normalizeChatFeatureState({ galleryPin: 'a.png' }).galleryPin).toBeNull();
+		expect(normalizeChatFeatureState({ galleryPin: 7 }).galleryPin).toBeNull();
+		expect(normalizeChatFeatureState({ galleryPin: null }).galleryPin).toBeNull();
+		expect(
+			normalizeChatFeatureState({ galleryPin: { path: 1, sourceId: 2 } }).galleryPin
+		).toBeNull();
+	});
+
+	test('a pin carries no window state', () => {
+		// Whether the frame is standing is per device and belongs in localStorage
+		// (utils/popout-memory.ts). A stored `open` must not survive onto the row, or a
+		// desktop would stand a window up on somebody's phone.
+		const pin = normalizeChatFeatureState({
+			galleryPin: { path: 'a.png', sourceId: 's', open: true }
+		}).galleryPin;
+		expect(pin).toEqual({ path: 'a.png', sourceId: 's' });
 	});
 });
 
