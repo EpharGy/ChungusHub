@@ -115,6 +115,16 @@ describe('what it declares', () => {
 		expect(FRAMEWORKS.map((f) => f.id)).toContain(DATE_FRAMEWORK_ID);
 	});
 
+	test('every marker id in the registry is claimed once and once only', () => {
+		// A registry-wide rule rather than a date one, kept here because this is the base's own
+		// test file that reads the real registry. Two frameworks claiming the same word, or a
+		// framework declaring a modifier id that is also somebody's framework id, is an
+		// ambiguity the dispatcher cannot resolve: it would simply pick whichever built its map
+		// last, and nothing on screen would say a marker had been answered by the wrong one.
+		const claimed = FRAMEWORKS.flatMap((f) => [f.id, ...(f.modifierIds ?? [])]);
+		expect(claimed.length, 'a marker id is claimed twice').toBe(new Set(claimed).size);
+	});
+
 	test('it has no compute, because there is no per-character question to ask', () => {
 		expect(DATE_FRAMEWORK.compute).toBeUndefined();
 	});
