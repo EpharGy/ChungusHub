@@ -17,6 +17,9 @@ import {
 	type AssembleInput
 } from './prompt-assembly';
 import { countTokens } from '$lib/tokenizer/count';
+import { defaultChatFrameworkState } from '$lib/frameworks/chat-state';
+import { defaultFrameworkSettings } from '$lib/frameworks/settings';
+import { DATE_FRAMEWORK_ID } from '$lib/frameworks/date';
 import type { LLMMessage } from '$lib/types/llm';
 import {
 	createEmptyLorebook,
@@ -1326,5 +1329,46 @@ describe('the lorebook trace assembly hands back', () => {
 			);
 			expect(a.messages[0].content).toBe(a.messages[1].content);
 		}
+	});
+});
+
+describe('frameworks reach the assembled prompt', () => {
+	// Every other framework test calls frameworkBooks directly, which is exactly why a real
+	// send once assembled with no framework in it at all: the unit was right and the call site
+	// passed half of what it needed. These go through assemblePrompt, so the wiring is what is
+	// under test rather than the arithmetic.
+
+	const chatState = {
+		...defaultChatFrameworkState(),
+		enabled: [DATE_FRAMEWORK_ID],
+		mode: 'marker' as const
+	};
+	const installed = {
+		...defaultFrameworkSettings(),
+		enabled: { [DATE_FRAMEWORK_ID]: true }
+	};
+
+	/** Whether any message that would go out carries the gate the framework wraps its block in.
+	 *  Asserted per message rather than on a joined blob, so nothing here depends on how the
+	 *  messages are stitched together. */
+	function sends(frameworks: AssembleInput['frameworks'], needle: string): boolean {
+		const out = assemblePrompt(input(preset([item('{{lorebook}}')]), { frameworks }));
+		return out.messages.some((m: LLMMessage) => m.content.includes(needle));
+	}
+
+	test('a framework block is actually in the messages that go out', () => {
+		expect(sends({ state: chatState, settings: installed }, '<Date>')).toBe(true);
+	});
+
+	test('no story state means no framework block, rather than a default one', () => {
+		expect(sends(undefined, '<Date>')).toBe(false);
+	});
+
+	test('the chat switch alone is not enough, and neither is the install switch', () => {
+		// The two halves are intersected. Passing one and defaulting the other is the shape of
+		// the bug this describe block exists for, and it can no longer be written by accident:
+		// they are one field. It can still be written on purpose, so it is asserted.
+		expect(sends({ state: chatState, settings: defaultFrameworkSettings() }, '<Date>')).toBe(false);
+		expect(sends({ state: defaultChatFrameworkState(), settings: installed }, '<Date>')).toBe(false);
 	});
 });
