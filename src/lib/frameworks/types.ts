@@ -221,6 +221,24 @@ export interface FrameworkDef {
 	 */
 	reference?: readonly FrameworkReference[];
 	/**
+	 * Marker ids this framework READS but never computes, such as a `@tint` that says how the
+	 * line a `@demo` renders should read.
+	 *
+	 * A modifier marker renders nothing. Its whole effect is on what another marker renders,
+	 * and it reaches `compute` through {@link FrameworkComputeInput.modifiers}. Declaring it
+	 * here is what lets the dispatcher tell one apart from a misspelling: both are ids no
+	 * framework claims, and without a declaration the first is reported as the second, which
+	 * sends a reader hunting a typo that is not there.
+	 *
+	 * The base still learns nothing about what any of it means. It learns only that this id is
+	 * spoken for, so a marker carrying it is collected, stripped and recorded as understood.
+	 *
+	 * An id may be declared by one framework only, and may not be a framework id itself. Two
+	 * claims on the same word is an ambiguity nothing downstream could resolve, so a registry
+	 * test pins both rules rather than leaving the dispatcher to pick a winner.
+	 */
+	modifierIds?: readonly string[];
+	/**
 	 * The editable blocks this framework contributes, declared rather than built.
 	 *
 	 * The base stores them, renders their editors and injects them, so a framework gains a
@@ -274,6 +292,9 @@ export type FrameworkStatus =
 	| 'malformed'
 	/** No framework claims that id (misspelled, or its branch is not in this build). */
 	| 'unknownFramework'
+	/** A modifier marker: some framework declared this id in `modifierIds`, so it was read
+	 *  and removed. It renders nothing by design; what it changes is another marker's line. */
+	| 'modifier'
 	/** The framework's app-wide switch is off. */
 	| 'disabled'
 	/** This story holds that subject out (`suppressed`). */
@@ -336,13 +357,16 @@ export interface FrameworkContext {
 	 * Modifier markers gathered for this assembly, by subject key and then by framework id.
 	 *
 	 * Collected BEFORE the lorebook is resolved, from the steering standing over this prompt,
-	 * because a marker that changes another marker's output has to be known before that other
-	 * one is computed and the dispatcher is deliberately a single pass over one entry. That
-	 * ordering is also why a modifier marker only takes effect in steering: dropped into a
-	 * lorebook entry it would be read after the entry it was meant to change.
+	 * because steering is not decorated: a marker written there is never seen by the
+	 * dispatcher at all, and would reach the model as literal configuration text.
 	 *
-	 * Optional, and absent means nothing modifies anything. Every surface that assembles must
-	 * pass the same one or the token meter prices a line the send does not emit.
+	 * **This is not the only place a modifier can be written.** A modifier marker inside a
+	 * lorebook entry is found by the dispatcher's own pre-pass and applies to the markers in
+	 * that entry; what arrives here is layered on top of it, because a steering note is the
+	 * narrower statement. See `dispatch.ts`.
+	 *
+	 * Optional, and absent means no steering modifies anything. Every surface that assembles
+	 * must pass the same one or the token meter prices a line the send does not emit.
 	 */
 	modifiers?: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
 }
