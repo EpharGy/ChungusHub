@@ -24,6 +24,25 @@ Two things follow, and they are why the design has no roster at all:
 
 **An unconsumed marker is REMOVED, never passed through.** Framework off, subject suppressed, id misspelled, body malformed: the marker still goes, and what is left is the computed line or nothing. This is the opposite of the macro engine's *"unknown names stay literal so typos surface"* rule, and the two are different kinds of thing. A macro typo is the author's own prose and belongs on screen, while a marker is machine configuration that is noise in a prompt under every circumstance. What replaces "surface the typo" is a `FrameworkRecord` per marker saying exactly what happened to it, the same doctrine as the lorebook's scan records.
 
+## Modifier markers
+
+A **modifier marker** renders nothing. Its whole effect is on what another marker renders: `@demo[Her Name]` computes its line, and a `@tint[Her Name, shade=warm]` written nearby changes what that line says. Two markers, one line, and the second modifies the first rather than replacing it. A framework reads them out of `FrameworkComputeInput.modifiers`, keyed by marker id and carrying their fields verbatim; the base stays as ignorant of what any of it means as it is of `fields`.
+
+They are gathered from **two surfaces, under opposite rules**, and the inversion is the part worth remembering.
+
+**In steering** ([`modifiers.ts`](../src/lib/frameworks/modifiers.ts)). Steering is not decorated. It is guidance that rides the prompt verbatim, so the dispatcher never sees it and a marker written there would reach the model as literal configuration text. `scanModifiers` runs before the lorebook is resolved and hands back two things that must travel together: what the markers said, and the same notes with the markers gone. Taking the modifiers without the stripped notes ships `@tint[...]` to the model; taking the stripped notes without the modifiers strips a marker that then changes nothing. One call returns both, which is why it is one call. **Every marker in steering counts as a modifier and every one is removed**, with no list of which ids qualify: nothing can render there, since no framework is asked to compute over steering, so a marker left behind is configuration reaching the model under every circumstance. A framework added later therefore needs no edit at all.
+
+**In a lorebook entry** ([`dispatch.ts`](../src/lib/frameworks/dispatch.ts)). An entry is the one surface where markers DO render, so both of those rules invert.
+
+- **Only declared ids count.** A framework names the ids it reads in `FrameworkDef.modifierIds`, and nothing else is collected. Swallowing every unclaimed id here would take a misspelt `@demo` with it, and with it the `unknownFramework` record that is the only thing telling the author what went wrong.
+- **The dispatcher runs TWO passes**, not one: the first collects the declared modifiers out of the whole entry, the second resolves line by line. Without the pre-pass, a modifier written *below* the marker it changes is read after that marker has already been computed -- and nothing in a description tells an author that the order of two lines in it matters. That ordering is the entire reason the pre-pass exists.
+
+**Written in both, the steering wins.** An entry is carried by every chat that triggers it, so a modifier written there is a standing fact about that subject. A steering note stands over one prompt in one story, which makes it the narrower statement, and an author who bothers to write both means the narrower one.
+
+**A modifier answers for its OWNER's switch.** It has no registry row and no switch of its own, so a modifier whose framework is switched off records `disabled` rather than `unknownFramework`: there is exactly one switch to throw and that is where a reader has to be sent. A framework absent from this build takes its declared ids out with it, and they go back to reading as unclaimed, which is then the truth -- nothing in that build reads them.
+
+**A marker id may be claimed once.** Two frameworks declaring the same word, or a modifier id that is also somebody's framework id, is an ambiguity the dispatcher would settle by whichever built its map last, with nothing on screen saying a marker had been answered by the wrong framework. A registry test in [`date/date.test.ts`](../src/lib/frameworks/date/date.test.ts) refuses it.
+
 ## The seam: two lines in the lorebook engine
 
 Entry content is read at exactly two places in [`lorebook/engine.ts`](../src/lib/lorebook/engine.ts), and **both are decorated**:
@@ -358,6 +377,7 @@ Clamped in the normalizer rather than only at the input, because `getAllChats` i
 - [`types.ts`](../src/lib/frameworks/types.ts): `FrameworkDef`, `FrameworkComputeInput`, `FrameworkInjectInput`, `FrameworkRecord`, `FrameworkContext`. No logic.
 - [`marker.ts`](../src/lib/frameworks/marker.ts): the grammar, `findMarkers`, `hasMarker`. Pure.
 - [`dispatch.ts`](../src/lib/frameworks/dispatch.ts): `applyFrameworks`. Pure. The whole of the base's runtime.
+- [`modifiers.ts`](../src/lib/frameworks/modifiers.ts): `scanModifiers`, which reads the modifier markers out of the steering and hands back the notes without them. Pure. The dispatcher collects the ones written in an entry itself.
 - [`day.ts`](../src/lib/frameworks/day.ts): the mode, the marker grammar, `resolveDay`, `todaySerial`, and the serial/date arithmetic. Pure; the clock arrives as an argument.
 - [`chat-state.ts`](../src/lib/frameworks/chat-state.ts): the per-chat blob, its normalizer and caps, and `parseDayArg`.
 - [`registry.ts`](../src/lib/frameworks/registry.ts): every framework this build carries. Pure data, deliberately store-free (prompt assembly reads it).
