@@ -5,6 +5,7 @@ import type { AmbientConfig } from '$lib/types/ambient';
 import { normalizeAmbientConfig } from '$lib/types/ambient';
 import type { BackgroundConfig } from '$lib/types/background';
 import { normalizeBackgroundConfig } from '$lib/types/background';
+import type { GeneratedImageMeta } from '$lib/imagegen/types';
 
 export interface Chat {
 	id: string;
@@ -275,12 +276,19 @@ export function withLorebookMute(
 	};
 }
 
-/** One file the user attached to a chat message. Images only for now; the kind
+/** One file attached to a chat message. Images only for now; the kind
  *  field leaves room for other media without another schema change. */
 export interface MessageAttachment {
 	kind: 'image';
 	/** Server-relative path (images/chat/<file>). Render via imageService/fileUrl. */
 	path: string;
+	/** Set when the image engine made this picture from a marker the model wrote, absent when
+	 *  the user attached the file themselves. The two are stored in one list on purpose: the
+	 *  refcount sweep, the branch copy and the backup inventory all read this column, and a
+	 *  second home for generated pictures would need each of them taught about it. What the
+	 *  flag decides is only where a picture is drawn - at its marker, or in the attachment
+	 *  strip (architecture/imagegen.md). */
+	generated?: GeneratedImageMeta;
 }
 
 export interface Message {
