@@ -43,6 +43,8 @@ The app's only sanitize call (`utils/markdown.ts`) allows neither `img` nor a re
 
 A turn with no marker renders as **one** element with one `use:renderedHtml`, exactly as before this existed. Every ordinary turn in the app would otherwise pay an element per run for a feature it does not use.
 
+**A picture is sized by its height, and its width is whatever that leaves.** `GeneratedImage` hands its figure the rendered aspect as `--generated-aspect` and caps `max-width` at `min(100%, calc(75dvh * var(--generated-aspect)))`, which settles both orientations with one rule: a landscape picture's height cap converts to more width than the column has, so it fills the column like a paragraph, while a portrait's converts to less, so it stays inside a screenful and centres. That is the same shape as the portrait bay (`--picture-height`, `app.css`), and it exists because the bare width cap it replaced was the one measure in the chat that never multiplied by `--user-chat-width` - widening the column widened the prose and left every picture where it was.
+
 **A row naming a picture that is not on disk falls back to the placeholder**, rather than drawing the browser's broken-image glyph. `GeneratedImage` records the url whose fetch failed (the url, not a flag, so a retry's new url clears it with nothing having to reset anything) and renders the same "not generated yet" branch, because that is what it now is: the marker never left the text. Three unremarkable things reach that state - a restored backup older than the picture, a hand-tidied `images/chat/`, and the size budget below - and all three want the same Generate button.
 
 ## Cleanup: nothing here is a folder anyone has to weed
