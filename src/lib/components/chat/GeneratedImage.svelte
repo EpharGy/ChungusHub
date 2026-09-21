@@ -69,10 +69,20 @@
 	/** A marker the parser could not save. Nothing to generate, so the reader is told what
 	 *  the model wrote instead of being shown a button that cannot work. */
 	const parseError = $derived(marker.result.status === 'parse_error' ? marker.result.reason : null);
+
+	/** Width over height of the picture as it was actually rendered, handed to the style
+	 *  block so the figure can cap its HEIGHT and let its width follow from that. Guarded
+	 *  rather than trusted: a row written before those two fields existed, or by a run that
+	 *  failed partway, would divide by zero and take the whole `max-width` down with it,
+	 *  leaving a portrait free to fill the column. A square is the conservative shape to
+	 *  assume when the real one is unknown - it can never draw taller than the cap. */
+	const aspect = $derived(
+		meta && meta.width > 0 && meta.height > 0 ? meta.width / meta.height : 1
+	);
 </script>
 
 {#if url && meta && !missing}
-	<figure class="generated-image">
+	<figure class="generated-image" style="--generated-aspect: {aspect}">
 		<img
 			src={url}
 			alt={promptText}
@@ -146,11 +156,28 @@
 {/if}
 
 <style>
+	/* A picture is measured by its HEIGHT here, and its width is whatever that leaves.
+	   The width cap this replaced was a bare `40rem`, which is the one measure in the chat
+	   that never learned about the Chat width knob: every other one multiplies by
+	   --user-chat-width, so widening the column widened the prose and left every picture at
+	   the same 640px, and a landscape render sat at 62% of a line of text it should have
+	   matched. Capping the height instead settles both orientations with one rule, because
+	   the cap converts to a different width for each:
+
+	     - landscape converts to MORE width than the column has, so `100%` wins and the
+	       picture fills the column exactly as a paragraph does,
+	     - portrait converts to less, so it stays inside one screenful instead of becoming
+	       ~1500px of scrolling at a wide window, and `margin-inline: auto` centres the width
+	       it did not use.
+
+	   This is how the portrait bay beside the transcript is already sized (--picture-height
+	   in app.css): height fixed, width following, so neither a picture's resolution nor its
+	   shape decides how much of the page it takes. */
 	.generated-image {
 		position: relative;
 		display: block;
-		margin: 0.75rem 0;
-		max-width: min(100%, 40rem);
+		margin: 0.75rem auto;
+		max-width: min(100%, calc(75dvh * var(--generated-aspect, 1)));
 	}
 
 	.generated-image img {
