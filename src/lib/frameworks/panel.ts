@@ -114,6 +114,7 @@ export function panelView(input: PanelInput): PanelView {
 		frameworks: input.frameworks,
 		disabled: input.disabled,
 		day: day.day,
+		source: day.source,
 		suppressed: input.state.suppressed,
 		byFramework: input.state.byFramework,
 		modifiers: input.modifiers ?? {}

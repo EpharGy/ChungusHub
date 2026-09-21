@@ -118,6 +118,7 @@ function resolveOne(
 		subject: marker.subject as string,
 		fields: marker.fields,
 		day: ctx.day,
+		source: ctx.source,
 		state: ctx.byFramework[framework.id],
 		// This subject's modifier markers, not every subject's: a framework has no business
 		// knowing what was said about anyone else, and handing it the whole map would make

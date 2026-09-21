@@ -45,6 +45,7 @@ function ctx(over: Partial<FrameworkContext> = {}): FrameworkContext {
 		frameworks: [fake(({ key }) => `<${key}>`)],
 		disabled: [],
 		day: 1,
+		source: 'manual',
 		suppressed: [],
 		byFramework: {},
 		...over
@@ -189,7 +190,7 @@ describe('the dispatcher', () => {
 		expect(out.records[0]).toMatchObject({ status: 'rendered', key: 'rowan', text: '<rowan>' });
 	});
 
-	test('the framework is handed the key, the fields, the day and its own state slice', () => {
+	test('the framework is handed the key, the fields, the day and unit, and its own state slice', () => {
 		let seen: FrameworkComputeInput | null = null;
 		applyFrameworks(
 			'@demo[rowan, len=27]',
@@ -209,9 +210,30 @@ describe('the dispatcher', () => {
 			subject: 'rowan',
 			fields: { len: '27' },
 			day: 63,
+			source: 'manual',
 			state: { note: 'mine' },
 			modifiers: {}
 		});
+	});
+
+	test('a framework is handed what KIND of number the day is', () => {
+		// A day without its unit is ambiguous: `clock` is a serial date and `manual` is a story
+		// day someone typed. A framework reading an absolute anchor out of its own fields cannot
+		// compare it to the day without knowing which it got.
+		let seen: FrameworkComputeInput | null = null;
+		applyFrameworks(
+			'@demo[rowan]',
+			ctx({
+				source: 'clock',
+				frameworks: [
+					fake((input) => {
+						seen = input;
+						return 'x';
+					})
+				]
+			})
+		);
+		expect(seen!.source).toBe('clock');
 	});
 
 	test('a framework sees the modifiers for ITS subject and for nobody else', () => {
