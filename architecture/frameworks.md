@@ -94,6 +94,10 @@ thousands; a story day is whatever number the reader typed. Anything that fell b
 to the other would shift every cycle reading `day mod length` to an unrelated point, and
 nothing on screen would say so.
 
+**The unit travels with the number**, as `FrameworkComputeInput.source`. A framework doing pure arithmetic on the day can ignore it -- a cycle is `day mod length` and does not care what the day counts from. One comparing the day against an ABSOLUTE anchor written in a marker cannot: a date an author typed is meaningless against a story day, and the two are not separable by size, since `MAX_STORY_DAY` is a million and a present-day serial is around 740,000.
+
+`resolveDay` has always returned it and `day.ts` has always said a framework needs it. `apply.ts` discarded it for a while and took `.day` alone, which was fine exactly as long as no framework read an anchor out of its own fields.
+
 ### There is no marker parsing, and there used to be a lot of it
 
 An earlier version scanned the chat for `<Time: ...>` markers the model had written and took
