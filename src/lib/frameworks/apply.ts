@@ -16,7 +16,7 @@ import { NO_DECORATION, type LorebookDecorator } from '$lib/lorebook/engine';
 import { LOREBOOK_POSITION_AT_DEPTH, type Lorebook, type LorebookEntry } from '$lib/lorebook/types';
 
 import { enabledFrameworks, type ChatFrameworkState } from './chat-state';
-import { resolveDay, todaySerial } from './day';
+import { resolveDay, todaySerial, type ResolvedDay } from './day';
 import { applyFrameworks } from './dispatch';
 import type { ModifierMap } from './modifiers';
 import { FRAMEWORKS } from './registry';
@@ -30,8 +30,8 @@ import type { FrameworkDef, FrameworkEntry, FrameworkInjectInput } from './types
  * One derivation, shared by the decorator and the injected books, so the number a framework
  * computes against and the number one writes about cannot disagree.
  */
-function dayFor(state: ChatFrameworkState, now: Date): number {
-	return resolveDay({ mode: state.mode, manual: state.day, today: todaySerial(now) }).day;
+function dayFor(state: ChatFrameworkState, now: Date): ResolvedDay {
+	return resolveDay({ mode: state.mode, manual: state.day, today: todaySerial(now) });
 }
 
 /**
@@ -78,6 +78,7 @@ export function frameworkDecorator(
 	// Built once per assembly rather than per entry: the list, the day and the suppression
 	// set are fixed for the whole prompt, and rebuilding them per entry would be the same
 	// answer computed once per lorebook row.
+	const when = dayFor(state, now);
 	const ctx = {
 		frameworks: FRAMEWORKS,
 		// Frameworks are opted into per chat, so "off" is the default rather than an
@@ -85,7 +86,9 @@ export function frameworkDecorator(
 		// `disabled`, which is the truth and points somewhere useful, where
 		// `unknownFramework` would send someone hunting a misspelling that is not there.
 		disabled: FRAMEWORKS.map((f) => f.id).filter((id) => !on.includes(id)),
-		day: dayFor(state, now),
+		day: when.day,
+		// The unit rides with the number. See FrameworkComputeInput.source.
+		source: when.source,
 		suppressed: state.suppressed,
 		byFramework: state.byFramework,
 		modifiers
@@ -144,7 +147,7 @@ export function frameworkBooks(
 ): Lorebook[] {
 	if (!state) return [];
 	const on = runningFrameworks(state, settings);
-	const day = dayFor(state, now);
+	const day = dayFor(state, now).day;
 	const running = FRAMEWORKS.filter((f) => on.includes(f.id));
 
 	const inputFor = (id: string, reminders: readonly string[] = []) => ({
