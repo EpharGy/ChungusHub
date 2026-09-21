@@ -147,6 +147,7 @@ describe('what it declares', () => {
 			frameworks: FRAMEWORKS,
 			disabled: [],
 			day: 1,
+			source: 'manual',
 			suppressed: [],
 			byFramework: {}
 		});

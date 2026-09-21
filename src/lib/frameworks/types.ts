@@ -17,7 +17,7 @@
  *
  * See architecture/frameworks.md.
  */
-import type { DayMode } from './day';
+import type { DayMode, DaySource } from './day';
 import type { FrameworkBlockDef } from './blocks';
 
 
@@ -37,6 +37,17 @@ export interface FrameworkComputeInput {
 	fields: Readonly<Record<string, string>>;
 	/** The story day this chat is on. Owned by the base, shared by every framework. */
 	day: number;
+	/**
+	 * What KIND of number {@link day} is: `clock` for a serial date, `manual` for a story day
+	 * the author chose.
+	 *
+	 * It travels with the day because a day without its unit is ambiguous, and a framework
+	 * reading an ABSOLUTE anchor out of its own fields cannot make sense of one without the
+	 * other -- `day.ts` says so where `DaySource` is declared, and then nothing passed it on.
+	 * A framework doing pure arithmetic on the day (a cycle is `day mod length`) may ignore it
+	 * entirely; one comparing the day against a date an author wrote may not.
+	 */
+	source: DaySource;
 	/**
 	 * This framework's own slice of the chat's state (`byFramework[id]`), exactly as it
 	 * was stored. Opaque to the base, which never reads inside it.
@@ -349,6 +360,8 @@ export interface FrameworkContext {
 	disabled: readonly string[];
 	/** The story day. */
 	day: number;
+	/** What kind of number `day` is. Handed to every `compute` beside it. */
+	source: DaySource;
 	/** Subject keys this story holds out, across every framework. */
 	suppressed: readonly string[];
 	/** Per-framework opaque state, keyed by framework id. */
