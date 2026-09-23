@@ -220,6 +220,27 @@ export interface FrameworkDef {
 	 */
 	requires?: readonly string[];
 	/**
+	 * This framework has no switch, at either level: it runs on every install and in every
+	 * chat.
+	 *
+	 * The same argument a block's `alwaysOn` makes, one level up. A switch is worth having
+	 * when both answers mean something, and for a framework that is a PLACE rather than a
+	 * calculation both answers do not: it writes nothing of its own, so switched on with
+	 * nothing to hold it costs exactly zero, and switched off it silently deletes whatever
+	 * other frameworks were sending through it. That is a state where a reader has ticked
+	 * the thing they wanted, can see it ticked, and gets nothing, which is the failure two
+	 * switches for one decision always produces.
+	 *
+	 * **It is not a licence to spend tokens.** A framework declaring this must render nothing
+	 * when it has nothing to say, or every prompt on every install pays for it. Whoever
+	 * declares it owns that, since nothing here can check it.
+	 *
+	 * Enforced in the resolved state as well as in the UI, exactly like {@link requires}: a
+	 * blob from an older build will not carry the id, and correcting it on the way out is
+	 * what stops every reader having to remember the rule.
+	 */
+	alwaysOn?: boolean;
+	/**
 	 * Marker references for the detail view: the shape to type, and what its values mean.
 	 *
 	 * Declared here rather than written into the settings page for the reason blocks are:
