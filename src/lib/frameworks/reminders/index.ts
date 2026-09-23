@@ -19,6 +19,14 @@
  * every turn, and which systems a given model keeps forgetting is not something anything here
  * can guess.
  *
+ * **It has no switch of its own, and that is why the line above is the only one that matters.**
+ * A shelf is not a feature: with nothing on it this renders nothing and no entry is built, so
+ * being always on costs a prompt exactly zero. Switched off it did something far worse than
+ * cost: it silently dropped every line other frameworks had put on it, so a reader who had
+ * ticked a framework's reminder, and could see it ticked, got nothing and had no way on screen
+ * to find out why. Two switches for one decision, and the second one only ever reachable by
+ * accident. See `FrameworkDef.alwaysOn`.
+ *
  * See architecture/frameworks.md.
  */
 import type { FrameworkBlockDef } from '../blocks';
@@ -66,6 +74,7 @@ export const REMINDERS_FRAMEWORK: FrameworkDef = {
 	// up in a gate anywhere else it is used.
 	name: 'Reminders',
 	icon: 'sliders',
+	alwaysOn: true,
 	summary: 'Collects one line from each framework into a short section near the reply.',
 	description:
 		'A long prompt buries rules. This gathers a single reminder line from every framework ' +

@@ -112,9 +112,13 @@ export function defaultChatFrameworkState(): ChatFrameworkState {
  */
 export function enabledFrameworks(
 	state: ChatFrameworkState,
-	registry: readonly { id: string; requires?: readonly string[] }[] = FRAMEWORKS
+	registry: readonly { id: string; requires?: readonly string[]; alwaysOn?: boolean }[] = FRAMEWORKS
 ): string[] {
-	const on = new Set(state.enabled);
+	// An `alwaysOn` framework is seeded before anything stored is read, so it is on for a chat
+	// that predates it, a chat from another device and a chat someone hand-edited alike. It
+	// also means such a framework may pull in whatever it requires through the closure below,
+	// rather than needing a second rule of its own.
+	const on = new Set([...state.enabled, ...registry.filter((f) => f.alwaysOn).map((f) => f.id)]);
 	// Fixed point rather than one pass: a requirement may itself require something, and a
 	// single sweep would satisfy the first level and quietly miss the second.
 	for (let guard = 0; guard < registry.length + 1; guard++) {

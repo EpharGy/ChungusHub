@@ -60,6 +60,10 @@ class FrameworkSettingsStore {
 	 */
 	setAvailable(id: string, value: boolean): { ok: true } | { ok: false; blockedBy: string[] } {
 		if (!value) {
+			// A framework with no switch is refused here as well as being given no control, for
+			// the reason the requirement rule is: the page is not the only caller, and a rule
+			// that lives only in a component is a rule the next caller does not have.
+			if (FRAMEWORKS.find((f) => f.id === id)?.alwaysOn) return { ok: false, blockedBy: [] };
 			const on = Object.keys(this.state.enabled).filter((k) => this.state.enabled[k]);
 			const blockedBy = requiredBy(id, on);
 			if (blockedBy.length > 0) return { ok: false, blockedBy };
