@@ -217,12 +217,25 @@ prompt and therefore survives a long time:
 
 - **A reminder with nothing gathering it is dropped**, not injected bare. Outside its section a
   lone line is noise rather than a reminder, and the settings editor says so rather than leaving
-  it to be discovered.
+  it to be discovered. The section is `alwaysOn` (below), so this is no longer reachable through
+  the switches; it still holds for a build whose registry leaves the reminders framework out.
 - **A section with nothing gathered is not injected at all.** Empty tags announce a system and
   then say nothing about it, which is worse than silence.
 - **Every framework's reminder is off by default, even when the section is on.** A reminder is
   a cost paid every turn, and which systems a given model keeps forgetting is not something
   anything here can guess.
+
+**The section itself has no switch, at either level** (`FrameworkDef.alwaysOn`). A switch is
+worth having when both answers mean something, and here they do not: the shelf writes nothing of
+its own, so switched on with nothing on it costs a prompt exactly zero, while switched off it
+silently deletes every line the other frameworks put on it. That produced the one failure this
+whole section exists to prevent, from the far side: a reader ticks a framework's reminder, can
+see it ticked, and gets nothing, with nothing on screen saying why. Which reminders are sent is
+the per-framework switch's question, and it was always the only one that meant anything.
+
+A framework declaring `alwaysOn` owes the prompt the other half of that bargain: it must render
+nothing when it has nothing to say, or every prompt on every install pays for it. Nothing in the
+base can check that.
 
 This is the one thing the base knows about a specific framework, and it is deliberate: a
 section several frameworks write into at once is not something the rest of this contract can
@@ -265,7 +278,10 @@ only one would be wrong in a way nothing on screen explains.
 
 **Both default to off.** A framework injects text into every prompt of every chat that opts in,
 and one that started writing into prompts the first time someone updated is one nobody agreed
-to. The per-chat side is a list of ids rather than a flag per framework, so a chat that never
+to. The exception is a framework that declares `alwaysOn`: it reads as available and as enabled
+whatever is stored, seeded in `enabledFrameworks` before the requirement closure runs and short
+circuited in `frameworkAvailable`, so every reader of either switch agrees with what is actually
+running. The reminders section is the only one, and the reasoning is above it. The per-chat side is a list of ids rather than a flag per framework, so a chat that never
 touches this stores an empty list, and a framework added later arrives off everywhere.
 
 **Requirements are closed over on READ**, not only when a switch is flipped. A blob can arrive

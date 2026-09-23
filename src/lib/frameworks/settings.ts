@@ -20,6 +20,7 @@
  * `stores/frameworkSettings.svelte.ts`, because prompt assembly reads these and may not touch
  * a store.
  */
+import { FRAMEWORKS } from './registry';
 
 /** Framework configs one install may carry. A backstop against a corrupt blob. */
 export const MAX_CONFIGS = 64;
@@ -67,7 +68,19 @@ export function normalizeFrameworkSettings(raw: unknown): FrameworkSettings {
 	return out;
 }
 
-/** Whether a framework is available on this install. */
-export function frameworkAvailable(settings: FrameworkSettings, id: string): boolean {
+/**
+ * Whether a framework is available on this install.
+ *
+ * A framework that declares `alwaysOn` answers true whatever is stored, so the switch it has
+ * no UI for cannot be left in a state that contradicts what is running. The registry is a
+ * parameter for the reason `enabledFrameworks` takes one: a test says which frameworks exist
+ * rather than moving when a branch carrying one is left out of the build.
+ */
+export function frameworkAvailable(
+	settings: FrameworkSettings,
+	id: string,
+	registry: readonly { id: string; alwaysOn?: boolean }[] = FRAMEWORKS
+): boolean {
+	if (registry.some((framework) => framework.id === id && framework.alwaysOn)) return true;
 	return settings.enabled[id] === true;
 }

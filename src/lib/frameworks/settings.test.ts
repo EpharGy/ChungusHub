@@ -89,16 +89,22 @@ describe('what is holding a framework on', () => {
 describe('the two switches together', () => {
 	// The install decides whether a framework exists; the story decides whether it uses one.
 	// A surface checking only one would be wrong in a way nothing on screen explains.
+	//
+	// These read the REAL registry rather than the stand-in above, because `runningFrameworks`
+	// takes no registry of its own. So they assert what is true of the framework under test and
+	// never the whole list: anything the build carries that runs unconditionally is also in
+	// there, and an exact-match assertion would be a test of the registry's contents wearing
+	// the name of a test about two switches.
 	test('on in the chat and available on the install: it runs', () => {
-		expect(runningFrameworks(chat(['date']), install('date'))).toEqual(['date']);
+		expect(runningFrameworks(chat(['date']), install('date'))).toContain('date');
 	});
 
 	test('on in the chat but not available: it does not run', () => {
-		expect(runningFrameworks(chat(['date']), install())).toEqual([]);
+		expect(runningFrameworks(chat(['date']), install())).not.toContain('date');
 	});
 
 	test('available but not on in the chat: it does not run', () => {
-		expect(runningFrameworks(chat([]), install('date'))).toEqual([]);
+		expect(runningFrameworks(chat([]), install('date'))).not.toContain('date');
 	});
 
 	test('availability is the outer bound, even for something held on by a requirement', () => {
