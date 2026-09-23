@@ -264,6 +264,13 @@
 		}
 		const current = frameworkState.enabled;
 		if (!value) {
+			// A framework with no switch has no tick to untick, and the markup gives it none.
+			// Guarded here as well because the stored list is closed over on read: writing the id
+			// out would change nothing except to make the box disagree with the panel beside it.
+			if (FRAMEWORKS.find((f) => f.id === id)?.alwaysOn) {
+				box.checked = true;
+				return;
+			}
 			const blockers = requiredBy(id, running);
 			if (blockers.length > 0) {
 				const names = blockers.map((b) => FRAMEWORKS.find((f) => f.id === b)?.name ?? b);
@@ -384,13 +391,21 @@
 					</button>
 					{#if frameworkPanelStore.usesOpen}
 						{#each chatFrameworks as row (row.def.id)}
+							<!-- A framework with no switch keeps its row and loses its box. The row is
+							     what says the thing is running and where its own controls live, and
+							     dropping it would leave a reader hunting for something they could see
+							     working; the box is what would be a lie. -->
 							<label class="fp-use" class:is-unavailable={!row.available}>
-								<input
-									type="checkbox"
-									checked={row.on}
-									disabled={!row.available}
-									onchange={(e) => toggleFramework(row.def.id, e.currentTarget.checked, e.currentTarget)}
-								/>
+								{#if row.def.alwaysOn}
+									<span class="fp-use-fixed">Always</span>
+								{:else}
+									<input
+										type="checkbox"
+										checked={row.on}
+										disabled={!row.available}
+										onchange={(e) => toggleFramework(row.def.id, e.currentTarget.checked, e.currentTarget)}
+									/>
+								{/if}
 								<span class="fp-use-text">
 									<span class="fp-use-name">{row.def.name}</span>
 									<span class="fp-dim">
@@ -611,6 +626,17 @@
 	.fp-use.is-unavailable {
 		cursor: default;
 		opacity: 0.55;
+	}
+
+	/* Stands in the checkbox's column so the names still line up, and reads as a statement
+	   rather than as a control: no pointer, no hit area, nothing to click at. */
+	.fp-use-fixed {
+		align-self: center;
+		font-family: var(--font-ui);
+		font-size: 0.62rem;
+		line-height: 1;
+		color: var(--color-text-muted);
+		cursor: default;
 	}
 
 	.fp-use-text {
