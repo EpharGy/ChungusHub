@@ -34,9 +34,13 @@
 		const result = frameworkSettingsStore.setAvailable(id, value);
 		if (result.ok) return;
 		// Refused rather than silently ignored: a switch that springs back with no explanation
-		// reads as a bug, and the reason is short enough to just say.
+		// reads as a bug, and the reason is short enough to just say. No blockers named means
+		// the framework has no switch at all, which this page does not offer one for, but the
+		// store is the authority and a message it cannot explain is worse than one it can.
 		toastStore.error(
-			`${nameOf(id)} is needed by ${result.blockedBy.map(nameOf).join(', ')}. Turn that off first.`
+			result.blockedBy.length === 0
+				? `${nameOf(id)} is always on.`
+				: `${nameOf(id)} is needed by ${result.blockedBy.map(nameOf).join(', ')}. Turn that off first.`
 		);
 	}
 </script>
@@ -71,11 +75,18 @@
 							</span>
 							<Icon name="chevronRight" class="w-4 h-4 row-chev" strokeWidth={2} />
 						</button>
-						<Toggle
-							checked={on}
-							onchange={(v) => toggle(framework.id, v)}
-							label="Make {framework.name} available"
-						/>
+						<!-- A framework with no switch says so instead of showing one that cannot
+						     move: a disabled toggle reads as something broken, where two words say
+						     what is true. Its per-framework settings are still one row away. -->
+						{#if framework.alwaysOn}
+							<span class="row-fixed">Always on</span>
+						{:else}
+							<Toggle
+								checked={on}
+								onchange={(v) => toggle(framework.id, v)}
+								label="Make {framework.name} available"
+							/>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -169,6 +180,16 @@
 		font-size: 0.72rem;
 		line-height: 1.35;
 		color: var(--color-text-muted);
+	}
+
+	/* Sits where the toggle would, so the rows still line up down the right edge. */
+	.row-fixed {
+		flex: none;
+		padding-right: 0.15rem;
+		font-family: var(--font-ui);
+		font-size: 0.7rem;
+		color: var(--color-text-muted);
+		white-space: nowrap;
 	}
 
 	/* Off frameworks read as inert without dropping opacity on text. */
