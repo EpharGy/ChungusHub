@@ -31,7 +31,12 @@
 	);
 
 	/** True when a reminder line has nothing running to gather it, so its editor can say the
-	 *  text is being written and not sent rather than leaving that to be discovered. */
+	 *  text is being written and not sent rather than leaving that to be discovered.
+	 *
+	 *  Structurally false now: the shelf is `alwaysOn`, so `isAvailable` answers true for it
+	 *  whatever is stored. Kept rather than deleted because it is a statement about the
+	 *  REGISTRY, not about a switch, and a build carrying no gatherer at all is still a build
+	 *  this can be right about. */
 	const gatherAbsent = $derived(
 		!FRAMEWORKS.some(
 			(f) =>
@@ -61,8 +66,13 @@
 		if (!framework) return;
 		const result = frameworkSettingsStore.setAvailable(framework.id, value);
 		if (result.ok) return;
+		// No blockers named means the framework has no switch, which this page does not render
+		// one for. The store is the authority either way, and a message it cannot explain is
+		// worse than one it can.
 		toastStore.error(
-			`${framework.name} is needed by ${result.blockedBy.map(nameOf).join(', ')}. Turn that off first.`
+			result.blockedBy.length === 0
+				? `${framework.name} is always on.`
+				: `${framework.name} is needed by ${result.blockedBy.map(nameOf).join(', ')}. Turn that off first.`
 		);
 	}
 </script>
@@ -92,7 +102,15 @@
 					</p>
 				{/if}
 			</div>
-			<Toggle checked={available} onchange={toggle} label="Make {framework.name} available" />
+			<!-- Same rule the overview row follows: a framework with no switch says so rather
+			     than showing one that cannot move. This page is the second place the app-wide
+			     switch appears, so leaving it here would have been the one toggle that still
+			     claimed the framework could be turned off. -->
+			{#if framework.alwaysOn}
+				<span class="head-fixed">Always on</span>
+			{:else}
+				<Toggle checked={available} onchange={toggle} label="Make {framework.name} available" />
+			{/if}
 		</section>
 
 		{#each framework.reference ?? [] as ref (ref.title)}
@@ -176,6 +194,15 @@
 		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: start;
 		gap: 0.75rem;
+	}
+
+	/* Sits in the toggle's column so the head still reads as one row. */
+	.head-fixed {
+		align-self: center;
+		font-family: var(--font-ui);
+		font-size: 0.7rem;
+		color: var(--color-text-muted);
+		white-space: nowrap;
 	}
 
 	.orb {
