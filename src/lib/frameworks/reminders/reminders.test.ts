@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { frameworkBooks, frameworkEntryId } from '../apply';
+import { frameworkBooks, frameworkEntryId, runningFrameworks } from '../apply';
 import { defaultChatFrameworkState } from '../chat-state';
 import { DATE_FRAMEWORK_ID, DEFAULT_DATE_REMINDER } from '../date';
 import { defaultFrameworkSettings, type FrameworkSettings } from '../settings';
@@ -119,12 +119,37 @@ describe('when a piece is missing', () => {
 		expect(section(install())).toBeUndefined();
 	});
 
-	test("a reminder with nothing gathering it is dropped, not injected bare", () => {
-		// Outside its section a lone line is noise rather than a reminder.
+	test('a reminder is never injected bare: the only entry carrying one is the section', () => {
+		// Outside its section a lone line is noise rather than a reminder, so the gathering pass
+		// never injects a reminder block where it stands.
+		//
+		// **The install here no longer says Reminders is available, and it runs anyway**, which
+		// is the point: the shelf is `alwaysOn`, so the state this once guarded -- a framework
+		// with a reminder and nothing to gather it -- is not reachable through the switches any
+		// more. What is still worth asserting is the half that never depended on that: wherever
+		// the line ends up, it ends up inside the section and nowhere else.
 		const settings = install(REMINDER_ON, DATE_FRAMEWORK_ID);
 		const [book] = frameworkBooks(chat(DATE_FRAMEWORK_ID), settings, NOW);
-		const texts = (book?.entries ?? []).map((e) => e.content).join('\n');
-		expect(texts).not.toContain('takes precedence over simply continuing');
+		const carrying = (book?.entries ?? []).filter((e) =>
+			e.content.includes('takes precedence over simply continuing')
+		);
+		expect(carrying.map((e) => e.id)).toEqual([frameworkEntryId(REMINDERS_FRAMEWORK_ID, 'section')]);
+	});
+
+	test('the shelf is always on, so a reminder can never be stranded by a switch', () => {
+		// The failure it replaces: a reader ticks a framework's reminder, can see it ticked, and
+		// gets nothing, because the thing that gathers it was off somewhere else entirely.
+		expect(REMINDERS_FRAMEWORK.alwaysOn).toBe(true);
+		expect(runningFrameworks(chat(DATE_FRAMEWORK_ID), install(REMINDER_ON, DATE_FRAMEWORK_ID))).toContain(
+			REMINDERS_FRAMEWORK_ID
+		);
+	});
+
+	test('but always on still costs nothing when nothing is on the shelf', () => {
+		// An empty shelf must render no entry at all, or every prompt on every install pays for
+		// a framework nobody switched on. This is the whole licence for having no switch.
+		const [book] = frameworkBooks(chat(REMINDERS_FRAMEWORK_ID), install({}, REMINDERS_FRAMEWORK_ID), NOW);
+		expect(book).toBeUndefined();
 	});
 
 	test('a reminder is off by default, so turning Reminders on sends nothing on its own', () => {
