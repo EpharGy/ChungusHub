@@ -50,11 +50,12 @@
 		{/if}
 	</div>
 
+	<!-- Unreachable while the reminders framework is `alwaysOn` and in the registry, which it
+	     is in every build that has one. Kept as a statement rather than the instruction it used
+	     to be ("turn the Reminders framework on"), because that is now advice nobody can take:
+	     a build that could show this is one with no shelf to turn on. -->
 	{#if block.on && gatherAbsent}
-		<p class="warn">
-			Nothing is gathering reminders, so this is not being sent. Turn the Reminders framework
-			on to use it.
-		</p>
+		<p class="warn">Nothing in this build is gathering reminders, so this is not being sent.</p>
 	{/if}
 
 	{#if block.def.placeholders?.length}
