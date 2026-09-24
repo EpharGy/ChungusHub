@@ -239,6 +239,18 @@ Write-Host "[rebuild-deploy] Building in $buildPath" -ForegroundColor Cyan
 git worktree add -b $buildBranch $buildPath main | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail 'Could not create the build worktree.' }
 
+# The privacy list is untracked, and a fresh worktree carries tracked files only, so without
+# this copy privacy.test.ts finds no list here and SKIPS: the gate would pass an artifact
+# that names a real person. .git/info/exclude lives in the shared git dir, so the copy is
+# ignored in this worktree exactly as the original is in yours, `git add -A` included.
+# CHUNGUS_REQUIRE_PRIVACY_LIST turns a missing list into a failure rather than a skip, so a
+# copy that stops working is caught by the gate instead of quietly disarming it. It is set
+# only when there is a list to copy, so a fresh clone with none still builds.
+if (Test-Path '.private-names') {
+    Copy-Item '.private-names' (Join-Path $buildPath '.private-names')
+    $env:CHUNGUS_REQUIRE_PRIVACY_LIST = '1'
+}
+
 # Set when the run stops somewhere a human has to finish by hand, which is the one case
 # where the build worktree must survive: the message below sends you into it.
 $keepBuild = $false

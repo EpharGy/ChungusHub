@@ -15,6 +15,9 @@
  *
  * A missing list SKIPS rather than fails. Every checkout that is not the author's has no list
  * and no need of one, and a test that failed on a fresh clone would be deleted within a day.
+ * The one exception is the deploy rebuild: its build worktree is fresh, so it holds no list
+ * unless one is copied in, and it sets CHUNGUS_REQUIRE_PRIVACY_LIST when it does. There a
+ * missing list FAILS, because a skip in that gate is an artifact nobody checked.
  *
  * **Failures never echo the matched text.** A test that printed the name it found would move
  * the leak into the CI log, which is usually more public than the file.
@@ -46,6 +49,14 @@ function privateNames(): string[] {
 }
 
 describe('privacy contract', () => {
+	test('the list is present when the rebuild requires it', () => {
+		// scripts/rebuild-deploy.ps1 copies the list into its build worktree and sets this. Without
+		// the check, a copy that stopped working would leave the list absent and the scan below
+		// would skip, passing an artifact nothing had looked at.
+		if (process.env.CHUNGUS_REQUIRE_PRIVACY_LIST !== '1') return;
+		expect(existsSync(LIST), 'the rebuild required a private-names list and none is here').toBe(true);
+	});
+
 	test('the list itself is never tracked', () => {
 		// If this ever fails, a list has been committed and the names are in the history.
 		const tracked = execFileSync('git', ['ls-files', '--', '.private-names', '.private-topics'], {
