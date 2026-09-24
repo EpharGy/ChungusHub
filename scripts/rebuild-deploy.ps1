@@ -355,6 +355,9 @@ try {
 }
 finally {
     Pop-Location
+    # Set above for the gate. `.\scripts\rebuild-deploy.ps1` runs in your own session, so a variable
+    # left set would carry into every later `bun test` you run there.
+    $env:CHUNGUS_REQUIRE_PRIVACY_LIST = $null
     # Kept deliberately after a conflict: the message above sends you into this worktree to
     # resolve it, so removing it here would delete the very directory being pointed at. The
     # next run clears it before starting, so a leftover is never a stale starting state.
