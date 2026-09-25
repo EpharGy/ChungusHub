@@ -68,6 +68,10 @@ describe('isPopoutEligible', () => {
 		expect(isPopoutEligible(new FakeField('', { matches: ['.message-content-editing'] }))).toBe(false);
 	});
 
+	test('the Chungus Assistant composer does not', () => {
+		expect(isPopoutEligible(new FakeField('', { matches: ['.assistant-textarea'] }))).toBe(false);
+	});
+
 	test('an unrelated class does not exclude a field', () => {
 		expect(isPopoutEligible(new FakeField('', { matches: ['.input-base'] }))).toBe(true);
 	});
