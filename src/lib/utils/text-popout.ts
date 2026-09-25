@@ -14,12 +14,17 @@ export const TEXT_POPOUT_OPT_OUT = 'data-no-popout';
 
 /**
  * Fields left out without an attribute on them, matched by a class their owner, or the
- * owner's parent, already gives them, so no upstream markup has to change. Both are the
- * chat's own text: the composer, and a message being edited in place (either speaker's).
- * Those already sit in the widest column the app has, so a button over them is only in
+ * owner's parent, already gives them, so no upstream markup has to change. All are
+ * conversation text: the chat composer, a message being edited in place (either
+ * speaker's), and the Chungus Assistant's composer. A turn is short and sent with Enter,
+ * and an edit sits in the widest column the app has, so a button over them is only in
  * the way.
  */
-export const TEXT_POPOUT_EXCLUDED = ['.composer-textarea', '.message-content-editing'];
+export const TEXT_POPOUT_EXCLUDED = [
+	'.composer-textarea',
+	'.message-content-editing',
+	'.assistant-textarea'
+];
 
 const EXCLUDED_SELECTOR = [`[${TEXT_POPOUT_OPT_OUT}]`, ...TEXT_POPOUT_EXCLUDED].join(', ');
 

@@ -22,10 +22,10 @@ Any multi-line field in the app can be opened in a large editor: a panel on a de
 
 ## What is left out
 
-**`data-no-popout`** on a textarea, or on any ancestor, keeps the button off it. The editor's own textarea carries it, so it cannot offer a pop-out of itself. **`TEXT_POPOUT_EXCLUDED`** lists fields left out by a class they or their parent already have, so leaving one out changes no markup upstream: the chat composer (`.composer-textarea`) and a message being edited in place (`.message-content-editing`). Both are the chat's own text, already in the widest column the app has. Disabled fields are left out. Read-only fields are not: they open as a larger, read-only view.
+**`data-no-popout`** on a textarea, or on any ancestor, keeps the button off it. The editor's own textarea carries it, so it cannot offer a pop-out of itself. **`TEXT_POPOUT_EXCLUDED`** lists fields left out by a class they or their parent already have, so leaving one out changes no markup upstream: the chat composer (`.composer-textarea`), a message being edited in place (`.message-content-editing`), and the Chungus Assistant's composer (`.assistant-textarea`). All are conversation text: a turn is short and sent with Enter, and an edit already sits in the widest column the app has. Disabled fields are left out. Read-only fields are not: they open as a larger, read-only view.
 
 ## Coupling
 
-1. `TEXT_POPOUT_EXCLUDED` names classes owned by `InputArea.svelte` and `Message.svelte`. Renaming either class upstream silently brings the button back on those fields. The unit tests pin the list, not the markup.
+1. `TEXT_POPOUT_EXCLUDED` names classes owned by `InputArea.svelte`, `Message.svelte` and `ChungusAssistantPanel.svelte`. Renaming either class upstream silently brings the button back on those fields. The unit tests pin the list, not the markup.
 2. Font family and size are copied from the source field when the editor opens, with a 16 px floor. Below 16 px, iOS zooms the page when a field takes focus.
 3. `maxlength`, `readonly` and `spellcheck` are copied from the source field. Any new attribute that constrains input has to be copied here as well, or the editor will accept text the field would refuse.
