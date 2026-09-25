@@ -124,7 +124,10 @@ $Topics = @(
     'feature/frameworks-panel',
     # The pop-out editor for multi-line fields. Stands alone: it needs nothing above it and
     # nothing needs it, so it can sit anywhere in this list; last is simply where it landed.
-    'feature/text-popout'
+    'feature/text-popout',
+    # Press-twice as the heavy delete confirmation, for devices where a long press becomes a
+    # right click. Stands alone, like the pop-out editor above it.
+    'feature/delete-confirm-gesture'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
