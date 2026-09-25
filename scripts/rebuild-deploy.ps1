@@ -121,7 +121,10 @@ $Topics = @(
     # per-chat switches for the frameworks themselves. Cut from feature/frameworks and
     # consumes the shell, so it needs BOTH above it and typechecks on neither alone.
     # It sits here rather than beside frameworks for that reason.
-    'feature/frameworks-panel'
+    'feature/frameworks-panel',
+    # The pop-out editor for multi-line fields. Stands alone: it needs nothing above it and
+    # nothing needs it, so it can sit anywhere in this list; last is simply where it landed.
+    'feature/text-popout'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
