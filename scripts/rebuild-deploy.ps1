@@ -77,6 +77,9 @@ Set-Location -Path (Join-Path $PSScriptRoot '..')
 $Topics = @(
     'fork/docs',
     'fork/deploy-tooling',
+    # Image generation, including one story's own ComfyUI workflow. The per-chat workflow
+    # was a topic of its own, carrying a byte-identical copy of this branch's files; it is
+    # folded in here so there is one copy to edit.
     'feature/comfy-inject',
     'feature/docker',
     'feature/corrections',
@@ -118,12 +121,7 @@ $Topics = @(
     # per-chat switches for the frameworks themselves. Cut from feature/frameworks and
     # consumes the shell, so it needs BOTH above it and typechecks on neither alone.
     # It sits here rather than beside frameworks for that reason.
-    'feature/frameworks-panel',
-    # One story's own ComfyUI workflow, so a character can carry a LoRA the rest of them do
-    # not. Adds a field to ChatFeatureState, which four branches above already append to at
-    # the same three lines - so it sits LAST: that leaves every conflict shape above this
-    # point exactly as rerere already knows it.
-    'feature/imagegen-per-chat'
+    'feature/frameworks-panel'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
