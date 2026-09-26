@@ -37,7 +37,9 @@
 		 * row and squeezes its neighbour to its text.
 		 */
 		shape?: 'block' | 'inline';
-		onconfirm: () => void;
+		/** A promise returned here keeps the button in its working state until it settles, so
+		 *  a slow act never reads as unanswered and cannot be fired a second time. */
+		onconfirm: () => unknown;
 		disabled?: boolean;
 		children: Snippet;
 	}
@@ -51,6 +53,7 @@
 	let pressedAt = 0;
 
 	let armedAt = $state<number | null>(null);
+	let working = $state(false);
 	let armTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const heavy = $derived(holdMs > 0);
@@ -71,15 +74,26 @@
 		if (!twice) disarm();
 	});
 
+	/** Every door that fires the act comes through here. The act behind a menu (the
+	 *  transcript's delete, replace and memory-bearing save) is async and the menu stays up
+	 *  until it lands, so between the press and that moment the button says it is working
+	 *  rather than springing back to its label and inviting the same press again. */
+	function fire() {
+		const done = onconfirm();
+		if (!(done instanceof Promise)) return;
+		working = true;
+		done.finally(() => (working = false));
+	}
+
 	function start() {
-		if (disabled || !needsHold || holding) return;
+		if (disabled || working || !needsHold || holding) return;
 		pressedAt = Date.now();
 		showHint = false;
 		holding = true;
 		timer = setTimeout(() => {
 			holding = false;
 			timer = null;
-			onconfirm();
+			fire();
 		}, holdMs);
 	}
 
@@ -99,7 +113,7 @@
 	}
 
 	function onClick() {
-		if (disabled || needsHold) return;
+		if (disabled || working || needsHold) return;
 		if (twice) {
 			const step = twiceStep(armedAt, Date.now());
 			if (step === 'ignore') return;
@@ -111,7 +125,7 @@
 			}
 			disarm();
 		}
-		onconfirm();
+		fire();
 	}
 
 	/** A long press on a pen or touchscreen can surface as a right click. The browser menu it
@@ -144,8 +158,9 @@
 	type="button"
 	class="hold-confirm hold-{shape}"
 	class:is-holding={holding}
-	class:is-armed={armedAt !== null}
+	class:is-armed={armedAt !== null || working}
 	{disabled}
+	aria-busy={working}
 	title={hint}
 	aria-label={hint}
 	onclick={onClick}
@@ -158,8 +173,10 @@
 	onkeyup={cancel}
 >
 	<span class="hold-fill" style:transition-duration="{holding ? holdMs : 120}ms"></span>
-	<span class="hold-content" class:hint-visible={showHint || armedAt !== null}>
-		{#if showHint}
+	<span class="hold-content" class:hint-visible={showHint || armedAt !== null || working}>
+		{#if working}
+			<span class="hold-hint">Working…</span>
+		{:else if showHint}
 			<span class="hold-hint">Press and hold</span>
 		{:else if armedAt !== null}
 			<span class="hold-hint">Press again to confirm</span>
@@ -213,6 +230,9 @@
 	.hold-confirm:hover:not(:disabled) {
 		border-color: color-mix(in srgb, var(--color-error) 60%, transparent);
 		background: color-mix(in srgb, var(--color-error) 14%, transparent);
+	}
+	.hold-confirm[aria-busy='true'] {
+		cursor: progress;
 	}
 	.hold-confirm:disabled {
 		opacity: 0.5;
