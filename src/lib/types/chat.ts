@@ -11,6 +11,11 @@ import { normalizeAmbientConfig } from '$lib/types/ambient';
 import type { BackgroundConfig } from '$lib/types/background';
 import { normalizeBackgroundConfig } from '$lib/types/background';
 import type { GeneratedImageMeta } from '$lib/imagegen/types';
+import {
+	defaultEchoChamberChatState,
+	normalizeEchoChamberChatState,
+	type EchoChamberChatState
+} from '$lib/echochamber/feed-state';
 
 export interface Chat {
 	id: string;
@@ -153,6 +158,10 @@ export interface ChatFeatureState {
 	 *  CHARACTER lives in that character's lorebook entry instead, so this stays small.
 	 *  See $lib/frameworks/chat-state.ts. */
 	frameworks: ChatFrameworkState;
+	/** EchoChamber's generated reaction feeds, by the id of the message each reacted to.
+	 *  Here rather than in a table of its own so that deleting the chat deletes them with
+	 *  it, and so the port adds no schema migration (src/lib/echochamber/feed-state.ts). */
+	echoChamber: EchoChamberChatState;
 	/** The ComfyUI workflow this story generates its pictures with, or null to follow the
 	 *  app's. It exists so one story can carry a character's own LoRA without every other
 	 *  story getting it, which otherwise means swapping the app-wide workflow by hand on
@@ -179,6 +188,7 @@ function defaultChatFeatureState(): ChatFeatureState {
 		lorebooks: [],
 		mutedLorebooks: [],
 		frameworks: defaultChatFrameworkState(),
+		echoChamber: defaultEchoChamberChatState(),
 		imagegenWorkflow: null
 	};
 }
@@ -249,6 +259,7 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		lorebooks: normalizeClaimedIds(obj.lorebooks),
 		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks),
 		frameworks: normalizeChatFrameworkState(obj.frameworks),
+		echoChamber: normalizeEchoChamberChatState(obj.echoChamber),
 		imagegenWorkflow: normalizeClaimedId(obj.imagegenWorkflow)
 	};
 }
