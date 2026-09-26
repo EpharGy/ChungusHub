@@ -41,6 +41,9 @@ class UiStore {
 	// so the split view's history and the drill back chip can step out of the
 	// detail, and every page navigation clears it via gotoSettingsPage.
 	settingsEngineId = $state<string | null>(null);
+	/** Which framework's detail view the Frameworks settings page is showing, or null for its
+	 *  list. Mirrors `settingsEngineId`, and is cleared by the same reset. */
+	settingsFrameworkId = $state<string | null>(null);
 
 	// One-shot deep link: when set, the Library panel opens this entry's editor on
 	// mount and clears the field. Set by "Edit in Library" style buttons.
@@ -329,6 +332,7 @@ class UiStore {
 		this.settingsConnectionId = null;
 		this.settingsRoutingModel = null;
 		this.settingsEngineId = null;
+		this.settingsFrameworkId = null;
 	}
 
 	openSettings(flushFn?: () => void) {

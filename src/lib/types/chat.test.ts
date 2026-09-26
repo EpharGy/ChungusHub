@@ -54,6 +54,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			preset: null,
 			lorebooks: [],
 			mutedLorebooks: [],
+			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} },
 			imagegenWorkflow: null
 		});
 	});
@@ -68,6 +69,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			preset: null,
 			lorebooks: [],
 			mutedLorebooks: [],
+			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} },
 			imagegenWorkflow: null
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
@@ -91,6 +93,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			preset: null,
 			lorebooks: [],
 			mutedLorebooks: [],
+			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} },
 			imagegenWorkflow: null
 		});
 		expect('steering' in result).toBe(false);
