@@ -82,7 +82,6 @@ $Topics = @(
     # folded in here so there is one copy to edit.
     'feature/comfy-inject',
     'feature/docker',
-    'feature/corrections',
     'feature/random-roll-macros',
     # The frameworks base, and the date framework. A framework is a deterministic
     # calculation over story state that rewrites a marker inside a lorebook entry as
