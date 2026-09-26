@@ -9,6 +9,7 @@
 	import ImagePopoutWindow from '$lib/components/ui/ImagePopoutWindow.svelte';
 	import DataAheadBar, { setDataAhead } from '$lib/components/layout/DataAheadBar.svelte';
 	import ConnectionBar from '$lib/components/layout/ConnectionBar.svelte';
+	import TextPopout from '$lib/components/ui/TextPopout.svelte';
 	import DeleteGuardBar from '$lib/components/layout/DeleteGuardBar.svelte';
 	import ImportBar from '$lib/components/layout/ImportBar.svelte';
 	import NotepadWindow from '$lib/components/ui/NotepadWindow.svelte';
@@ -289,6 +290,7 @@
 <div class="app-shell surface-shell">
 	<TitleBar />
 	<ToastContainer />
+	<TextPopout />
 
 	{#if phase === 'error'}
 		<div class="app-state-wrap">
