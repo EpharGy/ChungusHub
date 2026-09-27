@@ -126,7 +126,10 @@ $Topics = @(
     'feature/text-popout',
     # Press-twice as the heavy delete confirmation, for devices where a long press becomes a
     # right click. Stands alone, like the pop-out editor above it.
-    'feature/delete-confirm-gesture'
+    'feature/delete-confirm-gesture',
+    # Hidden files in the bundled folders are skipped, so a portable build copied on a Mac
+    # still boots. Stands alone.
+    'fix/bundled-card-dotfiles'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
