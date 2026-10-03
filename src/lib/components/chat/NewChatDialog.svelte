@@ -27,9 +27,11 @@
 	</p>
 
 	<div class="new-actions">
-		<Button variant="ghost" onclick={onCancel}>Cancel</Button>
-		<Button variant="danger" onclick={onNewAndDelete}>New chat &amp; delete current</Button>
 		<Button variant="primary" onclick={onNew}>New chat</Button>
+		<Button variant="danger" onclick={onNewAndDelete}>New chat &amp; delete current</Button>
+	</div>
+	<div class="new-cancel">
+		<Button variant="ghost" onclick={onCancel}>Cancel</Button>
 	</div>
 </Dialog>
 
@@ -45,13 +47,20 @@
 		color: var(--color-text-primary);
 	}
 
-	/* Wraps rather than overflowing: the delete label is long, and a small dialog on a phone
-	   cannot fit all three on one line. */
+	/* The two choices share a row and Cancel sits under them on its own, so the layout is
+	   the same at every width rather than decided by where the delete label happens to wrap.
+	   The choices still wrap on a screen too narrow for both. */
 	.new-actions {
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: flex-end;
 		gap: 0.5rem;
 		margin-top: 1.2rem;
+	}
+
+	.new-cancel {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: 0.5rem;
 	}
 </style>
