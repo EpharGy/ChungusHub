@@ -1,34 +1,48 @@
 <script lang="ts">
 	/**
 	 * What the composer menu's New chat does with the chat you are leaving: keep it, or delete
-	 * it once the new one has started. Choosing nothing destructive here is a plain dialog,
-	 * not a confirm; the delete choice hands off to the caller's ConfirmDialog, which states
-	 * the real message count (the destructive-act ladder, architecture/ui-shell-settings.md).
+	 * it once the new one has started. This one dialog is also the delete's asking (the
+	 * destructive-act ladder, architecture/ui-shell-settings.md): it names the chat and states
+	 * its real message count, and `holdMs` turns the delete into the same press-and-hold
+	 * every big delete uses, so the choice needs no second dialog behind it.
 	 */
 	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
+	import HoldToConfirmButton from '$lib/components/ui/HoldToConfirmButton.svelte';
 
 	interface Props {
 		open: boolean;
 		/** The chat being left, named in the question. */
 		title: string;
+		/** Its message count, branches included; null when the count could not be read. */
+		messages: number | null;
+		/** > 0 makes the delete choice a press-and-hold (pass `holdMsForBlast(messages)`). */
+		holdMs: number;
 		onNew: () => void;
 		onNewAndDelete: () => void;
 		onCancel: () => void;
 	}
 
-	let { open, title, onNew, onNewAndDelete, onCancel }: Props = $props();
+	let { open, title, messages, holdMs, onNew, onNewAndDelete, onCancel }: Props = $props();
+
+	let count = $derived(messages === null ? '' : ` (${messages} message${messages === 1 ? '' : 's'})`);
 </script>
 
 <Dialog {open} onClose={onCancel} title="New chat" size="sm">
 	<p class="new-lead">
-		Start a new chat with this character. Keep <strong>{title}</strong>, or delete it once the
-		new one has started?
+		Start a new chat with this character. Keep <strong>{title}</strong>{count}, or delete it
+		once the new one has started? Deleting cannot be undone.
 	</p>
 
 	<div class="new-actions">
 		<Button variant="primary" onclick={onNew}>New chat</Button>
-		<Button variant="danger" onclick={onNewAndDelete}>New chat &amp; delete current</Button>
+		{#if holdMs > 0}
+			<HoldToConfirmButton {holdMs} shape="inline" onconfirm={onNewAndDelete}>
+				New chat &amp; delete current
+			</HoldToConfirmButton>
+		{:else}
+			<Button variant="danger" onclick={onNewAndDelete}>New chat &amp; delete current</Button>
+		{/if}
 	</div>
 	<div class="new-cancel">
 		<Button variant="ghost" onclick={onCancel}>Cancel</Button>

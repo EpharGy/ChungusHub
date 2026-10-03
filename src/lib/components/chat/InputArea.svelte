@@ -42,7 +42,6 @@
 	import CommandPalette from './CommandPalette.svelte';
 	import DuplicateChatDialog from '$lib/components/sidebar/DuplicateChatDialog.svelte';
 	import NewChatDialog from './NewChatDialog.svelte';
-	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import { db } from '$lib/services/database';
 	import { steeringStore } from '$lib/stores/steering.svelte';
@@ -168,10 +167,14 @@
 	// throw is unreachable and stays loud rather than minting a characterless chat.
 	//
 	// The row first asks what happens to the chat being left (NewChatDialog): keep it, or
-	// delete it once the new one has started.
-	let newChatFrom = $state<{ chat: Chat; characterId: string } | null>(null);
+	// delete it once the new one has started. That one dialog is also the delete's asking
+	// (the destructive-act ladder, architecture/ui-shell-settings.md): it states the real
+	// message count, and its delete button holds for a big chat. The count is fetched BEFORE
+	// the dialog opens, so no click can land ahead of the hold it decides. A failed fetch
+	// still opens it, just without the number.
+	let newChatFrom = $state<{ chat: Chat; characterId: string; messages: number | null } | null>(null);
 
-	function handleNewChat() {
+	async function handleNewChat() {
 		menuOpen = false;
 		if (messageStore.warnIfBusy()) return;
 		const entry = activeCharacterEntry;
@@ -181,7 +184,13 @@
 			void chatStore.createChat({ characterId: entry.id });
 			return;
 		}
-		newChatFrom = { chat: current, characterId: entry.id };
+		let messages: number | null = null;
+		try {
+			messages = (await db.getChatListStats())[current.id]?.total ?? null;
+		} catch (e) {
+			console.error('Failed to load chat stats for the New chat dialog:', e);
+		}
+		newChatFrom = { chat: current, characterId: entry.id, messages };
 	}
 
 	function chooseNewChat() {
@@ -191,51 +200,20 @@
 		void chatStore.createChat({ characterId: from.characterId });
 	}
 
-	function chooseNewChatAndDelete() {
-		const from = newChatFrom;
-		newChatFrom = null;
-		if (!from) return;
-		void askReplaceChat(from.chat, from.characterId);
-	}
-
-	// Deleting the chat is a chat delete like any other, so it is asked about again with the
-	// real message count (the destructive-act ladder, architecture/ui-shell-settings.md). A
-	// failed count fetch still asks, just without the number.
-	let replaceTarget = $state<{ chat: Chat; characterId: string; messages: number | null } | null>(null);
-
-	async function askReplaceChat(chat: Chat, characterId: string) {
-		let messages: number | null = null;
-		try {
-			messages = (await db.getChatListStats())[chat.id]?.total ?? null;
-		} catch (e) {
-			console.error('Failed to load chat stats for the replace confirm:', e);
-		}
-		replaceTarget = { chat, characterId, messages };
-	}
-
-	let replaceMessage = $derived.by(() => {
-		if (!replaceTarget) return '';
-		const name = `"${replaceTarget.chat.title}"`;
-		const n = replaceTarget.messages;
-		const what = n === null ? 'every message in it' : `its ${n} message${n === 1 ? '' : 's'}`;
-		return `Start a new chat and delete ${name} and ${what}? This cannot be undone.`;
-	});
-
 	// The new chat is made FIRST: createChat opens it, so the old one is no longer the open
 	// chat by the time it goes, and deleteChat has nowhere to re-route. A failed create
 	// therefore deletes nothing.
-	async function confirmReplaceChat() {
-		const target = replaceTarget;
-		replaceTarget = null;
-		if (!target) return;
-		if (messageStore.warnIfBusy()) return;
+	async function chooseNewChatAndDelete() {
+		const from = newChatFrom;
+		newChatFrom = null;
+		if (!from || messageStore.warnIfBusy()) return;
 		try {
-			await chatStore.createChat({ characterId: target.characterId });
+			await chatStore.createChat({ characterId: from.characterId });
 		} catch (e) {
 			toastStore.failed('start a new chat', e);
 			return;
 		}
-		await chatStore.deleteChat(target.chat.id);
+		await chatStore.deleteChat(from.chat.id);
 	}
 
 	// Raises the find-in-chat bar over the message list (MessageList owns the mount).
@@ -1821,23 +1799,13 @@
 	<NewChatDialog
 		open={true}
 		title={newChatFrom.chat.title}
+		messages={newChatFrom.messages}
+		holdMs={holdMsForBlast(newChatFrom.messages ?? 0)}
 		onNew={chooseNewChat}
 		onNewAndDelete={chooseNewChatAndDelete}
 		onCancel={() => (newChatFrom = null)}
 	/>
 {/if}
-
-<ConfirmDialog
-	open={replaceTarget !== null}
-	title="Replace chat"
-	message={replaceMessage}
-	confirmLabel="Delete and start new"
-	variant="danger"
-	destructive
-	holdMs={holdMsForBlast(replaceTarget?.messages ?? 0)}
-	onConfirm={confirmReplaceChat}
-	onCancel={() => (replaceTarget = null)}
-/>
 
 <style>
 	.input-shell {
