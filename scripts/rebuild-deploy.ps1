@@ -126,7 +126,10 @@ $Topics = @(
     'feature/text-popout',
     # Press-twice as the heavy delete confirmation, for devices where a long press becomes a
     # right click. Stands alone, like the pop-out editor above it.
-    'feature/delete-confirm-gesture'
+    'feature/delete-confirm-gesture',
+    # New chat in the composer menu asks whether to keep or delete the chat being left.
+    # Stands alone, like the two above it.
+    'feature/new-chat-replace'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
