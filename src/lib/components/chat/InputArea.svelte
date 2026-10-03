@@ -171,7 +171,8 @@
 	// (the destructive-act ladder, architecture/ui-shell-settings.md): it states the real
 	// message count, and its delete button holds for a big chat. The count is fetched BEFORE
 	// the dialog opens, so no click can land ahead of the hold it decides. A failed fetch
-	// still opens it, just without the number.
+	// still opens it, without the number and with the longest hold: a count nobody could
+	// read is treated as the biggest one, never as zero.
 	let newChatFrom = $state<{ chat: Chat; characterId: string; messages: number | null } | null>(null);
 
 	async function handleNewChat() {
@@ -1800,7 +1801,7 @@
 		open={true}
 		title={newChatFrom.chat.title}
 		messages={newChatFrom.messages}
-		holdMs={holdMsForBlast(newChatFrom.messages ?? 0)}
+		holdMs={holdMsForBlast(newChatFrom.messages ?? Infinity)}
 		onNew={chooseNewChat}
 		onNewAndDelete={chooseNewChatAndDelete}
 		onCancel={() => (newChatFrom = null)}
