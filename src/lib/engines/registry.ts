@@ -20,6 +20,10 @@
  * architecture/engines.md.
  */
 import { featurePromptsStore, type FeaturePromptKey } from '$lib/stores/featurePrompts.svelte';
+// The settings module, never the store: the store reaches the LLM provider, which imports
+// `stores/connections.svelte.ts`, which reads `ENGINES` from this file while it is still being
+// evaluated. See the header of `echochamber/settings.svelte.ts`.
+import { echoChamberSettings } from '$lib/echochamber/settings.svelte';
 
 export type EngineId =
 	| 'memory'
@@ -27,7 +31,8 @@ export type EngineId =
 	| 'steering'
 	| 'spellcheck'
 	| 'impersonate'
-	| 'sprites';
+	| 'sprites'
+	| 'echochamber';
 
 export interface EnginePromptField {
 	key: FeaturePromptKey;
@@ -48,7 +53,7 @@ export interface EngineDef {
 	/** Also the engine's `source` label on LLM calls in the prompt debug panel. */
 	id: EngineId;
 	name: string;
-	icon: 'brain' | 'sparkles' | 'compass' | 'checkCircle' | 'mask' | 'image';
+	icon: 'brain' | 'sparkles' | 'compass' | 'checkCircle' | 'mask' | 'image' | 'users';
 	/** One line for the engine's row: what it does, nothing about cost or trigger. */
 	summary: string;
 	/** The tooltip beside the engine's name in the detail view: what it does and when it fires. */
@@ -195,6 +200,22 @@ export const ENGINES: EngineDef[] = [
 		enabled: {
 			get: () => featurePromptsStore.spritesEnabled,
 			set: (value) => featurePromptsStore.setSpritesEnabled(value)
+		}
+	},
+	{
+		id: 'echochamber',
+		name: 'EchoChamber',
+		icon: 'users',
+		summary: 'Writes a feed of audience reactions beside the story',
+		description:
+			'Reads the newest reply and writes a chat feed reacting to it: a Discord room, a news ticker, a comment section, depending on the style you pick. It spends a call on every reply, so it is off until you switch it on, and its styles live on its own settings page rather than here.',
+		makesCalls: true,
+		// Its prompts are chat styles, a list the reader adds to rather than a fixed set of
+		// templates, so they have their own page instead of the inline prompt editor here.
+		prompts: [],
+		enabled: {
+			get: () => echoChamberSettings.current.enabled,
+			set: (value) => echoChamberSettings.update({ enabled: value })
 		}
 	}
 ];

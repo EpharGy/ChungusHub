@@ -55,6 +55,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			lorebooks: [],
 			mutedLorebooks: [],
 			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} },
+			echoChamber: { feeds: {} },
 			imagegenWorkflow: null
 		});
 	});
@@ -72,7 +73,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} },
 			imagegenWorkflow: null
 		};
-		expect(normalizeChatFeatureState(value)).toEqual(value);
+		expect(normalizeChatFeatureState(value)).toEqual({ ...value, echoChamber: { feeds: {} } });
 	});
 
 	test('a legacy blob\'s `steering` object is ignored, not carried', () => {
@@ -94,6 +95,7 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			lorebooks: [],
 			mutedLorebooks: [],
 			frameworks: { enabled: [], mode: 'manual', day: 1, suppressed: [], byFramework: {} },
+			echoChamber: { feeds: {} },
 			imagegenWorkflow: null
 		});
 		expect('steering' in result).toBe(false);
