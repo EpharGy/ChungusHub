@@ -20,6 +20,10 @@
  * to be told the real date and would be actively misled by one, so the block is absent rather
  * than present-and-ignored.
  *
+ * **Nor does it with the marker shape `never`**, which is the other way round: the day DOES
+ * follow the calendar, so everything counting days moves with the real date, and the model is
+ * simply never told what that date is.
+ *
  * Pure, like every framework: the clock arrives in the input.
  *
  * See architecture/frameworks.md.
@@ -32,16 +36,31 @@ import type { FrameworkDef } from '../types';
 export const DATE_FRAMEWORK_ID = 'date';
 
 /**
- * Whether the marker the model is asked for is readable in the transcript.
+ * Whether the marker the model is asked for is readable in the transcript, or whether the
+ * model is told the time at all.
  *
  * `visible` is `<Time: ...>`, which markdown escapes and draws as written. `hidden` is
  * `<!-- Time: ... -->`, an HTML comment, which the renderer emits as a comment node and no
  * browser draws.
  *
- * It is a purely cosmetic choice, and only became one when the parsing went: the marker is
- * something the reader keeps an eye on, so the only question is whether they want to see it.
+ * Between those two it is a purely cosmetic choice, and only became one when the parsing went:
+ * the marker is something the reader keeps an eye on, so the only question is whether they want
+ * to see it.
+ *
+ * `never` is not cosmetic. Every block this framework declares fills to nothing, so neither the
+ * instructions nor the reminder line reach the prompt, while the chat's day mode stays `marker`
+ * and the day keeps following the calendar. It is for a story that wants the variance of a real
+ * date, a cycle that moves on its own, without the model ever seeing a date or a time. It lives
+ * on this field rather than as a third day mode because the day is resolved exactly as it is
+ * for the other two shapes: only what is SENT differs, and that is this framework's business,
+ * not the base's.
  */
-export type MarkerShape = 'visible' | 'hidden';
+export type MarkerShape = 'visible' | 'hidden' | 'never';
+
+/** The shapes that produce a marker. `never` produces no text at all, so it has none. */
+export type SentMarkerShape = Exclude<MarkerShape, 'never'>;
+
+const SHAPES: readonly MarkerShape[] = ['visible', 'hidden', 'never'];
 
 /** This framework's slice of ONE CHAT's state, under `byFramework.date`. One key, both of the
  *  per-chat settings, so a chat that has opted in stores a single small object. */
@@ -64,7 +83,7 @@ export function defaultDateChatState(): DateChatState {
 export function normalizeDateChatState(raw: unknown): DateChatState {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaultDateChatState();
 	const shape = (raw as Record<string, unknown>).shape;
-	return { shape: shape === 'hidden' ? 'hidden' : 'visible' };
+	return { shape: SHAPES.includes(shape as MarkerShape) ? (shape as MarkerShape) : 'visible' };
 }
 
 /**
@@ -128,14 +147,14 @@ export const DEFAULT_DATE_REMINDER =
  * reading of the same fact to check itself against, and models are noticeably worse at naming
  * the weekday for a bare ISO date.
  */
-export function renderTimeMarker(at: Date, shape: MarkerShape): string {
+export function renderTimeMarker(at: Date, shape: SentMarkerShape): string {
 	const body = `Time: ${formatClock(at)}, ${formatWeekday(at)} ${formatLongDate(at)}`;
 	return shape === 'hidden' ? `<!-- ${body} -->` : `<${body}>`;
 }
 
 /** Substitute this framework's placeholders. Nothing else is touched, so an unknown macro
  *  survives as written rather than becoming an empty string that hides the mistake. */
-export function fillDateTemplate(template: string, at: Date, shape: MarkerShape): string {
+export function fillDateTemplate(template: string, at: Date, shape: SentMarkerShape): string {
 	return template
 		.replaceAll('{{marker}}', renderTimeMarker(at, shape))
 		.replaceAll('{{time}}', formatClock(at))
@@ -148,7 +167,7 @@ export const DATE_BLOCKS: readonly FrameworkBlockDef[] = [
 	{
 		slot: 'instructions',
 		label: 'Instructions',
-		hint: 'Sent every turn while this chat is on real time.',
+		hint: "Sent every turn while this chat is on real time, unless its marker is set to Never sent.",
 		defaultText: DEFAULT_DATE_INSTRUCTIONS,
 		placeholders: DATE_PLACEHOLDERS,
 		required: DATE_REQUIRED_PLACEHOLDERS,
@@ -179,18 +198,21 @@ export const DATE_FRAMEWORK: FrameworkDef = {
 	description:
 		'In real-time mode, injects the current time and instructions for what to do when the ' +
 		'story has been away for a while. The marker it asks for is for you to read: nothing ' +
-		'parses it back. Says nothing in manual mode, where /day drives the day instead.',
+		'parses it back. Says nothing in manual mode, where /day drives the day instead, or ' +
+		'when the marker is set to never be sent, where the day still follows the calendar.',
 	blocks: DATE_BLOCKS,
 	/**
-	 * Nothing at all in manual mode.
+	 * Nothing at all in manual mode, or when this chat's marker is never sent.
 	 *
 	 * A reader driving the day by hand has not asked to be told the real date and would be
-	 * actively misled by one, so the blocks are absent rather than present-and-ignored. Blank
-	 * text is how a declared block says "not this time"; the base drops it.
+	 * actively misled by one, so the blocks are absent rather than present-and-ignored. A reader
+	 * who chose `never` has asked for the real date to move the day and for the model not to
+	 * see it. Blank text is how a declared block says "not this time"; the base drops it.
 	 */
 	fill(text, input) {
 		if (input.mode !== 'marker') return '';
 		const { shape } = normalizeDateChatState(input.state);
+		if (shape === 'never') return '';
 		return fillDateTemplate(text, input.now, shape);
 	}
 };

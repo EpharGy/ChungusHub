@@ -13,9 +13,11 @@ import { resolveLorebooks } from '$lib/lorebook/engine';
 import { frameworkBooks, frameworkEntryId } from '../apply';
 import { resolveBlocks } from '../blocks';
 import { defaultChatFrameworkState } from '../chat-state';
+import { resolveDay, todaySerial } from '../day';
 import { FRAMEWORKS } from '../registry';
 import { defaultFrameworkSettings, type FrameworkSettings } from '../settings';
 import { applyFrameworks } from '../dispatch';
+import { REMINDERS_FRAMEWORK_ID } from '../reminders';
 import {
 	DATE_FRAMEWORK,
 	DATE_FRAMEWORK_ID,
@@ -162,6 +164,35 @@ describe('when it says nothing', () => {
 		expect(books(available(), realTimeChat({ mode: 'manual' }))).toEqual([]);
 	});
 
+	test('a marker that is never sent injects nothing, the reminder included', () => {
+		// The reminder is checked with its switch on and Reminders running, because that is the
+		// one other road the time has into the prompt.
+		const settings: FrameworkSettings = {
+			...defaultFrameworkSettings(),
+			enabled: { [DATE_FRAMEWORK_ID]: true, [REMINDERS_FRAMEWORK_ID]: true },
+			config: { [DATE_FRAMEWORK_ID]: { blocks: { reminder: { on: true } } } }
+		};
+		const never = realTimeChat({
+			enabled: [DATE_FRAMEWORK_ID, REMINDERS_FRAMEWORK_ID],
+			byFramework: { [DATE_FRAMEWORK_ID]: { shape: 'never' } }
+		});
+		const sent = books(settings, never).flatMap((b) => b.entries.map((e) => e.content));
+		const text = sent.join(' ');
+		expect(text).not.toContain('2026');
+		expect(text).not.toContain('6:02');
+	});
+
+	test('a marker that is never sent still leaves the day on the calendar', () => {
+		// The whole point of the shape: whatever counts days moves with the real date, and only
+		// the telling is withheld. The day resolves from the mode, which `never` does not touch.
+		const never = realTimeChat({ byFramework: { [DATE_FRAMEWORK_ID]: { shape: 'never' } } });
+		expect(never.mode).toBe('marker');
+		expect(resolveDay({ mode: never.mode, manual: never.day, today: todaySerial(NOW) })).toEqual({
+			day: todaySerial(NOW),
+			source: 'clock'
+		});
+	});
+
 	test('a chat that has not opted in gets nothing, even with Date available', () => {
 		expect(books(available(), realTimeChat({ enabled: [] }))).toEqual([]);
 	});
@@ -227,6 +258,7 @@ describe('the per-chat slice', () => {
 
 	test('a stored shape comes back', () => {
 		expect(normalizeDateChatState({ shape: 'hidden' })).toEqual({ shape: 'hidden' });
+		expect(normalizeDateChatState({ shape: 'never' })).toEqual({ shape: 'never' });
 	});
 });
 

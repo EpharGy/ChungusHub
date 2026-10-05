@@ -313,6 +313,14 @@ Its settings split by what kind of fact each one is:
 to be told the real date and would be actively misled by one, so the block is absent rather
 than present-and-ignored.
 
+**Nor does it when the marker shape is `never`.** That is the reverse case: the story wants the
+real date's variance, so a cycle counted from the day moves on its own, but the model is never
+told a date or a time. The day mode stays `marker` and the day resolves from the calendar exactly
+as it does for `visible` and `hidden`; every block, the reminder line included, fills to nothing.
+It is a value of the marker shape rather than a third day mode because only what is *sent*
+changes, and that is this framework's business. A day mode is read by the base, and the base has
+no reason to know the difference.
+
 The instruction template understands `{{time}}`, `{{weekday}}`, `{{date}}` and `{{marker}}`,
 substituted by the framework because macros never reach it. The settings editor warns when an
 edit drops the ones that say what time it is: a template that stopped saying the time has
