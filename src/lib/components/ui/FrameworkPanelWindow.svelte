@@ -35,7 +35,7 @@
 	import { FRAMEWORKS } from '$lib/frameworks/registry';
 	import { runningFrameworks } from '$lib/frameworks/apply';
 	import { requiredBy } from '$lib/frameworks/chat-state';
-	import { DATE_FRAMEWORK_ID, normalizeDateChatState } from '$lib/frameworks/date';
+	import { DATE_FRAMEWORK_ID, normalizeDateChatState, type MarkerShape } from '$lib/frameworks/date';
 	import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 	import { panelView, ROW_STATUS, type PanelBook, type PanelRow } from '$lib/frameworks/panel';
 	import { scanModifiers } from '$lib/frameworks/modifiers';
@@ -285,7 +285,7 @@
 		await patchChat({ enabled: [...new Set([...current, id, ...needed])] });
 	}
 
-	async function setShape(shape: 'visible' | 'hidden') {
+	async function setShape(shape: MarkerShape) {
 		if (!frameworkState) return;
 		await patchChat({
 			byFramework: { ...frameworkState.byFramework, [DATE_FRAMEWORK_ID]: { shape } }
@@ -435,11 +435,18 @@
 										>
 									</div>
 									{#if frameworkState?.mode === 'marker'}
-										<span class="fp-dim">
-											The day follows the calendar. The model is told the real time each turn
-											and asked to write it back, purely so you can see where the story thinks
-											it is: nothing reads that marker.
-										</span>
+										{#if dateState.shape === 'never'}
+											<span class="fp-dim">
+												The day follows the calendar, so everything counting days moves with
+												the real date. The model is never told the date or the time.
+											</span>
+										{:else}
+											<span class="fp-dim">
+												The day follows the calendar. The model is told the real time each turn
+												and asked to write it back, purely so you can see where the story thinks
+												it is: nothing reads that marker.
+											</span>
+										{/if}
 										<span class="fp-dim">Date's time marker, in the transcript:</span>
 										<div class="fp-seg">
 											<button
@@ -449,6 +456,10 @@
 											<button
 												class:is-on={dateState.shape === 'hidden'}
 												onclick={() => setShape('hidden')}>Hidden</button
+											>
+											<button
+												class:is-on={dateState.shape === 'never'}
+												onclick={() => setShape('never')}>Never sent</button
 											>
 										</div>
 									{:else}
