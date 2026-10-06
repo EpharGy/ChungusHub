@@ -30,7 +30,6 @@
  */
 import { decorateCodeBlocks, handleCodeCopyClick } from '$lib/utils/code-blocks';
 
-
 /** One parser for the app, made on first use. Reused rather than created per patch, and
  *  emptied after each one so a discarded subtree isn't held alive by it. Lazy because a
  *  module-level `document` would run at import time, and this module has no business
