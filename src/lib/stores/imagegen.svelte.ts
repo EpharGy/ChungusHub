@@ -395,6 +395,7 @@ class ImagegenStore {
 			const meta: GeneratedImageMeta = {
 				marker: markerIndex,
 				prompt: parsed.prompt,
+				positivePrompt: effective.positivePrompt,
 				seed,
 				ar: effective.ar,
 				shot: effective.shot,

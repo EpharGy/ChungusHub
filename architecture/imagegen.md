@@ -47,6 +47,8 @@ A turn with no marker renders as **one** element with one `use:renderedHtml`, ex
 
 **A row naming a picture that is not on disk falls back to the placeholder**, rather than drawing the browser's broken-image glyph. `GeneratedImage` records the url whose fetch failed (the url, not a flag, so a retry's new url clears it with nothing having to reset anything) and renders the same "not generated yet" branch, because that is what it now is: the marker never left the text. Three unremarkable things reach that state - a restored backup older than the picture, a hand-tidied `images/chat/`, and the size budget below - and all three want the same Generate button.
 
+**The copy button copies the prompt the picture was actually made from**: prepend, shot tag, the model's prompt and append, with none of the marker's control tokens. That string is stored on the record as `positivePrompt` at generation time rather than rebuilt from the settings at click time, because the prepend and append can change after a picture is made and the copy should describe this picture, not the next one. Records written before the field existed have only `prompt`, the model's part, and copy that.
+
 ## Cleanup: nothing here is a folder anyone has to weed
 
 A generated picture is an ordinary `images/chat/` file, so it inherits the whole lifecycle that column already has (`server/db.ts`, "Chat image attachments"), and inherits it **for free**: `imagePathsIn` reads `item.path` off the blob, and a generated attachment is an item with a path.

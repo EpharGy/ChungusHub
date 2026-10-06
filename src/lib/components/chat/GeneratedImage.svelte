@@ -16,8 +16,10 @@
 	 * afterwards, which is the whole reason this can be re-rendered freely: nothing here has
 	 * to be re-attached after a stream patches the body around it.
 	 */
+	import Icon from '$lib/components/ui/Icon.svelte';
 	import { imagegenStore } from '$lib/stores/imagegen.svelte';
 	import { imageService } from '$lib/services/imageService';
+	import { copyText } from '$lib/utils/clipboard';
 	import { wasRepaired } from '$lib/imagegen/parse';
 	import type { MarkerMatch } from '$lib/imagegen/types';
 	import type { Message } from '$lib/types/chat';
@@ -64,6 +66,29 @@
 	const promptText = $derived(
 		meta?.prompt ?? (marker.result.status === 'ok' ? marker.result.prompt : marker.raw)
 	);
+	/**
+	 * What the copy button puts on the clipboard: the whole positive prompt the picture was
+	 * made from, prepend and append included, and none of the marker's control tokens. Read
+	 * off the stored record rather than rebuilt from the settings, which may have changed
+	 * since. A row from before that field was stored has only the model's own prompt.
+	 */
+	const copyPrompt = $derived(meta?.positivePrompt ?? meta?.prompt ?? '');
+
+	let copyPhase = $state<'idle' | 'copied' | 'failed'>('idle');
+	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+	/** The checkmark waits for the copy, as everywhere in the app (utils/clipboard.ts). */
+	async function copyPromptText(): Promise<void> {
+		clearTimeout(copyTimer);
+		try {
+			await copyText(copyPrompt);
+			copyPhase = 'copied';
+		} catch {
+			copyPhase = 'failed';
+		}
+		copyTimer = setTimeout(() => (copyPhase = 'idle'), copyPhase === 'failed' ? 3000 : 1200);
+	}
+
 	const repaired = $derived(marker.result.status === 'ok' && wasRepaired(marker.result.repairMeta));
 
 	/** A marker the parser could not save. Nothing to generate, so the reader is told what
@@ -93,6 +118,20 @@
 			onerror={() => (brokenUrl = url)}
 		/>
 		<div class="generated-actions">
+			<button
+				type="button"
+				class="generated-chip generated-chip-icon"
+				class:generated-chip-failed={copyPhase === 'failed'}
+				title={copyPhase === 'failed' ? 'Copy failed' : 'Copy the prompt this picture was made from'}
+				onclick={copyPromptText}
+				aria-label="Copy this image's prompt"
+			>
+				<Icon
+					name={copyPhase === 'copied' ? 'check' : copyPhase === 'failed' ? 'warning' : 'copy'}
+					class="w-3.5 h-3.5"
+					strokeWidth={1.75}
+				/>
+			</button>
 			{#if status === 'working'}
 				<span class="generated-chip" title="Generating a new picture">…</span>
 			{:else}
@@ -220,6 +259,15 @@
 		background: color-mix(in srgb, var(--color-surface, #222) 75%, transparent);
 		color: var(--color-text, #eee);
 		backdrop-filter: blur(2px);
+	}
+
+	.generated-chip-icon {
+		display: inline-flex;
+		align-items: center;
+	}
+
+	.generated-chip-failed {
+		color: var(--color-error);
 	}
 
 	.generated-caption {

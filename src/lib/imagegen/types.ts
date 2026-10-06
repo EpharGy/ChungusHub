@@ -183,7 +183,13 @@ export interface GenerateResult {
  */
 export interface GeneratedImageMeta {
 	marker: number;
+	/** The model's own prompt, as the marker wrote it. */
 	prompt: string;
+	/** The whole positive prompt sent to ComfyUI: prepend, shot tag, `prompt`, append. Read
+	 *  by the picture's copy button, because the settings it was assembled from can change
+	 *  after the picture is made. Optional: rows written before it existed fall back to
+	 *  `prompt`. */
+	positivePrompt?: string;
 	seed: number;
 	ar: ArToken;
 	shot: ShotToken;
