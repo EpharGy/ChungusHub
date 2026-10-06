@@ -1052,8 +1052,9 @@
 		padding-right: 2.4rem;
 	}
 
-	/* Revealed on hover/focus where there is a pointer to hover with; always visible on
-	   touch, where there is not. Opaque enough to sit over a long first line legibly. */
+	/* Revealed on hover/focus, and always visible where there is no hover at all, by the
+	   same rule as a turn's own action icons (Message.svelte). Opaque enough to sit over a
+	   long first line legibly. */
 	.prose .code-copy {
 		position: absolute;
 		top: 0.4rem;
@@ -1082,7 +1083,7 @@
 		color: var(--color-text-primary);
 	}
 
-	@media (hover: none), (pointer: coarse) {
+	@media (hover: none) {
 		.prose .code-copy {
 			opacity: 1;
 		}
