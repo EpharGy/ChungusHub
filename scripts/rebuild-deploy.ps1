@@ -131,7 +131,9 @@ $Topics = @(
     # Stands alone, like the two above it.
     'feature/new-chat-replace',
     # A copy button on every rendered code block. Stands alone, like the three above it.
-    'feature/code-copy'
+    'feature/code-copy',
+    # Keeps the editor header's lorebook popover inside the screen on a phone. Stands alone.
+    'fix/lorebook-popover-edge'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
