@@ -19,6 +19,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { imagegenStore } from '$lib/stores/imagegen.svelte';
 	import { imageService } from '$lib/services/imageService';
+	import { toastStore } from '$lib/stores/toast.svelte';
 	import { copyText } from '$lib/utils/clipboard';
 	import { wasRepaired } from '$lib/imagegen/parse';
 	import type { MarkerMatch } from '$lib/imagegen/types';
@@ -74,19 +75,19 @@
 	 */
 	const copyPrompt = $derived(meta?.positivePrompt ?? meta?.prompt ?? '');
 
-	let copyPhase = $state<'idle' | 'copied' | 'failed'>('idle');
-	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+	let justCopied = $state(false);
 
-	/** The checkmark waits for the copy, as everywhere in the app (utils/clipboard.ts). */
+	// As a turn's own Copy (MessageActions): the checkmark waits for the copy, and a copy
+	// that did not land says so in a toast, which a touch screen can read and a tooltip is not.
 	async function copyPromptText(): Promise<void> {
-		clearTimeout(copyTimer);
 		try {
 			await copyText(copyPrompt);
-			copyPhase = 'copied';
 		} catch {
-			copyPhase = 'failed';
+			toastStore.error('Copy failed. Select the text and copy it by hand.');
+			return;
 		}
-		copyTimer = setTimeout(() => (copyPhase = 'idle'), copyPhase === 'failed' ? 3000 : 1200);
+		justCopied = true;
+		setTimeout(() => (justCopied = false), 1500);
 	}
 
 	const repaired = $derived(marker.result.status === 'ok' && wasRepaired(marker.result.repairMeta));
@@ -121,13 +122,12 @@
 			<button
 				type="button"
 				class="generated-chip generated-chip-icon"
-				class:generated-chip-failed={copyPhase === 'failed'}
-				title={copyPhase === 'failed' ? 'Copy failed' : 'Copy the prompt this picture was made from'}
+				title={justCopied ? 'Copied!' : 'Copy the prompt this picture was made from'}
 				onclick={copyPromptText}
 				aria-label="Copy this image's prompt"
 			>
 				<Icon
-					name={copyPhase === 'copied' ? 'check' : copyPhase === 'failed' ? 'warning' : 'copy'}
+					name={justCopied ? 'check' : 'copy'}
 					class="w-3.5 h-3.5"
 					strokeWidth={1.75}
 				/>
@@ -264,10 +264,6 @@
 	.generated-chip-icon {
 		display: inline-flex;
 		align-items: center;
-	}
-
-	.generated-chip-failed {
-		color: var(--color-error);
 	}
 
 	.generated-caption {
