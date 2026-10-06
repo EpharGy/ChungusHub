@@ -129,7 +129,9 @@ $Topics = @(
     'feature/delete-confirm-gesture',
     # New chat in the composer menu asks whether to keep or delete the chat being left.
     # Stands alone, like the two above it.
-    'feature/new-chat-replace'
+    'feature/new-chat-replace',
+    # A copy button on every rendered code block. Stands alone, like the three above it.
+    'feature/code-copy'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
