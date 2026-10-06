@@ -1023,6 +1023,12 @@
 		padding: 1.05em 1.15em;
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--color-border-subtle);
+		/* Wrapped rather than scrolled sideways: on a phone a scrolled block hides most of
+		   each line, and a sideways swipe inside the transcript is easy to miss. Indentation
+		   and line breaks are kept; only an over-long line folds. `overflow-x` stays as the
+		   fallback for anything that still cannot fit. */
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 		overflow-x: auto;
 		margin: 1.2em 0;
 	}
@@ -1040,8 +1046,10 @@
 		margin: 1.2em 0;
 	}
 
+	/* The right padding keeps a wrapped first line clear of the copy button. */
 	.prose .code-block > pre {
 		margin: 0;
+		padding-right: 2.4rem;
 	}
 
 	/* Revealed on hover/focus where there is a pointer to hover with; always visible on
