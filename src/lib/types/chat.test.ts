@@ -53,7 +53,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			persona: null,
 			preset: null,
 			lorebooks: [],
-			mutedLorebooks: []
+			mutedLorebooks: [],
+			imagegenWorkflow: null
 		});
 	});
 
@@ -66,7 +67,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			persona: null,
 			preset: null,
 			lorebooks: [],
-			mutedLorebooks: []
+			mutedLorebooks: [],
+			imagegenWorkflow: null
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -88,7 +90,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			persona: null,
 			preset: null,
 			lorebooks: [],
-			mutedLorebooks: []
+			mutedLorebooks: [],
+			imagegenWorkflow: null
 		});
 		expect('steering' in result).toBe(false);
 	});
@@ -162,6 +165,40 @@ describe('normalizeChatFeatureState: connection', () => {
 		expect(normalizeChatFeatureState({ connection: '' }).connection).toBeNull();
 		expect(normalizeChatFeatureState({ connection: 7 }).connection).toBeNull();
 		expect(normalizeChatFeatureState({ connection: { id: 'conn-1' } }).connection).toBeNull();
+	});
+});
+
+describe('normalizeChatFeatureState: imagegenWorkflow', () => {
+	test('a chat that has claimed nothing reads as null', () => {
+		// No migration, for the reason every claim above has none: a blob written before a
+		// story could carry its own workflow has no key, and a missing key is "follow the app".
+		expect(normalizeChatFeatureState({}).imagegenWorkflow).toBeNull();
+		expect(normalizeChatFeatureState('{"steeringHistory":[]}').imagegenWorkflow).toBeNull();
+	});
+
+	test('a claimed filename survives the trip through the column it is stored in', () => {
+		const state = normalizeChatFeatureState({ imagegenWorkflow: 'rowan.json' });
+		expect(state.imagegenWorkflow).toBe('rowan.json');
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+	});
+
+	test('anything that is not a non-empty string is no claim at all', () => {
+		expect(normalizeChatFeatureState({ imagegenWorkflow: '' }).imagegenWorkflow).toBeNull();
+		expect(normalizeChatFeatureState({ imagegenWorkflow: 7 }).imagegenWorkflow).toBeNull();
+		expect(
+			normalizeChatFeatureState({ imagegenWorkflow: ['rowan.json'] }).imagegenWorkflow
+		).toBeNull();
+	});
+
+	test('a traversal attempt is stored as written, and refused where it is used', () => {
+		// Deliberately NOT cleaned here. This normalizer's job is the shape of the blob, and a
+		// name is only ever dangerous at the point it becomes a path: `safeWorkflowName` in
+		// server/imagegen/comfy.ts rejects anything that is not a bare `.json` basename, and
+		// rejects rather than sanitizes, so a name that needed cleaning never runs. Cleaning it
+		// here as well would put a second, quieter answer in front of that one.
+		expect(normalizeChatFeatureState({ imagegenWorkflow: '../../.env' }).imagegenWorkflow).toBe(
+			'../../.env'
+		);
 	});
 });
 
