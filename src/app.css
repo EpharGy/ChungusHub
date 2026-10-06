@@ -1074,7 +1074,7 @@
 
 	.prose .code-block:hover > .code-copy,
 	.prose .code-copy:focus-visible,
-	.prose .code-copy[data-state] {
+	.prose .code-copy[data-copied] {
 		opacity: 1;
 	}
 
@@ -1094,18 +1094,13 @@
 		height: 0.9rem;
 	}
 
-	.prose .code-copy :is(.code-copy-done, .code-copy-failed),
-	.prose .code-copy[data-state] .code-copy-idle {
+	.prose .code-copy .code-copy-done,
+	.prose .code-copy[data-copied] .code-copy-idle {
 		display: none;
 	}
 
-	.prose .code-copy[data-state='copied'] .code-copy-done,
-	.prose .code-copy[data-state='failed'] .code-copy-failed {
+	.prose .code-copy[data-copied] .code-copy-done {
 		display: block;
-	}
-
-	.prose .code-copy[data-state='failed'] {
-		color: var(--color-error);
 	}
 
 	.prose blockquote {
