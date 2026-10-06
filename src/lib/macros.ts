@@ -544,16 +544,24 @@ export interface MacroContext {
  * The TIME ZONE is the reader's own: `Date`'s accessors are local, so this is the clock on
  * their wall written in a fixed format, not a fixed clock.
  */
-function formatClock(): string {
-	return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+/**
+ * The three exported so the date framework writes the SAME strings into the marker it asks
+ * the model for. It is the one place that text has to agree with a macro, and two copies of
+ * `toLocaleDateString('en-US', ...)` would drift the first time either was tidied.
+ *
+ * `at` defaults so the macro path reads exactly as it did; the framework passes its own, both
+ * to stay pure and so a test can pin the clock.
+ */
+export function formatClock(at: Date = new Date()): string {
+	return at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-function formatLongDate(): string {
-	return new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+export function formatLongDate(at: Date = new Date()): string {
+	return at.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function formatWeekday(): string {
-	return new Date().toLocaleDateString('en-US', { weekday: 'long' });
+export function formatWeekday(at: Date = new Date()): string {
+	return at.toLocaleDateString('en-US', { weekday: 'long' });
 }
 
 function pad(n: number): string {

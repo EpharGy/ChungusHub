@@ -1,6 +1,11 @@
 /** Domain types for chat and messages */
 
 import type { LorebookTrace } from '$lib/lorebook/types';
+import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
+import {
+	defaultChatFrameworkState,
+	normalizeChatFrameworkState
+} from '$lib/frameworks/chat-state';
 import type { AmbientConfig } from '$lib/types/ambient';
 import { normalizeAmbientConfig } from '$lib/types/ambient';
 import type { BackgroundConfig } from '$lib/types/background';
@@ -143,6 +148,11 @@ export interface ChatFeatureState {
 	 *  id sits in this list. Nothing else can exempt one story from a book the wider setup
 	 *  brings. Applied last, so it outranks every layer including the list above it. */
 	mutedLorebooks: string[];
+	/** What the frameworks base keeps for this story: the day it is on, the subjects it holds
+	 *  out, and each framework's own opaque slice. Everything a framework knows about a
+	 *  CHARACTER lives in that character's lorebook entry instead, so this stays small.
+	 *  See $lib/frameworks/chat-state.ts. */
+	frameworks: ChatFrameworkState;
 	/** The ComfyUI workflow this story generates its pictures with, or null to follow the
 	 *  app's. It exists so one story can carry a character's own LoRA without every other
 	 *  story getting it, which otherwise means swapping the app-wide workflow by hand on
@@ -168,6 +178,7 @@ function defaultChatFeatureState(): ChatFeatureState {
 		preset: null,
 		lorebooks: [],
 		mutedLorebooks: [],
+		frameworks: defaultChatFrameworkState(),
 		imagegenWorkflow: null
 	};
 }
@@ -237,6 +248,7 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		preset: normalizeClaimedId(obj.preset),
 		lorebooks: normalizeClaimedIds(obj.lorebooks),
 		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks),
+		frameworks: normalizeChatFrameworkState(obj.frameworks),
 		imagegenWorkflow: normalizeClaimedId(obj.imagegenWorkflow)
 	};
 }

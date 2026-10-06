@@ -11,7 +11,8 @@
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import {
 		chatLorebookClaim,
-		chatMutedLorebookClaim,
+		chatFrameworkState,
+	chatMutedLorebookClaim,
 		chatPersonaClaim,
 		chatPresetClaim
 	} from '$lib/utils/chat-setup';
@@ -111,7 +112,8 @@
 			personaId: chatPersonaClaim(state.chat),
 			presetId: chatPresetClaim(state.chat),
 			lorebookIds: chatLorebookClaim(state.chat),
-			mutedLorebookIds: chatMutedLorebookClaim(state.chat)
+			mutedLorebookIds: chatMutedLorebookClaim(state.chat),
+			frameworks: chatFrameworkState(state.chat)
 		};
 	}
 

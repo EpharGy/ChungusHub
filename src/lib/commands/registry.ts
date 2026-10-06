@@ -25,6 +25,7 @@
 import type { ComponentProps } from 'svelte';
 import type Icon from '$lib/components/ui/Icon.svelte';
 import { chatCursor } from '$lib/stores/chatCursor.svelte';
+import { parseDayArg } from '$lib/frameworks/chat-state';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { chatSearch } from '$lib/stores/chatSearch.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
@@ -121,6 +122,24 @@ export const COMMANDS: CommandDef[] = [
 	},
 
 	// ===== Story =====
+	{
+		name: 'day',
+		group: 'story',
+		icon: 'clock',
+		describe: 'Set the story day (42, or +1 / -1 to step)',
+		arg: { label: 'N or +N', required: true },
+		unavailable: (ctx) => (ctx.chatId ? null : NO_CHAT),
+		run: async (arg, ctx) => {
+			const state = chatStore.featureState(ctx.chatId!).frameworks;
+			const day = parseDayArg(arg, state.day);
+			if (day === null) {
+				toastStore.error(`"${arg.trim()}" is not a day. Try 42, +1 or -1.`);
+				return;
+			}
+			await chatStore.updateChatFeatureState(ctx.chatId!, { frameworks: { ...state, day } });
+			toastStore.success(`Day ${day}`);
+		}
+	},
 	{
 		name: 'continue',
 		group: 'story',
