@@ -357,7 +357,7 @@
 		<div class="card-head">
 			<span class="card-title">Prompt</span>
 			<InfoTip
-				text="Wrapped around what the model writes: prepend, then the marker's shot tags, then its prompt, then append."
+				text="Wrapped around what the model writes: prepend, then the marker's shot tags, then its prompt, then append. The parts are joined with a comma and a space, and empty ones are skipped."
 			/>
 		</div>
 
@@ -371,6 +371,7 @@
 					placeholder="masterpiece, best quality"
 					onchange={(e) => imagegenStore.update({ prependPrompt: e.currentTarget.value })}
 				/>
+				<span class="field-hint">A comma and a space are added after it; leave off your own.</span>
 			</label>
 
 			<label class="field">
@@ -381,6 +382,7 @@
 					value={settings.appendPrompt}
 					onchange={(e) => imagegenStore.update({ appendPrompt: e.currentTarget.value })}
 				/>
+				<span class="field-hint">A comma and a space are added before it; leave off your own.</span>
 			</label>
 
 			<label class="field">
@@ -740,6 +742,12 @@
 		font-family: var(--font-ui);
 		font-size: 0.78rem;
 		color: var(--color-text-secondary);
+	}
+
+	.field-hint {
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		color: var(--color-text-muted);
 	}
 
 	.grid {
