@@ -43,6 +43,8 @@ They are gathered from **two surfaces, under opposite rules**, and the inversion
 
 **A marker id may be claimed once.** Two frameworks declaring the same word, or a modifier id that is also somebody's framework id, is an ambiguity the dispatcher would settle by whichever built its map last, with nothing on screen saying a marker had been answered by the wrong framework. A registry test in [`date/date.test.ts`](../src/lib/frameworks/date/date.test.ts) refuses it.
 
+**A framework may compute more than one marker.** `FrameworkDef.markers` maps further ids to computes of their own, for a second view of the same calculation: the full line from `@demo[Her Name]`, one word of it from `@demo-short[Her Name]`. They are the framework's rather than frameworks of their own because they are one decision, not two -- a separate registry row would put a second switch on the page for something that cannot work without the first, and the two would no longer be guaranteed to read the same state. So an extra marker answers for its owner's switch, sees the same modifiers, is held out with the same subject, and goes back to reading as unclaimed in a build without its owner. Its keys are claimed once like every other marker id, under the same registry test.
+
 ## The seam: two lines in the lorebook engine
 
 Entry content is read at exactly two places in [`lorebook/engine.ts`](../src/lib/lorebook/engine.ts), and **both are decorated**:

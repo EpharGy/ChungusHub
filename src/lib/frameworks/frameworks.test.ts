@@ -379,6 +379,60 @@ describe('the dispatcher', () => {
 			expect(out.records[0]).toMatchObject({ status: 'unknownFramework' });
 		});
 	});
+	describe('a further marker a framework declares in `markers`', () => {
+		/** A framework with a second view of its own line: the first letter of the subject. */
+		const twoViews = (): FrameworkDef => ({
+			...fake(({ key }) => `<${key}>`),
+			markers: { 'demo-short': ({ key }) => key[0] }
+		});
+
+		test('renders through its own compute, beside the framework one', () => {
+			const out = applyFrameworks('@demo[rowan] @demo-short[rowan]', ctx({ frameworks: [twoViews()] }));
+			expect(out.text).toBe('<rowan> r');
+			expect(out.records[1]).toMatchObject({ frameworkId: 'demo-short', status: 'rendered' });
+		});
+
+		test('sees the same modifiers the framework compute does', () => {
+			const reader: FrameworkDef = {
+				...twoViews(),
+				modifierIds: ['tint'],
+				markers: { 'demo-short': (input) => input.modifiers.tint?.shade ?? 'plain' }
+			};
+			const out = applyFrameworks(
+				'@demo-short[rowan]\n@tint[rowan, shade=warm]',
+				ctx({ frameworks: [reader] })
+			);
+			expect(out.text).toBe('warm');
+		});
+
+		test('answers for its OWNER switch, since it has none of its own', () => {
+			const out = applyFrameworks(
+				'@demo-short[rowan]',
+				ctx({ frameworks: [twoViews()], disabled: ['demo'] })
+			);
+			expect(out.records[0]).toMatchObject({ status: 'disabled' });
+		});
+
+		test('a held-out subject is held out of it too', () => {
+			const out = applyFrameworks(
+				'@demo-short[rowan]',
+				ctx({ frameworks: [twoViews()], suppressed: ['rowan'] })
+			);
+			expect(out.records[0]).toMatchObject({ status: 'suppressed' });
+		});
+
+		test('null is noOutput, as it is from the framework compute', () => {
+			const silent: FrameworkDef = { ...twoViews(), markers: { 'demo-short': () => null } };
+			const out = applyFrameworks('@demo-short[rowan]', ctx({ frameworks: [silent] }));
+			expect(out.text).toBe('');
+			expect(out.records[0]).toMatchObject({ status: 'noOutput' });
+		});
+
+		test('a framework absent from this build takes its marker ids with it', () => {
+			const out = applyFrameworks('@demo-short[rowan]', ctx({ frameworks: [] }));
+			expect(out.records[0]).toMatchObject({ status: 'unknownFramework' });
+		});
+	});
 	describe('an unconsumed marker is REMOVED, never passed through', () => {
 		const strips: [string, FrameworkContext, string][] = [
 			['unknownFramework', ctx({ frameworks: [] }), 'unknownFramework'],
