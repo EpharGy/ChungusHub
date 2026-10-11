@@ -256,3 +256,23 @@ describe('only the entries that fired', () => {
 		expect(filtered.day).toEqual({ day: TODAY, source: 'clock' });
 	});
 });
+
+describe('an extra marker', () => {
+	const VIEWS: FrameworkDef = {
+		...DEMO,
+		markers: { 'demo-short': ({ fields }) => `n=${fields.n}` }
+	};
+
+	test('reads its source from an entry the filtered view leaves out', () => {
+		// The index fired and the card did not. The prompt reads the card anyway, so the panel
+		// must too, or its row says nothing where the prompt says something.
+		const bk = book(['Index', '@demo-short[Ada Vale]'], ['Vale', '@demo[Ada Vale, n=7]']);
+		const out = view({
+			books: [bk],
+			frameworks: [VIEWS],
+			injectedEntryIds: new Set([bk.entries[0].id])
+		});
+		expect(rows(out)).toHaveLength(1);
+		expect(rows(out)[0]).toMatchObject({ entryTitle: 'Index', status: 'rendered', text: 'n=7' });
+	});
+});

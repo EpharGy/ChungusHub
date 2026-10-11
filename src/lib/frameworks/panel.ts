@@ -21,7 +21,7 @@ import type { Lorebook } from '$lib/lorebook/types';
 
 import type { ChatFrameworkState } from './chat-state';
 import { resolveDay, todaySerial, type ResolvedDay } from './day';
-import { applyFrameworks } from './dispatch';
+import { applyFrameworks, sourcesFor } from './dispatch';
 import type { ModifierMap } from './modifiers';
 import type { FrameworkDef, FrameworkRecord } from './types';
 
@@ -117,7 +117,11 @@ export function panelView(input: PanelInput): PanelView {
 		source: day.source,
 		suppressed: input.state.suppressed,
 		byFramework: input.state.byFramework,
-		modifiers: input.modifiers ?? {}
+		modifiers: input.modifiers ?? {},
+		// From every book, whatever `injectedEntryIds` filters below: the prompt reads its
+		// sources from every entry, fired or not, and a panel that read fewer would explain a
+		// line the prompt did not send.
+		sources: sourcesFor(input.books, input.frameworks)
 	};
 
 	const books: PanelBook[] = [];
