@@ -1,0 +1,55 @@
+# ChungusHub, reachable over Tailscale only.
+#
+# Create a `.env` beside this file before the first start:
+#
+#   CHUNGUS_HOST=100.x.y.z            # this host's OWN Tailscale IP
+#   CHUNGUS_ALLOWLIST=100.a.b.c       # your client IPs, comma separated
+#
+# `.env` is gitignored, so the addresses stay on the machine that runs them.
+services:
+  chungushub:
+    build: .
+    container_name: chungushub
+    # host networking, deliberately:
+    #  - bridge/port-mapping SNATs every client to the docker gateway, so the
+    #    app's IP allowlist can no longer tell one device from another
+    #  - and it makes binding to the Tailscale interface impossible
+    network_mode: host
+    environment:
+      # This host's OWN Tailscale IP. This is what keeps the listener off your LAN.
+      # server/config.ts: HOST = process.env.CHUNGUS_HOST ?? '0.0.0.0'
+      CHUNGUS_HOST: "${CHUNGUS_HOST:?set CHUNGUS_HOST in .env, see the header above}"
+      # Your client machines' Tailscale IPs, seeded as always-allowed so you can
+      # reach the UI on first run without hand-editing allowlist.json. Never
+      # written to file. Empty is legal: allowlist.json then governs alone.
+      CHUNGUS_ALLOWLIST: "${CHUNGUS_ALLOWLIST:-}"
+      # Nothing here has a browser, and the image has no xdg-open to try with.
+      # A from-source launch that is not under `--watch` opens a tab now, not just
+      # a portable build (server/index.ts), and this container is exactly that: the
+      # spawn fails into a caught error and a line telling a headless NAS to visit
+      # localhost. The variable outranks the settings file, which is not in the image.
+      CHUNGUS_NO_OPEN: "1"
+    volumes:
+      - ./data:/data
+      # The fast path: what changes often is mounted from this folder rather than
+      # baked into the image, so a source change is a pull plus at most a restart
+      # instead of an image rebuild.
+      #
+      #   server / shared  -> `docker compose restart` (bun reads them at start)
+      #   defaults         -> restart, and only for a changed bundled workflow
+      #   scripts          -> nothing at all: the server never reads them. They
+      #                       are maintenance tools run on demand, and mounting
+      #                       them is what keeps editing one off the rebuild path
+      #
+      # Subdirectories, never /app: mounting the whole app folder would hide the
+      # image's node_modules, which the client build inside the image needs.
+      #
+      # `build` is deliberately NOT mounted. The image builds the client itself,
+      # so a fresh checkout starts with no host-side build step and there is no
+      # way to mount an empty folder over the image's build and serve nothing.
+      # The cost is that a client change wants `docker compose up -d --build`.
+      - ./server:/app/server:ro
+      - ./shared:/app/shared:ro
+      - ./defaults:/app/defaults:ro
+      - ./scripts:/app/scripts:ro
+    restart: unless-stopped
