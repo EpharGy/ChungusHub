@@ -13,6 +13,8 @@
  * a reach into `chatStore` would close the import cycle documented in live-macro-context.ts.
  */
 
+import type { ChatFrameworkState } from '$lib/frameworks/chat-state';
+import { defaultChatFrameworkState } from '$lib/frameworks/chat-state';
 import type { Chat } from '$lib/types/chat';
 import { normalizeChatFeatureState } from '$lib/types/chat';
 import type { PromptPreset } from '$lib/types/database';
@@ -97,6 +99,19 @@ export function chatPresetClaim(chat: Chat | null): string | null {
  */
 export function chatLorebookClaim(chat: Chat | null): string[] {
 	return chat ? normalizeChatFeatureState(chat.featureState).lorebooks : [];
+}
+
+/**
+ * The framework state this story carries: the day it is on, the subjects it holds out, and
+ * each framework's own slice.
+ *
+ * Unlike the claims around it, it replaces and follows nothing: a framework's per-character
+ * configuration lives in the lorebook entry that declares it, so there is no app-wide layer
+ * for a chat to override. A chat with no state of its own reads as day 1 with nothing
+ * suppressed, which is what a story that has never been asked about frameworks should be.
+ */
+export function chatFrameworkState(chat: Chat | null): ChatFrameworkState {
+	return chat ? normalizeChatFeatureState(chat.featureState).frameworks : defaultChatFrameworkState();
 }
 
 /**
