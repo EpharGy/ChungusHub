@@ -17,7 +17,7 @@ import { LOREBOOK_POSITION_AT_DEPTH, type Lorebook, type LorebookEntry } from '$
 
 import { enabledFrameworks, type ChatFrameworkState } from './chat-state';
 import { resolveDay, todaySerial, type ResolvedDay } from './day';
-import { applyFrameworks } from './dispatch';
+import { applyFrameworks, sourcesFor } from './dispatch';
 import type { ModifierMap } from './modifiers';
 import { FRAMEWORKS } from './registry';
 import { defaultFrameworkSettings, frameworkAvailable, type FrameworkSettings } from './settings';
@@ -71,6 +71,14 @@ export function frameworkDecorator(
 	 * invents, and the call sites are the three that already resolve steering on the line above.
 	 */
 	modifiers: ModifierMap = {},
+	/**
+	 * Every book this prompt resolves, the same list handed to `resolveLorebooks`.
+	 *
+	 * Read whole, fired entries or not, for the extra markers that restate a framework's own
+	 * marker written elsewhere (`sourcesFor`). Defaults to none, which leaves every extra marker
+	 * silent: the same understate-rather-than-invent direction as `modifiers` above.
+	 */
+	books: readonly Lorebook[] = [],
 	now: Date = new Date()
 ): LorebookDecorator {
 	if (!state) return NO_DECORATION;
@@ -91,7 +99,8 @@ export function frameworkDecorator(
 		source: when.source,
 		suppressed: state.suppressed,
 		byFramework: state.byFramework,
-		modifiers
+		modifiers,
+		sources: sourcesFor(books, FRAMEWORKS)
 	};
 	return (_entry, text) => applyFrameworks(text, ctx).text;
 }

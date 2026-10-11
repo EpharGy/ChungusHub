@@ -25,7 +25,7 @@ import { resolveLorebooks } from '$lib/lorebook/engine';
 
 import { frameworkDecorator } from './apply';
 import { resolveDay, todaySerial, type DayMode } from './day';
-import { applyFrameworks } from './dispatch';
+import { applyFrameworks, sourcesFor } from './dispatch';
 import { findMarkers, hasMarker } from './marker';
 import type { FrameworkComputeInput, FrameworkContext, FrameworkDef } from './types';
 
@@ -380,57 +380,87 @@ describe('the dispatcher', () => {
 		});
 	});
 	describe('a further marker a framework declares in `markers`', () => {
-		/** A framework with a second view of its own line: the first letter of the subject. */
+		/** A framework whose second view prints the fields and tint of the subject's `@demo`. */
 		const twoViews = (): FrameworkDef => ({
 			...fake(({ key }) => `<${key}>`),
-			markers: { 'demo-short': ({ key }) => key[0] }
+			modifierIds: ['tint'],
+			markers: {
+				'demo-short': (input) => `${input.fields.n ?? '-'}/${input.modifiers.tint?.shade ?? 'plain'}`
+			}
+		});
+		/** One book of entries, each `[content, disabled?]`. */
+		const shelf = (...entries: [string, boolean?][]) => [
+			{ entries: entries.map(([content, disable = false]) => ({ content, disable })) }
+		];
+		const viewing = (books: ReturnType<typeof shelf>, over: Partial<FrameworkContext> = {}) => {
+			const frameworks = [twoViews()];
+			return ctx({ frameworks, sources: sourcesFor(books, frameworks), ...over });
+		};
+
+		test('reads the fields of the real marker, written in an entry that never fired', () => {
+			// The case it exists for: the index entry is in the prompt, the entry holding the real
+			// marker is not, and the view still says what the real line would.
+			const books = shelf(['@demo-short[rowan]'], ['Rowan.\n@demo[rowan, n=7]']);
+			const out = applyFrameworks('@demo-short[rowan]', viewing(books));
+			expect(out.text).toBe('7/plain');
+			expect(out.records[0]).toMatchObject({ frameworkId: 'demo-short', status: 'rendered' });
 		});
 
-		test('renders through its own compute, beside the framework one', () => {
-			const out = applyFrameworks('@demo[rowan] @demo-short[rowan]', ctx({ frameworks: [twoViews()] }));
-			expect(out.text).toBe('<rowan> r');
-			expect(out.records[1]).toMatchObject({ frameworkId: 'demo-short', status: 'rendered' });
+		test('ignores its own fields, because the real marker is the statement', () => {
+			const books = shelf(['@demo[rowan, n=7]']);
+			expect(applyFrameworks('@demo-short[rowan, n=99]', viewing(books)).text).toBe('7/plain');
 		});
 
-		test('sees the same modifiers the framework compute does', () => {
-			const reader: FrameworkDef = {
-				...twoViews(),
-				modifierIds: ['tint'],
-				markers: { 'demo-short': (input) => input.modifiers.tint?.shade ?? 'plain' }
-			};
+		test('hears the modifiers written beside the real marker', () => {
+			const books = shelf(['@demo[rowan, n=7]\n@tint[rowan, shade=warm]']);
+			expect(applyFrameworks('@demo-short[rowan]', viewing(books)).text).toBe('7/warm');
+		});
+
+		test('the steering still wins over them', () => {
+			const books = shelf(['@demo[rowan, n=7]\n@tint[rowan, shade=warm]']);
 			const out = applyFrameworks(
-				'@demo-short[rowan]\n@tint[rowan, shade=warm]',
-				ctx({ frameworks: [reader] })
+				'@demo-short[rowan]',
+				viewing(books, { modifiers: { rowan: { tint: { shade: 'cold' } } } })
 			);
-			expect(out.text).toBe('warm');
+			expect(out.text).toBe('7/cold');
+		});
+
+		test('says nothing when no real marker exists for the subject', () => {
+			const books = shelf(['@demo[beatrice, n=7]']);
+			const out = applyFrameworks('@demo-short[rowan]', viewing(books));
+			expect(out.text).toBe('');
+			expect(out.records[0]).toMatchObject({ status: 'noOutput' });
+		});
+
+		test('a disabled entry is not a source', () => {
+			const books = shelf(['@demo[rowan, n=7]', true]);
+			expect(applyFrameworks('@demo-short[rowan]', viewing(books)).text).toBe('');
+		});
+
+		test('the first entry holding her marker wins', () => {
+			const books = shelf(['@demo[rowan, n=1]'], ['@demo[rowan, n=2]']);
+			expect(applyFrameworks('@demo-short[rowan]', viewing(books)).text).toBe('1/plain');
 		});
 
 		test('answers for its OWNER switch, since it has none of its own', () => {
-			const out = applyFrameworks(
-				'@demo-short[rowan]',
-				ctx({ frameworks: [twoViews()], disabled: ['demo'] })
-			);
+			const books = shelf(['@demo[rowan, n=7]']);
+			const out = applyFrameworks('@demo-short[rowan]', viewing(books, { disabled: ['demo'] }));
 			expect(out.records[0]).toMatchObject({ status: 'disabled' });
 		});
 
 		test('a held-out subject is held out of it too', () => {
-			const out = applyFrameworks(
-				'@demo-short[rowan]',
-				ctx({ frameworks: [twoViews()], suppressed: ['rowan'] })
-			);
+			const books = shelf(['@demo[rowan, n=7]']);
+			const out = applyFrameworks('@demo-short[rowan]', viewing(books, { suppressed: ['rowan'] }));
 			expect(out.records[0]).toMatchObject({ status: 'suppressed' });
-		});
-
-		test('null is noOutput, as it is from the framework compute', () => {
-			const silent: FrameworkDef = { ...twoViews(), markers: { 'demo-short': () => null } };
-			const out = applyFrameworks('@demo-short[rowan]', ctx({ frameworks: [silent] }));
-			expect(out.text).toBe('');
-			expect(out.records[0]).toMatchObject({ status: 'noOutput' });
 		});
 
 		test('a framework absent from this build takes its marker ids with it', () => {
 			const out = applyFrameworks('@demo-short[rowan]', ctx({ frameworks: [] }));
 			expect(out.records[0]).toMatchObject({ status: 'unknownFramework' });
+		});
+
+		test('the index is empty when no framework declares an extra marker', () => {
+			expect(sourcesFor(shelf(['@demo[rowan, n=7]']), [fake(() => 'x')])).toEqual({});
 		});
 	});
 	describe('an unconsumed marker is REMOVED, never passed through', () => {

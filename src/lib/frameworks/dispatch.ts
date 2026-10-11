@@ -33,7 +33,9 @@ import type {
 	FrameworkApplication,
 	FrameworkContext,
 	FrameworkDef,
-	FrameworkRecord
+	FrameworkRecord,
+	MarkerSource,
+	SourceIndex
 } from './types';
 
 /** What one marker resolved to: the text that replaces it, plus the record explaining why. */
@@ -73,10 +75,17 @@ function resolveOne(
 	// Non-null once `error` is null, but the type does not know that.
 	const key = marker.key as string;
 
+	// An id from some framework's `markers`: computed by that framework, through the compute it
+	// declared for the id, over the framework's OWN marker for this subject wherever that is
+	// written. Its own fields are ignored; the real marker is the statement and this is a view.
+	const extra = extraMarkers.get(marker.frameworkId);
+	const source = extra ? ctx.sources?.[extra.owner.id]?.[key] : undefined;
+
 	// What is known about HER, attached to every record from here on: a reader opens the panel
 	// to find out why a line says what it says, and "she is on something" is half that answer
-	// even when the marker went on to be suppressed or switched off.
-	const mods = modifiersFor(key);
+	// even when the marker went on to be suppressed or switched off. For an extra marker the
+	// source entry's modifiers sit underneath, so it hears what the real marker hears.
+	const mods = source ? { ...source.modifiers, ...modifiersFor(key) } : modifiersFor(key);
 	const base = Object.keys(mods).length > 0 ? { ...plain, modifiers: mods } : plain;
 
 	// A MODIFIER marker: an id some framework declared in `modifierIds`. It renders nothing
@@ -101,9 +110,6 @@ function resolveOne(
 		return { replacement: '', record: { ...base, status: 'modifier' } };
 	}
 
-	// An id from some framework's `markers`: computed by that framework, through the compute it
-	// declared for the id rather than its own.
-	const extra = extraMarkers.get(marker.frameworkId);
 	const framework = extra?.owner ?? byId.get(marker.frameworkId);
 
 	// Disabled is checked before unknown, so a framework that exists but is switched off
@@ -126,11 +132,16 @@ function resolveOne(
 	if (!compute) {
 		return { replacement: '', record: { ...base, status: 'noOutput' } };
 	}
+	// An extra marker with nothing to be a view OF. Silence rather than a guess from its own
+	// fields: the real marker is the statement, so without one there is nothing to restate.
+	if (extra && !source) {
+		return { replacement: '', record: { ...base, status: 'noOutput' } };
+	}
 
 	const out = compute({
 		key,
 		subject: marker.subject as string,
-		fields: marker.fields,
+		fields: source ? source.fields : marker.fields,
 		day: ctx.day,
 		source: ctx.source,
 		state: ctx.byFramework[framework.id],
@@ -182,6 +193,60 @@ function collectModifiers(
 	return found;
 }
 
+/** Modifier marker id -> the framework that declared it, from the context's own list. */
+function modifierOwners(frameworks: readonly FrameworkDef[]): Map<string, string> {
+	const owners = new Map<string, string>();
+	for (const framework of frameworks) {
+		for (const id of framework.modifierIds ?? []) owners.set(id, framework.id);
+	}
+	return owners;
+}
+
+/**
+ * Every framework's own marker across the books, for the extra markers that are views of one.
+ *
+ * **Every enabled entry is read, fired or not.** An extra marker exists to be read where the
+ * entry holding the real marker has not fired: an index entry that is always in the prompt,
+ * naming a state whose full line lives in an entry that waits for a keyword. Reading only the
+ * fired entries would leave it silent in exactly the case it is for.
+ *
+ * A disabled entry is out of play and is skipped. Two entries holding the same subject's marker:
+ * the first in book order wins, the same order the lorebook layers books in.
+ *
+ * Raw entry content, not expanded. A marker is configuration written by hand, and expansion
+ * belongs to the lorebook engine, which this module does not reach for.
+ *
+ * Only frameworks that declare extra markers are indexed: nothing else reads the result.
+ */
+export function sourcesFor(
+	books: readonly { entries: readonly { content: string; disable: boolean }[] }[],
+	frameworks: readonly FrameworkDef[]
+): SourceIndex {
+	const indexed = new Set(
+		frameworks.filter((f) => Object.keys(f.markers ?? {}).length > 0).map((f) => f.id)
+	);
+	const index: Record<string, Record<string, MarkerSource>> = {};
+	if (indexed.size === 0) return index;
+	const owners = modifierOwners(frameworks);
+	for (const book of books) {
+		for (const entry of book.entries) {
+			if (entry.disable || !hasMarker(entry.content)) continue;
+			let local: ReturnType<typeof collectModifiers> | null = null;
+			for (const marker of findMarkers(entry.content)) {
+				if (marker.error || marker.key === null || !indexed.has(marker.frameworkId)) continue;
+				const bySubject = (index[marker.frameworkId] ??= {});
+				if (bySubject[marker.key]) continue;
+				local ??= collectModifiers(entry.content, owners);
+				bySubject[marker.key] = {
+					fields: { ...marker.fields },
+					modifiers: local[marker.key] ?? NO_MODIFIERS
+				};
+			}
+		}
+	}
+	return index;
+}
+
 /**
  * Apply every framework to one entry's text.
  *
@@ -208,10 +273,7 @@ export function applyFrameworks(text: string, ctx: FrameworkContext): FrameworkA
 	// Which ids are modifier markers, and whose. Derived from the context's own list rather
 	// than a second table, so a framework missing from this build takes its modifier ids out
 	// with it and they go back to reading as `unknownFramework`, which is then the truth.
-	const modifierOwner = new Map<string, string>();
-	for (const framework of ctx.frameworks) {
-		for (const id of framework.modifierIds ?? []) modifierOwner.set(id, framework.id);
-	}
+	const modifierOwner = modifierOwners(ctx.frameworks);
 	const extraMarkers = new Map<string, ExtraMarker>();
 	for (const framework of ctx.frameworks) {
 		for (const [id, compute] of Object.entries(framework.markers ?? {})) {

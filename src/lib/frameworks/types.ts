@@ -275,8 +275,14 @@ export interface FrameworkDef {
 	 *
 	 * For a second view of the same calculation: `@demo[Her Name]` renders the full line and a
 	 * `@demo-short[Her Name]` beside it renders one word of it. Both belong to this framework,
-	 * so they answer to its one switch and are documented on its one page, and both are written
-	 * against the same state, so the two cannot disagree about what they describe.
+	 * so they answer to its one switch and are documented on its one page.
+	 *
+	 * **An extra marker is a view of the framework's own marker, not a second statement.** It
+	 * takes its fields, and the modifiers written in the entry that holds it, from the subject's
+	 * `@demo` marker wherever that is written in the books ({@link FrameworkContext.sources}),
+	 * fired or not, and its own fields are ignored. That is what lets `@demo-short` sit in an
+	 * index entry that fires long before the entry holding `@demo` does, and still say the same
+	 * thing. With no `@demo` for the subject anywhere, it renders nothing.
 	 *
 	 * Held to every rule `compute` is held to. Claimed once, like every other marker id: a key
 	 * here may not be a framework id or a modifier id, and the registry test pins that.
@@ -415,7 +421,27 @@ export interface FrameworkContext {
 	 * must pass the same one or the token meter prices a line the send does not emit.
 	 */
 	modifiers?: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
+	/**
+	 * Every framework's own marker in the books, by framework id and then subject key, from
+	 * `sourcesFor`. What an extra marker ({@link FrameworkDef.markers}) reads in place of its
+	 * own fields.
+	 *
+	 * Built from every enabled entry, fired or not, because the point of an extra marker is to
+	 * be read where the entry holding the real one has not fired. Absent means no sources, and
+	 * every extra marker then renders nothing: a surface that has books and omits them
+	 * understates rather than invents.
+	 */
+	sources?: SourceIndex;
 }
+
+/** One framework marker as written: its fields, and the modifiers in the entry that holds it. */
+export interface MarkerSource {
+	fields: Readonly<Record<string, string>>;
+	modifiers: Readonly<Record<string, Readonly<Record<string, string>>>>;
+}
+
+/** Framework id -> subject key -> that subject's marker. */
+export type SourceIndex = Readonly<Record<string, Readonly<Record<string, MarkerSource>>>>;
 
 /** The dispatcher's answer: the rewritten text, and why each marker in it fared as it did. */
 export interface FrameworkApplication {
