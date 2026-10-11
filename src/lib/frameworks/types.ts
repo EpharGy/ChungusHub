@@ -271,6 +271,18 @@ export interface FrameworkDef {
 	 */
 	modifierIds?: readonly string[];
 	/**
+	 * Further marker ids this framework COMPUTES, besides its own, each with its own compute.
+	 *
+	 * For a second view of the same calculation: `@demo[Her Name]` renders the full line and a
+	 * `@demo-short[Her Name]` beside it renders one word of it. Both belong to this framework,
+	 * so they answer to its one switch and are documented on its one page, and both are written
+	 * against the same state, so the two cannot disagree about what they describe.
+	 *
+	 * Held to every rule `compute` is held to. Claimed once, like every other marker id: a key
+	 * here may not be a framework id or a modifier id, and the registry test pins that.
+	 */
+	markers?: Readonly<Record<string, (input: FrameworkComputeInput) => string | null>>;
+	/**
 	 * The editable blocks this framework contributes, declared rather than built.
 	 *
 	 * The base stores them, renders their editors and injects them, so a framework gains a

@@ -42,12 +42,20 @@ interface Resolution {
 	record: FrameworkRecord;
 }
 
+/** A marker id declared in some framework's `markers`, and what computes it. */
+interface ExtraMarker {
+	owner: FrameworkDef;
+	compute: NonNullable<FrameworkDef['compute']>;
+}
+
 function resolveOne(
 	marker: ReturnType<typeof findMarkers>[number],
 	ctx: FrameworkContext,
 	byId: Map<string, FrameworkDef>,
 	/** Modifier marker id -> the framework that declared it reads that id. */
 	modifierOwner: Map<string, string>,
+	/** Extra marker id -> the framework that declared it in `markers`, and its compute. */
+	extraMarkers: Map<string, ExtraMarker>,
 	/** Everything modifying one subject: this entry's own modifier markers under the
 	 *  steering's, already merged. */
 	modifiersFor: (key: string) => Readonly<Record<string, Readonly<Record<string, string>>>>
@@ -93,12 +101,17 @@ function resolveOne(
 		return { replacement: '', record: { ...base, status: 'modifier' } };
 	}
 
+	// An id from some framework's `markers`: computed by that framework, through the compute it
+	// declared for the id rather than its own.
+	const extra = extraMarkers.get(marker.frameworkId);
+	const framework = extra?.owner ?? byId.get(marker.frameworkId);
+
 	// Disabled is checked before unknown, so a framework that exists but is switched off
 	// never reads as a misspelling. The two send someone to completely different places.
-	if (ctx.disabled.includes(marker.frameworkId)) {
+	// An extra marker answers for its owner's switch, as a modifier does: it has none of its own.
+	if (ctx.disabled.includes(framework?.id ?? marker.frameworkId)) {
 		return { replacement: '', record: { ...base, status: 'disabled' } };
 	}
-	const framework = byId.get(marker.frameworkId);
 	if (!framework) {
 		return { replacement: '', record: { ...base, status: 'unknownFramework' } };
 	}
@@ -109,11 +122,12 @@ function resolveOne(
 	// A framework that injects a block but claims no marker: it exists, and it has nothing to
 	// say about this. `noOutput` is the honest record, and it keeps `unknownFramework` meaning
 	// what it says, which is that nobody claims the id at all.
-	if (!framework.compute) {
+	const compute = extra ? extra.compute : framework.compute;
+	if (!compute) {
 		return { replacement: '', record: { ...base, status: 'noOutput' } };
 	}
 
-	const out = framework.compute({
+	const out = compute({
 		key,
 		subject: marker.subject as string,
 		fields: marker.fields,
@@ -198,6 +212,12 @@ export function applyFrameworks(text: string, ctx: FrameworkContext): FrameworkA
 	for (const framework of ctx.frameworks) {
 		for (const id of framework.modifierIds ?? []) modifierOwner.set(id, framework.id);
 	}
+	const extraMarkers = new Map<string, ExtraMarker>();
+	for (const framework of ctx.frameworks) {
+		for (const [id, compute] of Object.entries(framework.markers ?? {})) {
+			extraMarkers.set(id, { owner: framework, compute });
+		}
+	}
 	const local = collectModifiers(text, modifierOwner);
 	/**
 	 * What modifies one subject: this entry's own modifier markers, with the steering's on
@@ -230,7 +250,14 @@ export function applyFrameworks(text: string, ctx: FrameworkContext): FrameworkA
 		let out = '';
 		let cursor = 0;
 		for (const marker of markers) {
-			const { replacement, record } = resolveOne(marker, ctx, byId, modifierOwner, modifiersFor);
+			const { replacement, record } = resolveOne(
+				marker,
+				ctx,
+				byId,
+				modifierOwner,
+				extraMarkers,
+				modifiersFor
+			);
 			let start = marker.index;
 			let end = start + marker.raw.length;
 			if (!replacement) {

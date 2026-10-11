@@ -123,7 +123,11 @@ describe('what it declares', () => {
 		// framework declaring a modifier id that is also somebody's framework id, is an
 		// ambiguity the dispatcher cannot resolve: it would simply pick whichever built its map
 		// last, and nothing on screen would say a marker had been answered by the wrong one.
-		const claimed = FRAMEWORKS.flatMap((f) => [f.id, ...(f.modifierIds ?? [])]);
+		const claimed = FRAMEWORKS.flatMap((f) => [
+			f.id,
+			...(f.modifierIds ?? []),
+			...Object.keys(f.markers ?? {})
+		]);
 		expect(claimed.length, 'a marker id is claimed twice').toBe(new Set(claimed).size);
 	});
 
