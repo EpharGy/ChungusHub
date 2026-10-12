@@ -14,7 +14,11 @@
  * one copy of the state, so a toggle from the engines page and a toggle from the EchoChamber
  * page are the same write rather than two that can disagree.
  */
-import { readSetting, registerSettingsReload, writeSetting } from '$lib/services/syncedSetting';
+import {
+	BurstSettingWriter,
+	readSetting,
+	registerSettingsReload
+} from '$lib/services/syncedSetting';
 import { DEFAULT_ECHOCHAMBER_SETTINGS, resolveEchoChamberSettings } from './config';
 import type { EchoChamberSettings } from './types';
 
@@ -22,6 +26,10 @@ const SETTINGS_KEY = 'echochamber';
 
 class EchoChamberSettingsStore {
 	current = $state<EchoChamberSettings>(DEFAULT_ECHOCHAMBER_SETTINGS);
+
+	// The page's sliders write on every input event, and each write is a broadcast every
+	// other device answers with a full re-read. Only where the drag stops is worth sending.
+	private writer = new BurstSettingWriter<EchoChamberSettings>(SETTINGS_KEY);
 
 	/** First read, plus a standing subscription: this module reads a settings row, so it is
 	 *  this module that has to hear another device's write. Borrowing the store's reload would
@@ -33,14 +41,18 @@ class EchoChamberSettingsStore {
 
 	/** Re-read from storage: on load, and again whenever synced settings change under us. */
 	async reload(): Promise<void> {
+		// A write still owed means the screen is newer than storage; reading back now would
+		// snap a slider to where it was before the drag.
+		if (this.writer.busy) return;
 		const stored = await readSetting<Partial<EchoChamberSettings> | null>(SETTINGS_KEY, null);
+		if (this.writer.busy) return;
 		this.current = resolveEchoChamberSettings(stored);
 	}
 
 	/** Patch settings, clamped on the way in so no panel can store a bad value. */
 	update(patch: Partial<EchoChamberSettings>): void {
 		this.current = resolveEchoChamberSettings({ ...this.current, ...patch });
-		writeSetting(SETTINGS_KEY, this.current);
+		this.writer.write(this.current);
 	}
 }
 

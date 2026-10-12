@@ -240,6 +240,18 @@ the switch without pulling the runtime in behind it. Both sides read one copy of
 toggle from the Engines page and one from this page are the same write. Adding an import to
 `echochamber/settings.svelte.ts` is how this comes back.
 
+**Writes go through `BurstSettingWriter`, not straight to storage.** The page's knobs are
+sliders, which fire an input event per pointer move, and every settings write is a broadcast
+that each other device answers with a full re-read. The writer sends only where the drag stops,
+and `reload()` stands down while a write is still owed, so a broadcast landing mid-drag cannot
+snap the slider back to the stored value.
+
+**The feed has its own text size, `fontScale`.** The app's Text size knob is applied only where
+the story is drawn, deliberately, so it never reaches the feed. `ReactionFeed` multiplies each
+of its sizes, avatar included, by `--echo-font-scale` rather than setting one root size and
+converting the rest to `em`, because the avatar's own font size would then shift the base its
+width is measured against.
+
 The store is shaped after Sprites - one background call per reply, filed against one message
 row, never blocking the reply that triggered it - with one rule Sprites does not need:
 **one call at a time, newest wins.** A reader swiping alternates can ask for three feeds

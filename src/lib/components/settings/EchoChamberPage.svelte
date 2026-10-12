@@ -21,9 +21,10 @@
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
+	import { rangeReset } from '$lib/actions/rangeReset';
 	import { toggleRow } from '$lib/actions/toggleRow';
 	import { echoChamberStore } from '$lib/stores/echochamber.svelte';
-	import { BOUNDS } from '$lib/echochamber/config';
+	import { BOUNDS, DEFAULT_ECHOCHAMBER_SETTINGS } from '$lib/echochamber/config';
 	import { MAX_CUSTOM_STYLES } from '$lib/echochamber/custom-styles';
 
 	const settings = $derived(echoChamberStore.settings);
@@ -214,39 +215,81 @@
 		</div>
 
 		<div class="card-body">
-			<div class="grid">
-				<label class="field">
-					<span class="field-label">Reactions per reply</span>
-					<input
-						class="input-base"
-						type="number"
-						min={BOUNDS.reactionCount.min}
-						max={BOUNDS.reactionCount.max}
-						value={settings.reactionCount}
-						onchange={(e) =>
-							echoChamberStore.update({ reactionCount: Number(e.currentTarget.value) })}
-					/>
-				</label>
-
-				<label class="field">
-					<span class="field-label">Newest reaction</span>
-					<Select
-						value={settings.messageOrder}
-						onchange={(e) =>
-							echoChamberStore.update({
-								messageOrder:
-									e.currentTarget.value === 'newest-first' ? 'newest-first' : 'oldest-first'
-							})}
-					>
-						<option value="oldest-first">At the bottom</option>
-						<option value="newest-first">At the top</option>
-					</Select>
-				</label>
+			<div class="slider-block">
+				<div class="slider-top">
+					<label for="echo-reaction-count" class="slider-label">Reactions per reply</label>
+					<span class="slider-value">{settings.reactionCount}</span>
+				</div>
+				<input
+					id="echo-reaction-count"
+					type="range"
+					class="slider"
+					min={BOUNDS.reactionCount.min}
+					max={BOUNDS.reactionCount.max}
+					step="1"
+					value={settings.reactionCount}
+					oninput={(e) =>
+						echoChamberStore.update({ reactionCount: Number(e.currentTarget.value) })}
+					use:rangeReset={{
+						defaultValue: DEFAULT_ECHOCHAMBER_SETTINGS.reactionCount,
+						apply: (v) => echoChamberStore.update({ reactionCount: v })
+					}}
+				/>
 			</div>
 			<p class="hint">
 				Each reaction is its own line of generated prose, so the count is what the feed
 				costs on every reply.
 			</p>
+		</div>
+	</section>
+
+	<section class="card" data-setting="echochamber-feed">
+		<div class="card-head">
+			<span class="card-title">The feed</span>
+		</div>
+
+		<div class="card-body">
+			<div class="slider-block">
+				<div class="slider-top">
+					<div class="slider-label-wrap">
+						<label for="echo-font-scale" class="slider-label">Text size</label>
+						<InfoTip
+							text="The feed's own text size. The Text size under Chat only reaches the story, so the feed has a separate one."
+						/>
+					</div>
+					<span class="slider-value">{Math.round(settings.fontScale * 100)}%</span>
+				</div>
+				<input
+					id="echo-font-scale"
+					type="range"
+					class="slider"
+					min={BOUNDS.fontScale.min}
+					max={BOUNDS.fontScale.max}
+					step="0.01"
+					value={settings.fontScale}
+					oninput={(e) =>
+						echoChamberStore.update({ fontScale: parseFloat(e.currentTarget.value) })}
+					use:rangeReset={{
+						defaultValue: DEFAULT_ECHOCHAMBER_SETTINGS.fontScale,
+						apply: (v) => echoChamberStore.update({ fontScale: v })
+					}}
+				/>
+			</div>
+
+			<label class="field">
+				<span class="field-label">Newest reaction</span>
+				<Select
+					value={settings.messageOrder}
+					onchange={(e) =>
+						echoChamberStore.update({
+							messageOrder:
+								e.currentTarget.value === 'newest-first' ? 'newest-first' : 'oldest-first'
+						})}
+				>
+					<option value="oldest-first">At the bottom</option>
+					<option value="newest-first">At the top</option>
+				</Select>
+			</label>
 		</div>
 	</section>
 
@@ -269,18 +312,27 @@
 			</div>
 
 			{#if settings.includeUserInput}
-				<label class="field pair-inset">
-					<span class="field-label">Turns of history to send</span>
+				<div class="slider-block pair-inset">
+					<div class="slider-top">
+						<label for="echo-context-depth" class="slider-label">Turns of history to send</label>
+						<span class="slider-value">{settings.contextDepth}</span>
+					</div>
 					<input
-						class="input-base"
-						type="number"
+						id="echo-context-depth"
+						type="range"
+						class="slider"
 						min={BOUNDS.contextDepth.min}
 						max={BOUNDS.contextDepth.max}
+						step="1"
 						value={settings.contextDepth}
-						onchange={(e) =>
+						oninput={(e) =>
 							echoChamberStore.update({ contextDepth: Number(e.currentTarget.value) })}
+						use:rangeReset={{
+							defaultValue: DEFAULT_ECHOCHAMBER_SETTINGS.contextDepth,
+							apply: (v) => echoChamberStore.update({ contextDepth: v })
+						}}
 					/>
-				</label>
+				</div>
 			{/if}
 
 			<div class="toggle-row" use:toggleRow>
@@ -364,12 +416,6 @@
 		color: var(--color-text-secondary);
 	}
 
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-		gap: 0.7rem;
-	}
-
 	.row {
 		display: flex;
 		align-items: center;
@@ -381,7 +427,6 @@
 	   rather than as another row in the card. */
 	.pair-inset {
 		margin-left: 0.5rem;
-		max-width: 14rem;
 	}
 
 	/* A style is a long instruction, so the field is sized to read one rather than to

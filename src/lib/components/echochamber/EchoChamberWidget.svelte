@@ -146,6 +146,7 @@
 
 		<ReactionFeed
 			reactions={feed?.reactions ?? []}
+			fontScale={echoChamberStore.settings.fontScale}
 			emptyMessage={messageId
 				? 'Nothing yet. Press refresh to hear what they think.'
 				: 'Send a message first, then the crowd has something to react to.'}

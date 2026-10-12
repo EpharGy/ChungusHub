@@ -12,9 +12,12 @@
 	interface Props {
 		reactions: Reaction[];
 		emptyMessage?: string;
+		/** Multiplies every text size in the feed, and the avatar with it so the row keeps
+		 *  its proportions. */
+		fontScale?: number;
 	}
 
-	let { reactions, emptyMessage = 'No reactions yet.' }: Props = $props();
+	let { reactions, emptyMessage = 'No reactions yet.', fontScale = 1 }: Props = $props();
 
 	/**
 	 * A stable colour per handle, from the name alone.
@@ -36,9 +39,9 @@
 </script>
 
 {#if reactions.length === 0}
-	<p class="echo-empty">{emptyMessage}</p>
+	<p class="echo-empty" style:--echo-font-scale={fontScale}>{emptyMessage}</p>
 {:else}
-	<ul class="echo-feed">
+	<ul class="echo-feed" style:--echo-font-scale={fontScale}>
 		{#each reactions as reaction, index (index)}
 			{@const color = colorFor(reaction.username)}
 			<li class="echo-row">
@@ -75,13 +78,13 @@
 
 	.echo-avatar {
 		flex: 0 0 auto;
-		width: 1.75rem;
-		height: 1.75rem;
+		width: calc(1.75rem * var(--echo-font-scale, 1));
+		height: calc(1.75rem * var(--echo-font-scale, 1));
 		border-radius: 50%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 0.8rem;
+		font-size: calc(0.8rem * var(--echo-font-scale, 1));
 		font-weight: 700;
 		/* The disc colour is generated, so the text on it is fixed dark for contrast rather
 		   than themed: a themed foreground goes invisible on half the hues. */
@@ -95,14 +98,14 @@
 
 	.echo-name {
 		display: block;
-		font-size: 0.78rem;
+		font-size: calc(0.78rem * var(--echo-font-scale, 1));
 		font-weight: 600;
 		line-height: 1.2;
 		overflow-wrap: anywhere;
 	}
 
 	.echo-text {
-		font-size: 0.85rem;
+		font-size: calc(0.85rem * var(--echo-font-scale, 1));
 		line-height: 1.45;
 		color: var(--color-text-primary);
 		overflow-wrap: anywhere;
@@ -124,7 +127,7 @@
 		margin: 0;
 		padding: 1.25rem 1rem;
 		text-align: center;
-		font-size: 0.85rem;
+		font-size: calc(0.85rem * var(--echo-font-scale, 1));
 		color: var(--color-text-tertiary);
 	}
 </style>

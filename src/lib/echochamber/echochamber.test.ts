@@ -196,6 +196,16 @@ describe('resolveEchoChamberSettings', () => {
 		);
 	});
 
+	test('text size is clamped but keeps its fraction', () => {
+		expect(resolveEchoChamberSettings({ fontScale: 1.13 }).fontScale).toBe(1.13);
+		expect(resolveEchoChamberSettings({ fontScale: 1.0000000002 }).fontScale).toBe(1);
+		expect(resolveEchoChamberSettings({ fontScale: 9 }).fontScale).toBe(BOUNDS.fontScale.max);
+		expect(resolveEchoChamberSettings({ fontScale: 0 }).fontScale).toBe(BOUNDS.fontScale.min);
+		expect(resolveEchoChamberSettings({ fontScale: 'big' } as never).fontScale).toBe(
+			DEFAULT_ECHOCHAMBER_SETTINGS.fontScale
+		);
+	});
+
 	test('a field of the wrong type falls back rather than reaching the prompt', () => {
 		const resolved = resolveEchoChamberSettings({
 			enabled: 'yes',

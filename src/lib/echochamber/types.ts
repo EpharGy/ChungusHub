@@ -103,6 +103,8 @@ export interface EchoChamberSettings {
 	/** Show the crowd what it said last time, so a running joke can develop. */
 	includePastReactions: boolean;
 	messageOrder: MessageOrder;
+	/** Size of the feed's text, as a multiple of its base size. Clamped by `BOUNDS`. */
+	fontScale: number;
 }
 
 /**

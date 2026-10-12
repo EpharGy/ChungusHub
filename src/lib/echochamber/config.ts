@@ -35,7 +35,8 @@ export const DEFAULT_ECHOCHAMBER_SETTINGS: EchoChamberSettings = {
 	includeLorebook: false,
 	includeMemory: false,
 	includePastReactions: false,
-	messageOrder: 'oldest-first'
+	messageOrder: 'oldest-first',
+	fontScale: 1
 };
 
 /**
@@ -45,16 +46,24 @@ export const DEFAULT_ECHOCHAMBER_SETTINGS: EchoChamberSettings = {
  * the ceiling is a token cost the reader pays per turn, not a display limit: each reaction
  * is its own line of generated prose, and a request for fifty is a request for a second
  * story-sized completion beside every reply.
+ *
+ * `fontScale` is the feed's own text size. The app's Text size knob is chat-only, so the
+ * feed carries a separate one rather than borrowing a setting that does not reach it.
  */
 export const BOUNDS = {
 	reactionCount: { min: 1, max: 30 },
-	contextDepth: { min: 2, max: 50 }
+	contextDepth: { min: 2, max: 50 },
+	fontScale: { min: 0.75, max: 1.5 }
 } as const;
 
-function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
 	const n = typeof value === 'number' ? value : Number(value);
 	if (!Number.isFinite(n)) return fallback;
-	return Math.round(Math.min(Math.max(n, min), max));
+	return Math.min(Math.max(n, min), max);
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+	return Math.round(clampNumber(value, min, max, fallback));
 }
 
 /**
@@ -103,6 +112,12 @@ export function resolveEchoChamberSettings(
 		includeMemory: typeof s.includeMemory === 'boolean' ? s.includeMemory : d.includeMemory,
 		includePastReactions:
 			typeof s.includePastReactions === 'boolean' ? s.includePastReactions : d.includePastReactions,
-		messageOrder: s.messageOrder === 'newest-first' ? 'newest-first' : d.messageOrder
+		messageOrder: s.messageOrder === 'newest-first' ? 'newest-first' : d.messageOrder,
+		// Two decimals: the slider steps in hundredths, and float noise from a stored blob
+		// would otherwise read back as 1.0000000002.
+		fontScale:
+			Math.round(
+				clampNumber(s.fontScale, BOUNDS.fontScale.min, BOUNDS.fontScale.max, d.fontScale) * 100
+			) / 100
 	};
 }
