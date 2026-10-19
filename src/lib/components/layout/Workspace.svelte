@@ -323,6 +323,18 @@
 			</div>
 		{/if}
 
+		<!-- Where every FloatingWindow paints (the notepad, a popped-out image, whatever
+		     comes next). It is an empty host: those components mount out at the shell so
+		     they outlive the surfaces that open them, and each moves its own node in here.
+		     The rung is the whole point. Above the chat and the welcome landing, below
+		     every overlay and dock, so a floating window can never cover Settings or the
+		     Library, which is not something the windows could arrange for themselves,
+		     since `isolation: isolate` above makes this whole workspace one flat layer
+		     seen from the shell, and no z-index out there can land between two rungs in
+		     here. Pointer-transparent, or it would swallow every click meant for the chat
+		     underneath it; the windows themselves take their clicks back. -->
+		<div class="floating-window-layer" data-floating-window-layer></div>
+
 		<!-- Chat-area overlay (Library / Lorebook / etc). Covers the chat column at its
 		     exact size, no backdrop: the side margins (and the docked side panels)
 		     stay untouched. -->
@@ -594,6 +606,24 @@
 
 	.welcome-hidden {
 		visibility: hidden;
+	}
+
+	/* The floating windows' rung: over the chat (1) and the welcome landing (10), under
+	   the chat-area overlays (20) and the two docks (25). Placed here rather than at the
+	   shell because the workspace isolates itself, so a rung BETWEEN two of its own layers
+	   can only be claimed from inside it.
+
+	   Its own box is irrelevant, since every child is `position: fixed` and sizes itself
+	   against the viewport. That is also why `overflow: hidden` on .workspace-main cannot clip
+	   one: a fixed element's containing block is the viewport, and nothing in this chain
+	   sets a transform or a filter to make it otherwise. What the box must do is stay out
+	   of the way, hence `pointer-events: none` over an inset-0 area sitting above the
+	   chat. */
+	.floating-window-layer {
+		position: absolute;
+		inset: 0;
+		z-index: 15;
+		pointer-events: none;
 	}
 
 	/* The welcome landing stands in for the chat column, so it copies the chat's
