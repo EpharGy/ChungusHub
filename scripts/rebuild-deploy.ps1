@@ -133,7 +133,9 @@ $Topics = @(
     # A copy button on every rendered code block. Stands alone, like the three above it.
     'feature/code-copy',
     # Keeps the editor header's lorebook popover inside the screen on a phone. Stands alone.
-    'fix/lorebook-popover-edge'
+    'fix/lorebook-popover-edge',
+    # Turns Chat Memory on in every new chat when Settings asks for it. Stands alone.
+    'feature/memory-new-chats'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
