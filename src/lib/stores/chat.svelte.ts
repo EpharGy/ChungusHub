@@ -13,6 +13,7 @@ import { llmStatus, stopGeneration } from '$lib/services/transport';
 import { findActivePath } from '$lib/utils/message-tree';
 import {
 	chatLorebookClaim,
+	chatFrameworkState,
 	chatMutedLorebookClaim,
 	chatPersonaClaim,
 	chatPresetClaim
@@ -25,6 +26,8 @@ import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { chatCastStore } from '$lib/stores/chatCast.svelte';
 import { uiStore } from '$lib/stores/ui.svelte';
 import { memoryStore } from '$lib/memory/store.svelte';
+import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
+import { newChatFrameworkState } from '$lib/frameworks/settings';
 
 /** A reply being written for a chat by someone other than this page. */
 type ForeignGeneration = { chatId: string; requestId: string; startedAt: number };
@@ -122,6 +125,11 @@ class ChatStore {
 		const personaId = options.personaId ?? entry?.defaultPersonaId ?? null;
 		const connectionId = entry?.defaultConnectionId ?? null;
 		const presetId = entry?.defaultPresetId ?? null;
+		// Frameworks are the exception to that rule, and on purpose: their new-chat defaults ARE
+		// a choice somebody made, in Settings, about every chat that starts. Nothing ticked there
+		// leaves this the plain default and the row's state null, exactly as before.
+		const frameworks = newChatFrameworkState(frameworkSettingsStore.settings);
+		const seedFrameworks = frameworks.enabled.length > 0;
 		const chat: Chat = {
 			id: crypto.randomUUID(),
 			title: this.generateChatTitle(characterId),
@@ -135,12 +143,13 @@ class ChatStore {
 			characterVersionId,
 			isFavorite: false,
 			featureState:
-				personaId || connectionId || presetId
+				personaId || connectionId || presetId || seedFrameworks
 					? JSON.stringify({
 							...DEFAULT_CHAT_FEATURE_STATE,
 							persona: personaId,
 							connection: connectionId,
-							preset: presetId
+							preset: presetId,
+							frameworks
 						})
 					: null
 		};
@@ -503,7 +512,8 @@ class ChatStore {
 				personaId: chatPersonaClaim(chat),
 				presetId: chatPresetClaim(chat),
 				lorebookIds: chatLorebookClaim(chat),
-				mutedLorebookIds: chatMutedLorebookClaim(chat)
+				mutedLorebookIds: chatMutedLorebookClaim(chat),
+				frameworks: chatFrameworkState(chat)
 			});
 		} catch (e) {
 			console.error('[memory] refresh failed:', e);
