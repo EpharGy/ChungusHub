@@ -20,10 +20,32 @@
  * `stores/frameworkSettings.svelte.ts`, because prompt assembly reads these and may not touch
  * a store.
  */
+import { defaultChatFrameworkState, type ChatFrameworkState } from './chat-state';
 import { FRAMEWORKS } from './registry';
+import type { FrameworkDef } from './types';
 
 /** Framework configs one install may carry. A backstop against a corrupt blob. */
 export const MAX_CONFIGS = 64;
+
+/** Choices one framework may store for new chats. A backstop, like the caps around it. */
+export const MAX_NEW_CHAT_CHOICES = 16;
+
+/**
+ * How one framework starts in a new chat.
+ *
+ * A third switch beside the two below, and it answers neither of their questions: it does not
+ * decide whether a framework exists or whether a story uses it, only what a story that has not
+ * been asked yet starts with. The chat's own switch still decides from then on, so this is a
+ * starting point and never an override, and changing it touches no chat that already exists.
+ */
+export interface NewChatDefault {
+	/** Ticked in every new chat. */
+	on: boolean;
+	/** The framework's own choices, by key (see `FrameworkNewChat`). Opaque here: the
+	 *  framework's declared options are what decide whether a stored value still means
+	 *  anything, and that is checked where they are in hand. */
+	choices: Record<string, string>;
+}
 
 export interface FrameworkSettings {
 	/**
@@ -36,10 +58,28 @@ export interface FrameworkSettings {
 	enabled: Record<string, boolean>;
 	/** Each framework's own app-wide tunables, keyed by id. Opaque to the base. */
 	config: Record<string, unknown>;
+	/** How each framework starts in a new chat, keyed by id. Absent reads as off: a chat
+	 *  starting with nothing ticked is what it did before this existed. */
+	newChat: Record<string, NewChatDefault>;
 }
 
 export function defaultFrameworkSettings(): FrameworkSettings {
-	return { enabled: {}, config: {} };
+	return { enabled: {}, config: {}, newChat: {} };
+}
+
+function normalizeNewChatDefault(raw: unknown): NewChatDefault | null {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+	const stored = raw as Record<string, unknown>;
+	const choices: Record<string, string> = {};
+	if (stored.choices && typeof stored.choices === 'object' && !Array.isArray(stored.choices)) {
+		for (const [key, value] of Object.entries(stored.choices as Record<string, unknown>)) {
+			if (typeof value !== 'string') continue;
+			choices[key] = value;
+			if (Object.keys(choices).length >= MAX_NEW_CHAT_CHOICES) break;
+		}
+	}
+	// Only a literal true ticks, for the reason only a literal true enables.
+	return { on: stored.on === true, choices };
 }
 
 export function normalizeFrameworkSettings(raw: unknown): FrameworkSettings {
@@ -65,7 +105,67 @@ export function normalizeFrameworkSettings(raw: unknown): FrameworkSettings {
 			if (Object.keys(out.config).length >= MAX_CONFIGS) break;
 		}
 	}
+
+	if (stored.newChat && typeof stored.newChat === 'object' && !Array.isArray(stored.newChat)) {
+		for (const [id, value] of Object.entries(stored.newChat as Record<string, unknown>)) {
+			const entry = normalizeNewChatDefault(value);
+			if (!entry) continue;
+			out.newChat[id.toLowerCase()] = entry;
+			if (Object.keys(out.newChat).length >= MAX_CONFIGS) break;
+		}
+	}
 	return out;
+}
+
+/**
+ * A framework's new-chat choices with every value resolved: the stored one while it is still
+ * one of the declared options, the declared default otherwise.
+ *
+ * A stored value can stop being an option when a framework drops one, and resolving here is
+ * what keeps the page and the seeded chat agreeing about what it falls back to.
+ */
+export function resolveNewChatChoices(
+	framework: Pick<FrameworkDef, 'newChat'>,
+	stored: NewChatDefault | undefined
+): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const choice of framework.newChat?.choices ?? []) {
+		const value = stored?.choices[choice.key];
+		out[choice.key] = choice.options.some((o) => o.value === value) ? (value as string) : choice.default;
+	}
+	return out;
+}
+
+/**
+ * The framework state a brand-new chat starts with.
+ *
+ * Only frameworks available on this install are seeded: one switched off app-wide is not
+ * offered to any chat, and a new chat is no exception. Requirements are added the way the
+ * panel's own tick adds them, so the stored list reads the same as one a reader ticked by hand.
+ *
+ * Everything else is the plain default. The day in particular is not seeded: it counts from 1
+ * in manual mode and is not read at all in real time, so there is no starting day to choose.
+ */
+export function newChatFrameworkState(
+	settings: FrameworkSettings,
+	registry: readonly Pick<FrameworkDef, 'id' | 'requires' | 'alwaysOn' | 'newChat'>[] = FRAMEWORKS
+): ChatFrameworkState {
+	const state = defaultChatFrameworkState();
+	const enabled = new Set<string>();
+	for (const framework of registry) {
+		// No switch to start ticked: it is on in every chat already.
+		if (framework.alwaysOn) continue;
+		const stored = settings.newChat[framework.id];
+		if (!stored?.on || !frameworkAvailable(settings, framework.id, registry)) continue;
+		enabled.add(framework.id);
+		for (const needed of framework.requires ?? []) enabled.add(needed);
+		if (!framework.newChat) continue;
+		const seeded = framework.newChat.seed(resolveNewChatChoices(framework, stored));
+		if (seeded.mode) state.mode = seeded.mode;
+		if (seeded.slice) state.byFramework[framework.id] = seeded.slice;
+	}
+	state.enabled = [...enabled];
+	return state;
 }
 
 /**

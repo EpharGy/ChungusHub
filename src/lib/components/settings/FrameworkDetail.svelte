@@ -13,10 +13,13 @@
 	 * something failed to load.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import PillRow from '$lib/components/ui/PillRow.svelte';
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import FrameworkBlockEditor from './FrameworkBlockEditor.svelte';
+	import { toggleRow } from '$lib/actions/toggleRow';
 	import { FRAMEWORKS } from '$lib/frameworks/registry';
 	import { resolveBlocks } from '$lib/frameworks/blocks';
+	import { resolveNewChatChoices } from '$lib/frameworks/settings';
 	import { frameworkSettingsStore } from '$lib/stores/frameworkSettings.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
@@ -43,6 +46,11 @@
 				frameworkSettingsStore.isAvailable(f.id) && f.blocks?.some((b) => b.gathersReminders)
 		)
 	);
+
+	/** How this framework starts in a new chat. The choices arrive resolved, so a row of pills
+	 *  always has one lit even before anything has been stored. */
+	const newChat = $derived(framework ? frameworkSettingsStore.newChatFor(framework.id) : undefined);
+	const newChatChoices = $derived(framework ? resolveNewChatChoices(framework, newChat) : {});
 
 	function patchBlock(slot: string, patch: Record<string, unknown>) {
 		if (!framework) return;
@@ -150,6 +158,47 @@
 			</p>
 		{/if}
 
+		<!-- Where a story STARTS, not what any story is: the panel's tick still decides from
+		     then on, and changing this touches no chat that exists. A framework with no
+		     switch is on in every chat already, so it has nothing to start ticked. -->
+		{#if !framework.alwaysOn}
+			<section class="card" data-setting="framework-new-chat">
+				<div class="card-head">
+					<span class="card-title">New chats</span>
+				</div>
+				<div class="card-body">
+					<div class="toggle-row" use:toggleRow>
+						<span class="toggle-label">Turn on in every new chat</span>
+						<Toggle
+							checked={newChat?.on ?? false}
+							onchange={(v) => frameworkSettingsStore.patchNewChat(framework.id, { on: v })}
+							label="Turn {framework.name} on in every new chat"
+						/>
+					</div>
+					{#if newChat?.on}
+						{#each framework.newChat?.choices ?? [] as choice (choice.key)}
+							{#if !choice.when || newChatChoices[choice.when.key] === choice.when.value}
+								<div class="choice">
+									<span class="section-label">{choice.label}</span>
+									<PillRow
+										options={[...choice.options]}
+										current={newChatChoices[choice.key]}
+										onpick={(v) =>
+											frameworkSettingsStore.patchNewChat(framework.id, { choices: { [choice.key]: v } })}
+										label={choice.label}
+									/>
+								</div>
+							{/if}
+						{/each}
+					{/if}
+					<p class="hint">
+						Only chats created from now on. Each chat can still change it on the Frameworks
+						panel.
+					</p>
+				</div>
+			</section>
+		{/if}
+
 		{#if blocks.length === 0}
 			<p class="note">This framework has nothing to tune.</p>
 		{:else}
@@ -246,6 +295,26 @@
 		margin: 0 0.35rem;
 		font-family: var(--font-ui);
 		font-size: 0.74rem;
+		line-height: 1.5;
+		color: var(--color-text-muted);
+	}
+
+	.toggle-label {
+		font-family: var(--font-ui);
+		font-size: 0.8rem;
+		color: var(--color-text-primary);
+	}
+
+	.choice {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+
+	.hint {
+		margin: 0;
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
 		line-height: 1.5;
 		color: var(--color-text-muted);
 	}

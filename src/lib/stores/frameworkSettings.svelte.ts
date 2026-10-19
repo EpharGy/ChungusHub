@@ -16,7 +16,8 @@ import {
 	defaultFrameworkSettings,
 	frameworkAvailable,
 	normalizeFrameworkSettings,
-	type FrameworkSettings
+	type FrameworkSettings,
+	type NewChatDefault
 } from '$lib/frameworks/settings';
 import { requiredBy } from '$lib/frameworks/chat-state';
 import { FRAMEWORKS } from '$lib/frameworks/registry';
@@ -91,6 +92,26 @@ class FrameworkSettingsStore {
 		const current = this.state.config[id];
 		const base = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
 		this.state = { ...this.state, config: { ...this.state.config, [id]: { ...base, ...patch } } };
+		this.persist();
+	}
+
+	/** How one framework starts in a new chat, exactly as stored. Absent means off. */
+	newChatFor(id: string): NewChatDefault | undefined {
+		return this.state.newChat[id];
+	}
+
+	/**
+	 * Change how one framework starts in a new chat. Choices merge, so a page can save one row
+	 * of pills without holding the others. Chats that already exist are not touched: this is
+	 * where a story starts, never what it is.
+	 */
+	patchNewChat(id: string, patch: { on?: boolean; choices?: Record<string, string> }): void {
+		const current = this.state.newChat[id] ?? { on: false, choices: {} };
+		const next: NewChatDefault = {
+			on: patch.on ?? current.on,
+			choices: { ...current.choices, ...patch.choices }
+		};
+		this.state = { ...this.state, newChat: { ...this.state.newChat, [id]: next } };
 		this.persist();
 	}
 

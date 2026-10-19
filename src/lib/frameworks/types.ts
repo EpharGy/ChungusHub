@@ -199,6 +199,45 @@ export interface FrameworkReference {
 	values?: readonly FrameworkReferenceValue[];
 }
 
+/**
+ * One choice a framework offers for the chats it starts in, rendered as a row of pills on its
+ * detail page.
+ *
+ * Data rather than markup for the reason {@link FrameworkReference} is: the settings page knows
+ * no framework by name, so a framework's own per-chat setting can only reach it declared.
+ */
+export interface FrameworkNewChatChoice {
+	/** The key the chosen value is stored under, and handed to `seed` under. */
+	key: string;
+	/** Above the pills. A few words. */
+	label: string;
+	options: readonly { value: string; label: string; title?: string }[];
+	/** What is used when nothing is stored, or what is stored is not one of the options. */
+	default: string;
+	/** Shown only while another choice holds this value. Still resolved and handed to `seed`
+	 *  when hidden, so `seed` decides what a hidden choice means rather than the page. */
+	when?: { key: string; value: string };
+}
+
+/**
+ * What a framework sets in a chat it is turned on in from the start, beyond turning itself on.
+ *
+ * A framework that declares none of this still gets the switch: turning itself on is the
+ * base's job, and for most frameworks it is the whole of the setting.
+ */
+export interface FrameworkNewChat {
+	choices: readonly FrameworkNewChatChoice[];
+	/**
+	 * The starting state those choices mean: a day mode, this framework's own slice, or both.
+	 *
+	 * Handed every choice resolved, so it never sees a missing or unknown value. Pure like the
+	 * rest of this file. `mode` is a base field, and a framework may set it here only because
+	 * the same framework is what presents it on the panel; a later framework setting it too
+	 * would be two answers to one question, and the registry order would pick the winner.
+	 */
+	seed(choices: Readonly<Record<string, string>>): { mode?: DayMode; slice?: Record<string, unknown> };
+}
+
 export interface FrameworkDef {
 	/** Also the marker's name: `@<id>[...]`. Lowercase, hyphen-separated. */
 	id: string;
@@ -296,6 +335,12 @@ export interface FrameworkDef {
 	 * settings it is drawing. See blocks.ts.
 	 */
 	blocks?: readonly FrameworkBlockDef[];
+	/**
+	 * The choices this framework offers for a chat it is turned on in from creation. See
+	 * {@link FrameworkNewChat}; absent means the switch alone. Ignored for an `alwaysOn`
+	 * framework, which is on in every chat already and has no starting state worth choosing.
+	 */
+	newChat?: FrameworkNewChat;
 	/**
 	 * Substitute this framework's own placeholders in a block's text.
 	 *

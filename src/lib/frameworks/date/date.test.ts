@@ -15,7 +15,7 @@ import { resolveBlocks } from '../blocks';
 import { defaultChatFrameworkState } from '../chat-state';
 import { resolveDay, todaySerial } from '../day';
 import { FRAMEWORKS } from '../registry';
-import { defaultFrameworkSettings, type FrameworkSettings } from '../settings';
+import { defaultFrameworkSettings, newChatFrameworkState, type FrameworkSettings } from '../settings';
 import { applyFrameworks } from '../dispatch';
 import { REMINDERS_FRAMEWORK_ID } from '../reminders';
 import {
@@ -25,7 +25,8 @@ import {
 	DEFAULT_DATE_INSTRUCTIONS,
 	fillDateTemplate,
 	normalizeDateChatState,
-	renderTimeMarker
+	renderTimeMarker,
+	type MarkerShape
 } from './index';
 
 /** A pinned clock: 6:02 PM, Saturday 10 October 2026. */
@@ -293,5 +294,44 @@ describe('reaching the prompt through the lorebook pipeline', () => {
 		const once = resolveLorebooks({ books: books(), messages: [], decorate: (_e, t) => t });
 		const twice = resolveLorebooks({ books: books(), messages: [], decorate: (_e, t) => t });
 		expect(once.text).toBe(twice.text);
+	});
+});
+
+describe('starting a new chat', () => {
+	function startsWith(choices: Record<string, string>): FrameworkSettings {
+		return {
+			...defaultFrameworkSettings(),
+			enabled: { [DATE_FRAMEWORK_ID]: true },
+			newChat: { [DATE_FRAMEWORK_ID]: { on: true, choices } }
+		};
+	}
+
+	test('ticked with nothing chosen, a new chat starts on real time with the marker visible', () => {
+		// In manual mode this framework says nothing, so asking for it in every chat is asking
+		// for real time unless the reader says otherwise.
+		const state = newChatFrameworkState(startsWith({}));
+		expect(state.enabled).toContain(DATE_FRAMEWORK_ID);
+		expect(state.mode).toBe('marker');
+		expect(normalizeDateChatState(state.byFramework[DATE_FRAMEWORK_ID])).toEqual({ shape: 'visible' });
+	});
+
+	test('real time with the marker never sent', () => {
+		const state = newChatFrameworkState(startsWith({ day: 'marker', shape: 'never' }));
+		expect(state.mode).toBe('marker');
+		expect(normalizeDateChatState(state.byFramework[DATE_FRAMEWORK_ID])).toEqual({ shape: 'never' });
+	});
+
+	test('manual leaves the day to /day', () => {
+		expect(newChatFrameworkState(startsWith({ day: 'manual' })).mode).toBe('manual');
+	});
+
+	test('every option it offers is a shape or a mode the chat understands', () => {
+		// The choices are declared as plain strings, so this is what stops one drifting from the
+		// types they stand in for.
+		const [day, shape] = DATE_FRAMEWORK.newChat?.choices ?? [];
+		expect(day.options.map((o) => o.value).sort()).toEqual(['manual', 'marker']);
+		for (const option of shape.options) {
+			expect(normalizeDateChatState({ shape: option.value }).shape).toBe(option.value as MarkerShape);
+		}
 	});
 });

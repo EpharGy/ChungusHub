@@ -14,7 +14,9 @@ import { runningFrameworks } from './apply';
 import {
 	defaultFrameworkSettings,
 	frameworkAvailable,
+	newChatFrameworkState,
 	normalizeFrameworkSettings,
+	resolveNewChatChoices,
 	type FrameworkSettings
 } from './settings';
 
@@ -150,5 +152,91 @@ describe('the stored settings blob', () => {
 	test('a config rides through untouched, because the base never reads inside one', () => {
 		const config = { instructions: 'mine', depth: 3, anything: [1, 2] };
 		expect(normalizeFrameworkSettings({ config: { date: config } }).config.date).toEqual(config);
+	});
+});
+
+describe('how a new chat starts', () => {
+	/** A registry with one framework that offers choices, so the seeding is tested without the
+	 *  real date framework's wording. */
+	const SEEDING = [
+		...REGISTRY,
+		{ id: 'fixed', alwaysOn: true },
+		{
+			id: 'chooser',
+			newChat: {
+				choices: [
+					{
+						key: 'pace',
+						label: 'Pace',
+						options: [
+							{ value: 'slow', label: 'Slow' },
+							{ value: 'fast', label: 'Fast' }
+						],
+						default: 'slow'
+					}
+				],
+				seed: (choices: Readonly<Record<string, string>>) => ({
+					mode: choices.pace === 'fast' ? ('marker' as const) : ('manual' as const),
+					slice: { pace: choices.pace }
+				})
+			}
+		}
+	];
+
+	function ticked(ids: string[], choices: Record<string, Record<string, string>> = {}): FrameworkSettings {
+		return {
+			...install(...ids),
+			newChat: Object.fromEntries(ids.map((id) => [id, { on: true, choices: choices[id] ?? {} }]))
+		};
+	}
+
+	test('nothing ticked starts a chat exactly as before', () => {
+		expect(newChatFrameworkState(install('loner', 'chooser'), SEEDING)).toEqual(defaultChatFrameworkState());
+	});
+
+	test('a ticked framework starts on, with what it requires', () => {
+		const state = newChatFrameworkState(ticked(['needs-base', 'base']), SEEDING);
+		expect(state.enabled.sort()).toEqual(['base', 'needs-base']);
+	});
+
+	test('a framework the install does not carry is not seeded, ticked or not', () => {
+		// Switched off app-wide means offered to no chat, and a new one is no exception.
+		const settings = { ...ticked(['loner']), enabled: {} };
+		expect(newChatFrameworkState(settings, SEEDING).enabled).toEqual([]);
+	});
+
+	test('an always-on framework is never written into the list', () => {
+		const settings = { ...ticked(['loner']), newChat: { loner: { on: true, choices: {} }, fixed: { on: true, choices: {} } } };
+		expect(newChatFrameworkState(settings, SEEDING).enabled).toEqual(['loner']);
+	});
+
+	test('the choices reach the chat through the framework, defaults filling the gaps', () => {
+		const fallback = newChatFrameworkState(ticked(['chooser']), SEEDING);
+		expect(fallback.mode).toBe('manual');
+		expect(fallback.byFramework.chooser).toEqual({ pace: 'slow' });
+
+		const chosen = newChatFrameworkState(ticked(['chooser'], { chooser: { pace: 'fast' } }), SEEDING);
+		expect(chosen.mode).toBe('marker');
+		expect(chosen.byFramework.chooser).toEqual({ pace: 'fast' });
+	});
+
+	test('a stored value that is no longer an option falls back to the default', () => {
+		expect(resolveNewChatChoices(SEEDING[SEEDING.length - 1], { on: true, choices: { pace: 'warp' } })).toEqual({
+			pace: 'slow'
+		});
+	});
+
+	test('unticked keeps its choices, so ticking again restores them', () => {
+		const settings = { ...ticked(['chooser'], { chooser: { pace: 'fast' } }) };
+		settings.newChat.chooser.on = false;
+		expect(newChatFrameworkState(settings, SEEDING)).toEqual(defaultChatFrameworkState());
+		expect(normalizeFrameworkSettings(settings).newChat.chooser).toEqual({ on: false, choices: { pace: 'fast' } });
+	});
+
+	test('only a literal true ticks, and only string choices survive', () => {
+		const out = normalizeFrameworkSettings({
+			newChat: { a: { on: 'yes', choices: { k: 'v', n: 3 } }, B: { on: true }, c: 'text' }
+		});
+		expect(out.newChat).toEqual({ a: { on: false, choices: { k: 'v' } }, b: { on: true, choices: {} } });
 	});
 });
