@@ -202,6 +202,43 @@ export const DATE_FRAMEWORK: FrameworkDef = {
 		'when the marker is set to never be sent, where the day still follows the calendar.',
 	blocks: DATE_BLOCKS,
 	/**
+	 * The two per-chat settings the panel shows under Date's tick, as a starting point.
+	 *
+	 * Real time is the default here although `manual` is the chat's own default: in manual mode
+	 * this framework says nothing at all, so a reader asking for it in every new chat is asking
+	 * for real time unless they say otherwise.
+	 */
+	newChat: {
+		choices: [
+			{
+				key: 'day',
+				label: 'Day',
+				options: [
+					{ value: 'marker', label: 'Real time', title: 'The day follows the calendar' },
+					{ value: 'manual', label: 'Manual', title: 'The day moves only when you move it' }
+				],
+				default: 'marker'
+			},
+			{
+				key: 'shape',
+				label: 'Time marker',
+				options: [
+					{ value: 'visible', label: 'Marker visible' },
+					{ value: 'hidden', label: 'Hidden', title: 'Written as an HTML comment, so it is not drawn' },
+					{ value: 'never', label: 'Never sent', title: 'The day follows the calendar, and the model is never told the date' }
+				],
+				default: 'visible',
+				when: { key: 'day', value: 'marker' }
+			}
+		],
+		seed(choices) {
+			return {
+				mode: choices.day === 'manual' ? 'manual' : 'marker',
+				slice: { shape: normalizeDateChatState({ shape: choices.shape }).shape }
+			};
+		}
+	},
+	/**
 	 * Nothing at all in manual mode, or when this chat's marker is never sent.
 	 *
 	 * A reader driving the day by hand has not asked to be told the real date and would be

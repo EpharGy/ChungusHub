@@ -296,6 +296,23 @@ The UI enforces the same rule from the other side. Turning one on pulls in what 
 turning one off is refused while something that needs it is on, naming what is holding it, since
 a switch that springs back with no explanation reads as a bug.
 
+### Where a new chat starts
+
+A third setting sits beside the two switches and answers neither question: what a story that has
+not been asked yet starts with. `FrameworkSettings.newChat` holds, per framework, whether it
+starts ticked and the values of any choices it declares. `createChat` stamps
+`newChatFrameworkState` (settings.ts) onto the new row, and from then on the chat's own switch is
+the only one that counts. Changing it touches no existing chat, and a chat imported from
+SillyTavern is not seeded: it is a story that already exists, not a new one.
+
+The switch itself is the base's and every framework gets it without declaring anything, because
+for most frameworks being on IS the setting. A framework with a per-chat setting of its own
+declares `FrameworkDef.newChat`: choices as data, which the detail page renders as pill rows
+without knowing whose they are, and a pure `seed` that turns the resolved choices into a day mode,
+a slice, or both. Date is the one that sets the mode, because the panel presents the mode under
+Date's tick. Only an available framework is seeded, and requirements are added exactly as the
+panel's tick adds them. An `alwaysOn` framework has no switch to start ticked and is skipped.
+
 ## The date framework
 
 The counterpart to `marker` mode, and the only framework registered on the base branch. The
