@@ -11,6 +11,7 @@
 	import { deleteGuard } from '$lib/stores/delete-guard.svelte';
 	import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
+	import ChorusWindow from '$lib/components/ui/ChorusWindow.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { audioSettingsStore } from '$lib/stores/audio-settings.svelte';
 	import { initAudioUnlock } from '$lib/services/audioContext';
@@ -340,6 +341,13 @@
 		<!-- Last of the three: work that is merely running is the least urgent thing this
 		     channel says, and unlike the two above it resolves on its own. -->
 		<ImportBar />
+		<!-- The Chorus panel, on FloatingWindow and mounted at the shell for the reasons every
+		     floating panel is (fixed-positioned above the workspace's stacking context, and
+		     outliving whatever it is raised over), plus one of its own: it keeps the engine
+		     reading the newest reply while it is closed, since that reading feeds the next
+		     prompt. Sibling order means nothing to a fixed-position element; it sits here, away
+		     from the lines the other panels insert at, so no rebuild re-fights a conflict. -->
+		<ChorusWindow />
 		<div class="app-main">
 			<Workspace />
 		</div>

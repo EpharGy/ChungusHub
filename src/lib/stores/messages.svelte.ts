@@ -8,6 +8,7 @@ import { notifySound } from '$lib/services/notificationSound';
 import { findActivePath, findDeepestLeafFromNode } from '$lib/utils/message-tree';
 import { buildPromptMessages, type BuiltPrompt, type PromptBuildContext } from '$lib/utils/prompt-builder';
 import { promptHoldStore } from './promptHold.svelte';
+import { chorusStore } from './chorus.svelte';
 import type { HoldGate } from '$lib/config/prompt-hold';
 import { joinContinuation } from '$lib/utils/continuation';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
@@ -276,6 +277,10 @@ class MessageStore {
 		// user already paid for.
 		const rereadsSprite =
 			action !== 'create_branch' && !opts.minor && featurePromptsStore.spritesRereadOnEdit;
+		// And of what the Chorus characters read off it. Same exemptions, but on by default:
+		// intentions read from the old text steer the next reply towards a scene that is gone.
+		const rereadsChorus =
+			action !== 'create_branch' && !opts.minor && featurePromptsStore.chorusRereadOnEdit;
 
 		this.isProcessing = true;
 		try {
@@ -285,6 +290,7 @@ class MessageStore {
 					await db.touchChatActivity(state.chat.id);
 					if (rewritesArchived) await this.invalidateMemoryFor(state.chat.id, messageId);
 					if (rereadsSprite) await this.invalidateSpriteFor(messageId);
+					if (rereadsChorus) await this.invalidateChorusFor(messageId);
 					break;
 
 				case 'create_branch': {
@@ -339,6 +345,17 @@ class MessageStore {
 		} catch (e) {
 			console.error('[sprites] invalidate after edit failed:', e);
 			toastStore.failed('re-read the sprite for this turn', e);
+		}
+	}
+
+	/** Drop the Chorus reading over a rewritten turn so its characters read it again. Never
+	 *  blocks the edit, for the sprite reason: the content is saved either way. */
+	private async invalidateChorusFor(messageId: string): Promise<void> {
+		try {
+			await chorusStore.invalidateMessage(messageId);
+		} catch (e) {
+			console.error('[chorus] invalidate after edit failed:', e);
+			toastStore.failed('re-read this turn for Chorus', e);
 		}
 	}
 
@@ -865,6 +882,9 @@ class MessageStore {
 			// was ever about. But re-reading it is a second call, so it is the user's setting.
 			if (featurePromptsStore.spritesRereadOnContinue) {
 				await this.invalidateSpriteFor(target.id);
+			}
+			if (featurePromptsStore.chorusRereadOnContinue) {
+				await this.invalidateChorusFor(target.id);
 			}
 
 			await chatStore.refreshChat(state.chat.id);
