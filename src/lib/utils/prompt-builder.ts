@@ -9,6 +9,7 @@
 
 import type { CallTarget, LLMMessage } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
+import { normalizeChatFeatureState } from '$lib/types/chat';
 import { activeSteeringNotes, resolveSteeringForPrompt, steeringTargetForChat } from '$lib/types/steering';
 import type { PromptPreset } from '$lib/types/database';
 import type { Lorebook, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
@@ -30,6 +31,7 @@ import {
 	toPromptCharacter
 } from './chat-setup';
 import { assemblePrompt, type PromptRecall } from './prompt-assembly';
+import { chorusForPrompt } from '$lib/chorus/resolve';
 
 const ACTIVE_PERSONA_KEY = 'activePersonaId';
 
@@ -154,6 +156,20 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		.filter((note) => note.mode === 'once')
 		.map((note) => ({ id: note.id, text: note.text }));
 
+	// Chorus: what the characters on this chat's list said after the previous reply, read off
+	// the chat row just loaded, through the resolver the meter runs over the store's copy.
+	// Never on a continuation: that extends the very reply the reading was taken from, so the
+	// reading describes text that is about to change.
+	const featureState = normalizeChatFeatureState(chat?.featureState ?? null);
+	const chorus = context.continuation
+		? undefined
+		: chorusForPrompt(
+				chatMessages,
+				featureState.chorus,
+				featureState.chorusReadings,
+				featurePromptsStore.chorusPromptSettings
+			);
+
 	// Model, budget and prompt shape all come off this one resolution, the same one the
 	// composer's meter runs, so the price on screen is the price of the request.
 	const promptTarget = resolvePromptTarget(chat, context.target ?? 'primary');
@@ -168,6 +184,7 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		controls: preset?.controls ?? [],
 		customFields: await readPresetControlValues(preset?.id ?? null),
 		chatMessages,
+		chorus,
 		recall,
 		model: promptTarget.model,
 		postProcessing: promptTarget.postProcessing,

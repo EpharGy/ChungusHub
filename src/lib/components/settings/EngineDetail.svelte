@@ -20,6 +20,7 @@
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import PillRow from '$lib/components/ui/PillRow.svelte';
 	import { STEERING_ROLES, type SteeringRole } from '$lib/types/steering';
+	import { CHORUS_STALE_LIMIT_MAX } from '$lib/chorus/resolve';
 	import { engineById, type EngineId } from '$lib/engines/registry';
 	import {
 		FEATURE_PROMPT_DEFAULTS,
@@ -342,6 +343,111 @@
 						label="Read a reply again after Continue extends it"
 					/>
 				</div>
+			</div>
+		</section>
+	{/if}
+
+	<!-- Chorus's own cards. The characters themselves are per chat and live in the Chorus
+	     panel; this is only where their answers go, how they are asked, and when a reply is
+	     read again. Placement uses Steering's vocabulary with its own values, and at a shared
+	     depth the block sits ahead of lore, so a reminders section at the same depth stays
+	     closest to the reply. -->
+	{#if engine.id === 'chorus'}
+		<section class="card">
+			<div class="card-head">
+				<span class="card-title">Where the answers go</span>
+			</div>
+			<div class="card-body">
+				<div class="slider-block">
+					<div class="slider-top">
+						<label for="chorus-depth" class="slider-label">Depth</label>
+						<span class="slider-value">
+							{featurePromptsStore.chorusDepth === 0
+								? 'after the newest turn'
+								: `${featurePromptsStore.chorusDepth} turns back`}
+						</span>
+					</div>
+					<input
+						id="chorus-depth"
+						type="range"
+						class="slider"
+						min="0"
+						max="20"
+						step="1"
+						value={featurePromptsStore.chorusDepth}
+						oninput={(e) => featurePromptsStore.setChorusDepth(Number(e.currentTarget.value))}
+					/>
+				</div>
+				<div class="sub-block">
+					<span class="section-label">Role</span>
+					<PillRow
+						options={STEERING_ROLES.map((role) => ({ value: role, label: role }))}
+						current={featurePromptsStore.chorusRole}
+						onpick={(value) => featurePromptsStore.setChorusRole(value as SteeringRole)}
+						label="Chorus block role"
+					/>
+				</div>
+				<div class="slider-block">
+					<div class="slider-top">
+						<label for="chorus-stale" class="slider-label">Use answers up to</label>
+						<span class="slider-value">
+							{featurePromptsStore.chorusStaleLimit === 0
+								? 'the newest reply only'
+								: `${featurePromptsStore.chorusStaleLimit} ${featurePromptsStore.chorusStaleLimit === 1 ? 'reply' : 'replies'} old`}
+						</span>
+					</div>
+					<input
+						id="chorus-stale"
+						type="range"
+						class="slider"
+						min="0"
+						max={CHORUS_STALE_LIMIT_MAX}
+						step="1"
+						value={featurePromptsStore.chorusStaleLimit}
+						oninput={(e) => featurePromptsStore.setChorusStaleLimit(Number(e.currentTarget.value))}
+					/>
+				</div>
+				<p class="placement-note">
+					At the same depth as a lorebook entry, the answers go first. If you send before the
+					characters have answered the newest reply, the last answers within this range are
+					used instead.
+				</p>
+			</div>
+		</section>
+
+		<section class="card">
+			<div class="card-head">
+				<span class="card-title">Asking</span>
+			</div>
+			<div class="card-body">
+				<div class="toggle-row" use:toggleRow>
+					<span class="slider-label">One character at a time</span>
+					<Toggle
+						checked={featurePromptsStore.chorusSequential}
+						onchange={(v) => featurePromptsStore.setChorusSequential(v)}
+						label="Ask one character at a time"
+					/>
+				</div>
+				<div class="toggle-row" use:toggleRow>
+					<span class="slider-label">Read a reply again after I edit it</span>
+					<Toggle
+						checked={featurePromptsStore.chorusRereadOnEdit}
+						onchange={(v) => featurePromptsStore.setChorusRereadOnEdit(v)}
+						label="Ask the characters again after I edit a reply"
+					/>
+				</div>
+				<div class="toggle-row" use:toggleRow>
+					<span class="slider-label">Read a reply again after Continue extends it</span>
+					<Toggle
+						checked={featurePromptsStore.chorusRereadOnContinue}
+						onchange={(v) => featurePromptsStore.setChorusRereadOnContinue(v)}
+						label="Ask the characters again after Continue extends a reply"
+					/>
+				</div>
+				<p class="placement-note">
+					All at once is faster. One at a time is for connections that refuse several calls at
+					once.
+				</p>
 			</div>
 		</section>
 	{/if}

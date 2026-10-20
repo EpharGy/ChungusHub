@@ -19,6 +19,7 @@ import type { LLMMessage, PromptPostProcessingMode } from '$lib/types/llm';
 import { DEFAULT_PROMPT_PLACEHOLDER } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
 import { steeringScanText, type ResolvedSteeringNote, type SteeringRole } from '$lib/types/steering';
+import type { ChorusPromptInput } from '$lib/chorus/resolve';
 import type { PromptControl, PromptItem, PromptPreset } from '$lib/types/database';
 import type { Lorebook, LorebookGlobalSettings, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
 import { EMPTY_LOREBOOK_TRACE, lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
@@ -109,6 +110,16 @@ export interface AssembleInput {
 	 *  context as everything else in the prompt.
 	 *  `chatMessages` must NOT include the turn; pass the path up to its parent. */
 	rewrite?: { message: Message; note: string };
+	/** Chorus: what the characters on the chat's list want, read after the previous reply
+	 *  (architecture/chorus.md). The caller resolves it through `chorusForPrompt` so the meter
+	 *  and the send carry the same block; assembly only fills the wrapper ({{intentions}} is a
+	 *  call-site key, like {{steering}}) and places it.
+	 *
+	 *  It rides the same depth splice as steering and at-depth lore, and is fixed cost like
+	 *  them: history yields room for it and it is never trimmed. **At a shared slot it goes
+	 *  first, ahead of the lore**, so a reminders section placed at the same depth (which rides
+	 *  as lore) lands after it, closest to the turn being written. */
+	chorus?: ChorusPromptInput;
 	/** Steering: guidance injected into the prompt without ever becoming a chat row. The
 	 *  caller passes the notes that already resolved as active for this chat, with their
 	 *  inherited placement filled in (`resolveSteeringForPrompt`, types/steering.ts).
@@ -344,8 +355,8 @@ function injectedTurns(ctx: SplicedContext): LLMMessage[] {
  * clamped to the front once N runs deeper than the injected chat. Every position is measured
  * against the UNSPLICED sequence and the result rebuilt in one pass, so several splices can't
  * shift each other's target and groups landing on the same slot keep their own order, which is
- * the order the caller built them in: lore first, then steering, so the reader's own direction
- * sits closest to the turn it is steering.
+ * the order the caller built them in: Chorus, then lore, then steering, so the reader's own
+ * direction sits closest to the turn it is steering.
  */
 function placeSplices(injected: LLMMessage[], splices: DepthSplice[] | undefined): LLMMessage[] {
 	if (!splices?.length) return injected;
@@ -483,6 +494,19 @@ function buildSteeringMessages(input: AssembleInput, ctx: MacroContext, model?: 
 	return builds;
 }
 
+/** The Chorus block (see {@link AssembleInput.chorus}) as one splice, or none. Built once,
+ *  like steering, so the splice and the no-preset fallback send and price the same object. */
+function buildChorusSplice(input: AssembleInput, ctx: MacroContext, model?: string): DepthSplice[] {
+	const chorus = input.chorus;
+	if (!chorus || !chorus.intentions.trim()) return [];
+	const content = substitute(chorus.wrapper, {
+		...resolveMacroValues(chorus.wrapper, ctx),
+		intentions: expandMacros(chorus.intentions, ctx)
+	});
+	if (!content.trim()) return [];
+	return [{ message: { role: chorus.role, content }, depth: chorus.depth, tokens: countTokens(content, model) }];
+}
+
 /** The at-depth lorebook groups as splices. Already grouped, expanded and budget-checked by
  *  the engine (`resolveLorebooks`), so this only prices them and gives them their role. */
 function buildLoreSplices(ctx: MacroContext, model?: string): DepthSplice[] {
@@ -568,19 +592,28 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 		// against the bare fallback prompt still has to carry what it carries.
 		let fallbackTail: ActionTail | undefined;
 		let fallbackSteering: DepthSplice[] = [];
-		if (input.continuation || input.rewrite || input.steering) {
+		if (input.continuation || input.rewrite || input.steering || input.chorus) {
 			const fallbackCtx = buildMacroContext(input);
 			fallbackTail =
 				input.continuation || input.rewrite ? actionTail(input, fallbackCtx) : undefined;
-			fallbackSteering = buildSteeringMessages(input, fallbackCtx, input.model);
+			fallbackSteering = [
+				...buildChorusSplice(input, fallbackCtx, input.model),
+				...buildSteeringMessages(input, fallbackCtx, input.model)
+			];
 		}
 		return systemFallback(mode, placeholder, fallbackTail, fallbackSteering);
 	}
 
 	let ctx: SplicedContext = buildMacroContext(input);
-	// Two kinds of turn ride inside the chat, and they share one placement rule. Lore is built
-	// first so that at a shared slot the background sits ahead of the reader's own direction.
-	const splices = [...buildLoreSplices(ctx, input.model), ...buildSteeringMessages(input, ctx, input.model)];
+	// Three kinds of turn ride inside the chat, and they share one placement rule: at a shared
+	// slot the array order decides. Chorus first, then lore, then steering: what the characters
+	// want is background like lore, but anything lore places at the same depth (a reminders
+	// section included) should still land after it, and the reader's own direction last of all.
+	const splices = [
+		...buildChorusSplice(input, ctx, input.model),
+		...buildLoreSplices(ctx, input.model),
+		...buildSteeringMessages(input, ctx, input.model)
+	];
 	// Every group splices into the injected chat, whatever its depth. Carrying them on ctx
 	// (instead of threading them through by hand) means the example-trim and history-trim
 	// re-resolves below (which rebuild ctx and re-run resolveEnabled) carry the splices

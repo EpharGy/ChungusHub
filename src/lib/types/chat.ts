@@ -3,6 +3,13 @@
 import type { LorebookTrace } from '$lib/lorebook/types';
 import type { AmbientConfig } from '$lib/types/ambient';
 import { normalizeAmbientConfig } from '$lib/types/ambient';
+import {
+	defaultChorusChatState,
+	normalizeChorusChatState,
+	normalizeChorusReadings,
+	type ChorusChatState,
+	type ChorusReadings
+} from '$lib/chorus/state';
 import type { BackgroundConfig } from '$lib/types/background';
 import { normalizeBackgroundConfig } from '$lib/types/background';
 
@@ -124,6 +131,13 @@ export interface ChatFeatureState {
 	 *  something else never carries a pin nobody made. Resolved like `connection`: a deleted
 	 *  persona reads as no claim. */
 	persona: string | null;
+	/** The characters this story gives a voice of their own, and whether it does
+	 *  (architecture/chorus.md). The reader's list, written only by the reader. */
+	chorus: ChorusChatState;
+	/** What those characters said after each reply, by the reply's id. Written only by a
+	 *  Chorus run, and kept apart from `chorus` because a patch here merges at the top level:
+	 *  one key for both would let a run finishing mid-rename write back the old roster. */
+	chorusReadings: ChorusReadings;
 	/** The preset this story's prompt is built from, or null to follow the app's active one.
 	 *  A preset is one document, so the claim carries all of it: the items, the controls the
 	 *  macros expand against, the regex rules it ships and its own prompt options. Stamped at
@@ -151,6 +165,8 @@ function defaultChatFeatureState(): ChatFeatureState {
 		scene: null,
 		connection: null,
 		persona: null,
+		chorus: defaultChorusChatState(),
+		chorusReadings: {},
 		preset: null,
 		lorebooks: [],
 		mutedLorebooks: []
@@ -219,6 +235,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		scene: normalizeChatScene(obj.scene),
 		connection: normalizeClaimedId(obj.connection),
 		persona: normalizeClaimedId(obj.persona),
+		chorus: normalizeChorusChatState(obj.chorus),
+		chorusReadings: normalizeChorusReadings(obj.chorusReadings),
 		preset: normalizeClaimedId(obj.preset),
 		lorebooks: normalizeClaimedIds(obj.lorebooks),
 		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks)

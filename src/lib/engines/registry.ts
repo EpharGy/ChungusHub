@@ -25,6 +25,7 @@ export type EngineId =
 	| 'memory'
 	| 'opening-scene'
 	| 'steering'
+	| 'chorus'
 	| 'spellcheck'
 	| 'impersonate'
 	| 'sprites';
@@ -48,7 +49,7 @@ export interface EngineDef {
 	/** Also the engine's `source` label on LLM calls in the prompt debug panel. */
 	id: EngineId;
 	name: string;
-	icon: 'brain' | 'sparkles' | 'compass' | 'checkCircle' | 'mask' | 'image';
+	icon: 'brain' | 'sparkles' | 'compass' | 'checkCircle' | 'mask' | 'image' | 'users';
 	/** One line for the engine's row: what it does, nothing about cost or trigger. */
 	summary: string;
 	/** The tooltip beside the engine's name in the detail view: what it does and when it fires. */
@@ -134,6 +135,33 @@ export const ENGINES: EngineDef[] = [
 		enabled: {
 			get: () => featurePromptsStore.steeringEnabled,
 			set: (value) => featurePromptsStore.setSteeringEnabled(value)
+		}
+	},
+	{
+		id: 'chorus',
+		name: 'Chorus',
+		icon: 'users',
+		summary: 'Gives the characters on a chat’s list wants of their own',
+		description:
+			'After every reply, plays each character on the chat’s Chorus list with the triggered lore and asks what they want right now and what they would do about it. Their answers go into the next prompt for the story model to use as it sees fit. It spends one call per character on every reply, so it is off until you switch it on, and each chat has its own list and switch in the Chorus panel.',
+		makesCalls: true,
+		prompts: [
+			{
+				key: 'chorusAgent',
+				label: 'Character prompt',
+				hint: 'Sent once per character after each reply. {{member}} is the character, {{immediateGoal}}, {{shortTermGoal}} and {{longTermGoal}} are their goals, {{castList}} the others on the list. {{lorebook}} is the triggered lore, and how much story goes with it is yours: {{chatHistoryLast6}} for six turns.',
+				requires: ['{{member}}']
+			},
+			{
+				key: 'chorusWrapper',
+				label: 'Block in the story prompt',
+				hint: 'Wraps the answers before they go into the next story prompt. {{intentions}} is one line per character.',
+				requires: ['{{intentions}}']
+			}
+		],
+		enabled: {
+			get: () => featurePromptsStore.chorusEnabled,
+			set: (value) => featurePromptsStore.setChorusEnabled(value)
 		}
 	},
 	{

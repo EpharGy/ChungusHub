@@ -44,6 +44,7 @@
 	import { db } from '$lib/services/database';
 	import { steeringStore } from '$lib/stores/steering.svelte';
 	import { noteLabel, steeringTargetForChat } from '$lib/types/steering';
+	import { chorusForPrompt } from '$lib/chorus/resolve';
 	import {
 		COMMAND_GROUPS,
 		argSatisfied,
@@ -223,6 +224,22 @@
 		return { notes, wrapper: featurePromptsStore.promptFor('steeringWrapper') };
 	});
 
+	// The meter's Chorus input, through the SAME pure resolver prompt-builder runs over the
+	// chat row, so the meter prices the block a send would inject (prompt-pipeline coupling 8).
+	// Priced against `pricedPath`, the path a send assembles against, so it finds the same
+	// reply's reading the send will.
+	let chorusForMeter = $derived.by(() => {
+		const chatId = chatStore.activeChatId;
+		if (!chatId) return undefined;
+		const state = chatStore.featureState(chatId);
+		return chorusForPrompt(
+			pricedPath,
+			state.chorus,
+			state.chorusReadings,
+			featurePromptsStore.chorusPromptSettings
+		);
+	});
+
 	/**
 	 * The path a send would assemble against: the thread plus the turn about to be added.
 	 *
@@ -281,6 +298,7 @@
 					controls: currentPreset.controls ?? [],
 					customFields: presetControlsStore.valuesFor(currentPreset.id),
 					chatMessages: pricedPath,
+					chorus: chorusForMeter,
 					recall: { text: memoryStore.recall || null, archivedIds: memoryStore.archivedMessageIds },
 					model: promptTarget.model,
 					postProcessing: promptTarget.postProcessing,

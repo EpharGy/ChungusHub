@@ -51,6 +51,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			scene: null,
 			connection: null,
 			persona: null,
+			chorus: { enabled: false, members: [] },
+			chorusReadings: {},
 			preset: null,
 			lorebooks: [],
 			mutedLorebooks: []
@@ -64,6 +66,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			scene: null,
 			connection: null,
 			persona: null,
+			chorus: { enabled: false, members: [] },
+			chorusReadings: {},
 			preset: null,
 			lorebooks: [],
 			mutedLorebooks: []
@@ -86,6 +90,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			scene: null,
 			connection: null,
 			persona: null,
+			chorus: { enabled: false, members: [] },
+			chorusReadings: {},
 			preset: null,
 			lorebooks: [],
 			mutedLorebooks: []

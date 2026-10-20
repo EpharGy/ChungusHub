@@ -13,6 +13,7 @@ import { DEFAULT_EXTRACT_TEMPLATE, DEFAULT_PROMOTE_TEMPLATE } from '$lib/memory/
 import { sanitizeMemoryDefaults } from '$lib/memory/config';
 import type { MemoryConfig } from '$lib/memory/types';
 import { clampSteeringDepth, STEERING_ROLES, type SteeringDefaults, type SteeringRole } from '$lib/types/steering';
+import { CHORUS_STALE_LIMIT_MAX, type ChorusPromptSettings } from '$lib/chorus/resolve';
 
 const SETTINGS_KEY = 'featurePrompts';
 
@@ -23,7 +24,9 @@ export type FeaturePromptKey =
 	| 'steeringWrapper'
 	| 'spellcheck'
 	| 'impersonate'
-	| 'sprites';
+	| 'sprites'
+	| 'chorusAgent'
+	| 'chorusWrapper';
 
 const DEFAULT_OPENING_SCENE_PROMPT = `((OOC: Generate the opening scene. {{idea}}
 
@@ -55,6 +58,34 @@ Reply with only this JSON and nothing else: {"sprite": "<label>"}
 
 {{chatHistoryLast3}}`;
 
+// One call per character on the chat's Chorus list, after every reply. {{lorebook}} is the
+// triggered lore exactly as the story prompt would get it, which is where the cast's sheets
+// live; {{chatHistoryLast6}} is the author's call, like Sprites' three. Goals are asked for
+// only when they move, so an answer without them means unchanged, never cleared.
+const DEFAULT_CHORUS_AGENT_PROMPT = `You are {{member}}, a character in an ongoing story. You are not writing the story. Your job is to say what {{member}} wants at the moment the last message ends on, and what {{member}} would do about it, so the writer can use it.
+
+What the story knows about its world and its people:
+{{lorebook}}
+
+{{member}}'s goals:
+- Immediate: {{immediateGoal}}
+- Short term: {{shortTermGoal}}
+- Long term: {{longTermGoal}}
+
+Also in the story: {{castList}}
+
+The story so far:
+{{chatHistoryLast6}}
+
+Answer as {{member}} would think it, in character. Be specific and decisive, and keep each field to one or two sentences. Reply with only this JSON and nothing else:
+{"want": "<what {{member}} wants right now>", "intends": "<what {{member}} would do or say next>", "goals": {"immediate": "<only if it changed>", "shortTerm": "<only if it changed>", "longTerm": "<only if it changed>"}}
+Leave a goal out of "goals" if it has not changed.`;
+
+// Soft on purpose: the block is material for the writer, never orders. {{intentions}} is one
+// line per character who answered.
+const DEFAULT_CHORUS_WRAPPER_PROMPT = `[What the characters want right now. Use whatever serves the scene: not everyone needs to act, and none of this should be quoted or mentioned outright.
+{{intentions}}]`;
+
 /** Shipped default template per feature: the fallback when the user hasn't overridden it. */
 export const FEATURE_PROMPT_DEFAULTS: Record<FeaturePromptKey, string> = {
 	openingScene: DEFAULT_OPENING_SCENE_PROMPT,
@@ -63,7 +94,9 @@ export const FEATURE_PROMPT_DEFAULTS: Record<FeaturePromptKey, string> = {
 	steeringWrapper: DEFAULT_STEERING_WRAPPER_PROMPT,
 	spellcheck: DEFAULT_SPELLCHECK_PROMPT,
 	impersonate: DEFAULT_IMPERSONATE_PROMPT,
-	sprites: DEFAULT_SPRITES_PROMPT
+	sprites: DEFAULT_SPRITES_PROMPT,
+	chorusAgent: DEFAULT_CHORUS_AGENT_PROMPT,
+	chorusWrapper: DEFAULT_CHORUS_WRAPPER_PROMPT
 };
 
 interface FeaturePromptsState {
@@ -95,6 +128,26 @@ interface FeaturePromptsState {
 	 */
 	spritesRereadOnEdit: boolean;
 	spritesRereadOnContinue: boolean;
+	/** Chorus ships OFF for Sprites' reason, only more so: it spends one call per character on
+	 *  the chat's list after every reply. Each chat also has its own switch, under this one. */
+	chorusEnabled: boolean;
+	/**
+	 * Read a reply again when its text changes under the reading. Unlike Sprites, re-reading
+	 * after an edit ships ON: a picture read from the old text is merely out of date, while
+	 * intentions read from it steer the next reply towards a scene that no longer happened.
+	 * After Continue ships off, for Sprites' reason (a second call on a turn already paid for).
+	 */
+	chorusRereadOnEdit: boolean;
+	chorusRereadOnContinue: boolean;
+	/** Where the block goes. Steering's placement vocabulary, but its own values: the two are
+	 *  different things the reader may well want in different places. */
+	chorusDepth: number;
+	chorusRole: SteeringRole;
+	/** One character after another instead of all at once, for endpoints that rate-limit
+	 *  concurrent calls. */
+	chorusSequential: boolean;
+	/** How many replies back a reading may still be used (chorus/resolve.ts `readingFor`). */
+	chorusStaleLimit: number;
 	/** The placement every steering note inherits until it overrides one (a note's own
 	 *  `depth`/`role` are tri-state, `null` = inherit; see types/steering.ts). */
 	steeringDefaultDepth: number;
@@ -112,6 +165,10 @@ interface FeaturePromptsState {
 	memoryDefaults: Partial<MemoryConfig>;
 }
 
+function clampChorusStaleLimit(value: number): number {
+	return Number.isFinite(value) ? Math.min(CHORUS_STALE_LIMIT_MAX, Math.max(0, Math.round(value))) : 1;
+}
+
 function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsState {
 	return {
 		overrides: raw?.overrides ?? {},
@@ -123,6 +180,15 @@ function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsStat
 		spritesEnabled: raw?.spritesEnabled ?? false,
 		spritesRereadOnEdit: raw?.spritesRereadOnEdit ?? false,
 		spritesRereadOnContinue: raw?.spritesRereadOnContinue ?? false,
+		chorusEnabled: raw?.chorusEnabled === true,
+		chorusRereadOnEdit: raw?.chorusRereadOnEdit ?? true,
+		chorusRereadOnContinue: raw?.chorusRereadOnContinue === true,
+		chorusDepth: clampSteeringDepth(raw?.chorusDepth ?? 0),
+		chorusRole: STEERING_ROLES.includes(raw?.chorusRole as SteeringRole)
+			? (raw?.chorusRole as SteeringRole)
+			: 'system',
+		chorusSequential: raw?.chorusSequential === true,
+		chorusStaleLimit: clampChorusStaleLimit(raw?.chorusStaleLimit ?? 1),
 		steeringDefaultDepth: clampSteeringDepth(raw?.steeringDefaultDepth ?? 0),
 		steeringDefaultRole: STEERING_ROLES.includes(raw?.steeringDefaultRole as SteeringRole)
 			? (raw?.steeringDefaultRole as SteeringRole)
@@ -142,6 +208,13 @@ class FeaturePromptsStore {
 		spritesEnabled: false,
 		spritesRereadOnEdit: false,
 		spritesRereadOnContinue: false,
+		chorusEnabled: false,
+		chorusRereadOnEdit: true,
+		chorusRereadOnContinue: false,
+		chorusDepth: 0,
+		chorusRole: 'system',
+		chorusSequential: false,
+		chorusStaleLimit: 1,
 		steeringDefaultDepth: 0,
 		steeringDefaultRole: 'system',
 		memoryDefaults: {}
@@ -204,6 +277,46 @@ class FeaturePromptsStore {
 
 	get spritesRereadOnContinue(): boolean {
 		return this.state.spritesRereadOnContinue;
+	}
+
+	get chorusEnabled(): boolean {
+		return this.state.chorusEnabled;
+	}
+
+	get chorusRereadOnEdit(): boolean {
+		return this.state.chorusRereadOnEdit;
+	}
+
+	get chorusRereadOnContinue(): boolean {
+		return this.state.chorusRereadOnContinue;
+	}
+
+	get chorusDepth(): number {
+		return this.state.chorusDepth;
+	}
+
+	get chorusRole(): SteeringRole {
+		return this.state.chorusRole;
+	}
+
+	get chorusSequential(): boolean {
+		return this.state.chorusSequential;
+	}
+
+	get chorusStaleLimit(): number {
+		return this.state.chorusStaleLimit;
+	}
+
+	/** Everything `chorusForPrompt` needs from here, in one object, so the send and the meter
+	 *  cannot hand it two different halves. */
+	get chorusPromptSettings(): ChorusPromptSettings {
+		return {
+			enabled: this.state.chorusEnabled,
+			wrapper: this.promptFor('chorusWrapper'),
+			depth: this.state.chorusDepth,
+			role: this.state.chorusRole,
+			staleLimit: this.state.chorusStaleLimit
+		};
 	}
 
 	/** The effective template for a feature: the user's override or the shipped default. */
@@ -289,6 +402,41 @@ class FeaturePromptsStore {
 
 	setSpritesRereadOnContinue(value: boolean): void {
 		this.state = { ...this.state, spritesRereadOnContinue: value };
+		this.persist();
+	}
+
+	setChorusEnabled(value: boolean): void {
+		this.state = { ...this.state, chorusEnabled: value };
+		this.persist();
+	}
+
+	setChorusRereadOnEdit(value: boolean): void {
+		this.state = { ...this.state, chorusRereadOnEdit: value };
+		this.persist();
+	}
+
+	setChorusRereadOnContinue(value: boolean): void {
+		this.state = { ...this.state, chorusRereadOnContinue: value };
+		this.persist();
+	}
+
+	setChorusDepth(value: number): void {
+		this.state = { ...this.state, chorusDepth: clampSteeringDepth(value) };
+		this.persist();
+	}
+
+	setChorusRole(value: SteeringRole): void {
+		this.state = { ...this.state, chorusRole: value };
+		this.persist();
+	}
+
+	setChorusSequential(value: boolean): void {
+		this.state = { ...this.state, chorusSequential: value };
+		this.persist();
+	}
+
+	setChorusStaleLimit(value: number): void {
+		this.state = { ...this.state, chorusStaleLimit: clampChorusStaleLimit(value) };
 		this.persist();
 	}
 }

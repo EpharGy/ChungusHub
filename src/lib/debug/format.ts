@@ -22,6 +22,7 @@ const SOURCE_COLORS: Record<EngineId | 'chat' | 'assistant' | 'continue' | 'rewr
 	memory: '#a855f7',
 	assistant: '#3b82f6',
 	steering: '#6366f1',
+	chorus: '#84cc16',
 	spellcheck: '#06b6d4',
 	impersonate: '#f43f5e',
 	sprites: '#eab308'
