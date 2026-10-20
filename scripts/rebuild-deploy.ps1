@@ -135,7 +135,10 @@ $Topics = @(
     # Keeps the editor header's lorebook popover inside the screen on a phone. Stands alone.
     'fix/lorebook-popover-edge',
     # Turns Chat Memory on in every new chat when Settings asks for it. Stands alone.
-    'feature/memory-new-chats'
+    'feature/memory-new-chats',
+    # Per-character wants, read after each reply and spliced into the next prompt. Its
+    # panel consumes the floating shell, so it must stay below feature/floating-window.
+    'feature/chorus'
 )
 
 # Topics that exist on this machine and the NAS ONLY, merged ON TOP OF `deploy` to make
