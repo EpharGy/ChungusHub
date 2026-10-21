@@ -82,9 +82,11 @@ Answer as {{member}} would think it, in character. Be specific and decisive, and
 Leave a goal out of "goals" if it has not changed.`;
 
 // Soft on purpose: the block is material for the writer, never orders. {{intentions}} is one
-// line per character who answered.
-const DEFAULT_CHORUS_WRAPPER_PROMPT = `[What the characters want right now. Use whatever serves the scene: not everyone needs to act, and none of this should be quoted or mentioned outright.
-{{intentions}}]`;
+// labelled entry per character who answered.
+const DEFAULT_CHORUS_WRAPPER_PROMPT = `<Character_Intents>
+What the characters want as of the last response. Use whatever serves the scene: not everyone needs to act, and none of this should be quoted or mentioned outright.
+{{intentions}}
+</Character_Intents>`;
 
 /** Shipped default template per feature: the fallback when the user hasn't overridden it. */
 export const FEATURE_PROMPT_DEFAULTS: Record<FeaturePromptKey, string> = {
