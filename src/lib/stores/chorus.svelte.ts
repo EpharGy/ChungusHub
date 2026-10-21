@@ -23,10 +23,13 @@ import { chatStore } from '$lib/stores/chat.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import { registerFloatingPanel } from '$lib/stores/floating-panels.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
+import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { askChorusMember, chorusContext } from '$lib/services/chorusService';
-import { effectiveGoals } from '$lib/chorus/resolve';
+import { effectiveGoals, effectiveStaleLimit, readingFor, repliesUntilRead } from '$lib/chorus/resolve';
+import { splitByPresence } from '$lib/chorus/presence';
 import {
 	CHORUS_MAX_MEMBERS,
+	clampPresentDepth,
 	clearReading,
 	defaultChorusChatState,
 	makeChorusMember,
@@ -41,8 +44,9 @@ import {
 } from '$lib/chorus/state';
 import type { Message } from '$lib/types/chat';
 
-/** What the engine is doing about the newest reply, in one word. Sprites' vocabulary. */
-export type ChorusStatus = 'read' | 'reading' | 'failed' | 'idle';
+/** What the engine is doing about the newest reply, in one word. Sprites' vocabulary, plus
+ *  `between` for a reply the schedule does not read (Settings → Engines → Chorus). */
+export type ChorusStatus = 'read' | 'reading' | 'failed' | 'idle' | 'between';
 
 /** Per device: whether the panel was left standing. A plain flag, since the panel follows
  *  whichever chat is open rather than belonging to one. */
@@ -121,6 +125,19 @@ class ChorusStore {
 		return reply ? (this.readings[reply.id] ?? null) : null;
 	});
 
+	/** The reading the next prompt would use: the newest reply's own, or between scheduled
+	 *  reads the last one within reach. What the panel shows, so it shows what is being sent. */
+	currentReading = $derived.by((): ChorusReading | null => {
+		const settings = featurePromptsStore.chorusPromptSettings;
+		return readingFor(this.path, this.readings, effectiveStaleLimit(settings))?.reading ?? null;
+	});
+
+	/** Replies until the next scheduled read; 0 when the newest reply is one. */
+	repliesUntilRead = $derived.by((): number => {
+		const reply = this.newestReply;
+		return reply ? repliesUntilRead(this.path, reply.id, featurePromptsStore.chorusEvery) : 0;
+	});
+
 	/** Whether this chat would run at all: both switches on and somebody to run. */
 	active = $derived(
 		featurePromptsStore.chorusEnabled &&
@@ -135,7 +152,8 @@ class ChorusStore {
 		if (this.failed.get(reply.id) === reply.content) return 'failed';
 		const reading = this.readings[reply.id];
 		if (reading?.members.some((m) => m.error)) return 'failed';
-		return reading ? 'read' : 'idle';
+		if (reading) return 'read';
+		return this.repliesUntilRead > 0 ? 'between' : 'idle';
 	});
 
 	/** A member's goals as of the branch on screen (chorus/resolve.ts `effectiveGoals`). */
@@ -143,9 +161,14 @@ class ChorusStore {
 		return effectiveGoals(member, this.path, this.readings);
 	}
 
-	/** What a member said about the newest reply, if anything. */
+	/** What a member said in the reading the next prompt uses, if anything. */
 	answerFor(memberId: string): ChorusMemberReading | null {
-		return this.newestReading?.members.find((m) => m.memberId === memberId) ?? null;
+		return this.currentReading?.members.find((m) => m.memberId === memberId) ?? null;
+	}
+
+	/** Whether that reading left the member out for not being in the scene. */
+	wasSkipped(memberId: string): boolean {
+		return this.currentReading?.skipped?.includes(memberId) ?? false;
 	}
 
 	// ===== The window =====
@@ -185,6 +208,14 @@ class ChorusStore {
 
 	setChatEnabled(enabled: boolean): Promise<void> {
 		return this.editRoster((state) => ({ ...state, enabled }));
+	}
+
+	setPresentOnly(presentOnly: boolean): Promise<void> {
+		return this.editRoster((state) => ({ ...state, presentOnly }));
+	}
+
+	setPresentDepth(depth: number): Promise<void> {
+		return this.editRoster((state) => ({ ...state, presentDepth: clampPresentDepth(depth) }));
 	}
 
 	/** Add a character by name. The name is what their lorebook entry fires on, so it is kept
@@ -269,12 +300,16 @@ class ChorusStore {
 	 * Never while a reply is streaming. The newest reply on the path is then the one BEFORE the
 	 * stream, already read, so nothing would start anyway; the check makes that a rule rather
 	 * than a coincidence of what the path holds mid-stream.
+	 *
+	 * A reply between scheduled reads is left alone unless `force`d, which is the run button:
+	 * asking by hand is always the reader's call.
 	 */
-	ensureRead(): void {
+	ensureRead(force = false): void {
 		if (!this.active || chatStore.stream !== null) return;
 		const reply = this.newestReply;
 		const chatId = this.chatId;
 		if (!reply || !chatId) return;
+		if (!force && this.repliesUntilRead > 0) return;
 		if (this.readings[reply.id]) return;
 		if (this.inFlight.has(reply.id)) return;
 		if (this.failed.get(reply.id) === reply.content) return;
@@ -295,7 +330,7 @@ class ChorusStore {
 		if (!reply || !chatId) return;
 		this.failed.delete(reply.id);
 		if (this.readings[reply.id]) await this.writeReadings(chatId, (r) => clearReading(r, reply.id));
-		this.ensureRead();
+		this.ensureRead(true);
 	}
 
 	/**
@@ -326,6 +361,15 @@ class ChorusStore {
 			const state = this.state;
 			const readings = this.readings;
 			const members = state.members.filter((m) => m.enabled);
+			// Present-only asks the members the last few messages name, matched as their
+			// lorebook entries are (chorus/presence.ts). The rest are not called at all.
+			const { present, absent } = state.presentOnly
+				? splitByPresence(
+						members,
+						messages.slice(-state.presentDepth).map((m) => m.content),
+						lorebookSettingsStore.settings
+					)
+				: { present: members, absent: [] };
 			const ctx = chorusContext(messages);
 
 			const askOne = async (member: ChorusMember): Promise<ChorusMemberReading> => {
@@ -349,13 +393,13 @@ class ChorusStore {
 			let answers: ChorusMemberReading[];
 			if (featurePromptsStore.chorusSequential) {
 				answers = [];
-				for (const member of members) answers.push(await askOne(member));
+				for (const member of present) answers.push(await askOne(member));
 			} else {
-				answers = await Promise.all(members.map(askOne));
+				answers = await Promise.all(present.map(askOne));
 			}
 
 			const failures = answers.filter((a) => a.error);
-			if (failures.length === answers.length) {
+			if (answers.length > 0 && failures.length === answers.length) {
 				// Nothing to store: a reading of nothing but errors would inject nothing and
 				// still count as read, so the reply would never be tried again on its own.
 				this.failed.set(reply.id, reply.content);
@@ -370,6 +414,7 @@ class ChorusStore {
 
 			const live = (chatStore.currentChatState?.allMessages ?? []).map((m) => m.id);
 			const reading: ChorusReading = { at: Date.now(), members: answers };
+			if (absent.length) reading.skipped = absent.map((m) => m.id);
 			await this.writeReadings(chatId, (r) => putReading(r, reply.id, reading, live));
 		} catch (e) {
 			this.failed.set(reply.id, reply.content);

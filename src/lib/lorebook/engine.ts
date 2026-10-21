@@ -108,7 +108,7 @@ function escapeRegExp(s: string): string {
 }
 
 /** A key ready to run: text in, the hit's position out. */
-type Matcher = (text: string) => { at: number; length: number } | null;
+export type Matcher = (text: string) => { at: number; length: number } | null;
 
 /** Word characters, the boundary every mode but `substring` is defined against. */
 const WORD_CHAR = '[\\p{L}\\p{N}_]';
@@ -122,7 +122,7 @@ const WORD_CHAR = '[\\p{L}\\p{N}_]';
  * Compiled once per key per pass, so the `g`/`y` flags are stripped: they would carry
  * `lastIndex` from one source into the next and start losing matches.
  */
-function compileKey(key: string, match: ResolvedKeyMatch): Matcher | null {
+export function compileKey(key: string, match: ResolvedKeyMatch): Matcher | null {
 	const needle = key.trim();
 	if (!needle) return null;
 

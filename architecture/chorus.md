@@ -44,7 +44,20 @@ Normalization follows the rest of the feature state: corrupt or missing data deg
 - **An agent knows what the story model knows and nothing more.** A member's name is the name their entry fires on, so if they have not come up, their entry has not fired, and the story model does not have their sheet either. A per-member pinned sheet was considered and dropped, because it would give an agent information the writer lacks.
 - **Answers are JSON**, read through the app's shared `parseJsonObject`, never a copy of another tolerance. [`chorus/answer.ts`](../src/lib/chorus/answer.ts) turns one reply into `{ want, intends, goals }`. A goal the agent leaves out keeps its given value: the template asks for a replacement only when a goal needs one, so silence means still current, never cleared. What "needs one" means is spelled out (never set, reached, given up, overtaken), and each goal is labelled with its horizon: asked only for "changed" goals, a model reads an empty goal, or one already reached, as unchanged and keeps it for good.
 - **Calls run in parallel** by default, or one after another (`chorusSequential`) for endpoints that refuse concurrent calls.
+- **The shared part of the agent prompt comes first.** The lore and the history are most of every call and identical for every member, so the shipped template puts them ahead of anything about the member. A provider that caches a repeated opening then bills them once per run. That only pays when the calls are sequential: parallel calls all start before the first can be cached. A template that opens with `{{member}}` defeats it.
 - **Failure:** a member whose call fails or ignores the format is stored with an `error` and left out of the block. If every member fails, nothing is stored and the reply is guarded against retrying on every render by its content, Sprites' rule, so an edited reply is a new question. The panel's run button clears the guard.
+
+## Fewer calls
+
+Two switches cut what a run spends without changing what an answer is.
+
+**Only characters in the scene** (per chat, `presentOnly` and `presentDepth` on the roster). A run asks only the members named in the last `presentDepth` messages, the read reply included (default 4). The test is a lorebook key's ([`chorus/presence.ts`](../src/lib/chorus/presence.ts)): the name goes through `resolveKeyMatch` and the lore engine's own `compileKey`, under the reader's global case and whole-word settings, so a member counts as present exactly when a key spelled like their name would fire. The window is deliberately narrower than a lore scan depth. Lore asks whether something has come up; presence asks who is in the scene.
+
+The members left out are recorded on the reading (`skipped`), not asked, and absent from the block it feeds. Their goals carry on from their own last answer, because `effectiveGoals` walks back to the newest reading that has them. A reading that skipped everyone still counts as a read, so it is stored with no answers rather than dropped, which would leave the reply unread and re-run it on every render.
+
+**Ask every N replies** (app-wide, `chorusEvery`, default 1). A reply is read when its position among the assistant turns on its path is 1, 1+N, 1+2N and so on (`repliesUntilRead`). Position rather than a counter, so a swipe or a regenerate is read exactly when the reply it replaced was. The panel's run button reads a reply between scheduled reads anyway.
+
+Between reads the last reading keeps feeding the prompt. `effectiveStaleLimit` widens the reach by the replies the schedule skips (`chorusStaleLimit + chorusEvery - 1`), so the stale limit keeps meaning "this many replies past the last one that was due to be read". The panel shows that same reading (`currentReading`), so what it shows is what is being sent.
 
 ## Goals
 
@@ -72,9 +85,9 @@ Every reading stores the member's **full** goal set after that turn, not only wh
 
 | What | Where |
 |---|---|
-| Engine switch, both templates, placement, stale limit, sequential, re-read toggles | Settings → Engines → Chorus (`featurePromptsStore`, `EngineDetail.svelte`) |
+| Engine switch, both templates, placement, stale limit, ask every N, sequential, re-read toggles | Settings → Engines → Chorus (`featurePromptsStore`, `EngineDetail.svelte`) |
 | The model it runs on | Connections → Model routing. A calling engine is a routing point automatically |
-| Roster, goals, pins, the latest answers, run again | The Chorus floating panel, raised from the title bar (`registerFloatingPanel`, order 50) |
+| Roster, goals, pins, only-in-the-scene and its window, the latest answers, run again | The Chorus floating panel, raised from the title bar (`registerFloatingPanel`, order 50) |
 | The block as sent | The prompt debug panel and the review dialog. It never becomes a chat row |
 
 **Re-reading after a rewrite is the caller's decision**, exactly as for Sprites. `messageStore` clears the reading on an edit (`chorusRereadOnEdit`, which ships **on**, unlike Sprites: intentions read from old text steer the next reply towards a scene that is gone) and after Continue (`chorusRereadOnContinue`, off). A minor edit and `create_branch` are exempt for Sprites' reasons.
@@ -87,4 +100,5 @@ The engine ships **off**: it spends one call per listed character on every reply
 2. The splice order in `assemblePrompt` (`[chorus, lore, steering]`) is what keeps a same-depth reminders section closest to the reply. Reordering it changes what every chat's model reads last.
 3. `ChatFeatureState`'s two keys must keep separate writers. Merging them into one object brings back the lost-rename race.
 4. The run's lore trace must never be stored on a turn (see A run).
-5. This branch carries its own copy of the floating-window shell commits, like the other floating panels on this fork, and is not meant for upstream while that shell is not upstream.
+5. Presence matching is the lore engine's (`compileKey`, exported for it). A change to how a key matches changes who Chorus asks, and that is intended: a member is asked exactly when their entry would fire.
+6. This branch carries its own copy of the floating-window shell commits, like the other floating panels on this fork, and is not meant for upstream while that shell is not upstream.

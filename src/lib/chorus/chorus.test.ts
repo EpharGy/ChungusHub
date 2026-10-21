@@ -19,7 +19,16 @@ import {
 	type ChorusReading,
 	type ChorusReadings
 } from './state';
-import { chorusForPrompt, effectiveGoals, readingFor, renderIntentions, type ChorusPromptSettings } from './resolve';
+import {
+	chorusForPrompt,
+	effectiveGoals,
+	effectiveStaleLimit,
+	readingFor,
+	renderIntentions,
+	repliesUntilRead,
+	type ChorusPromptSettings
+} from './resolve';
+import { namedIn, splitByPresence } from './presence';
 import { parseChorusAnswer } from './answer';
 import { assemblePrompt, type AssembleInput } from '$lib/utils/prompt-assembly';
 import { normalizeChatFeatureState } from '$lib/types/chat';
@@ -61,18 +70,24 @@ const SETTINGS: ChorusPromptSettings = {
 	wrapper: '[Wants: {{intentions}}]',
 	depth: 0,
 	role: 'system',
-	staleLimit: 1
+	staleLimit: 1,
+	every: 1
 };
 
 describe('chorus state', () => {
 	test('a blob from before Chorus existed reads as off with nobody on it, and no readings', () => {
 		const fs = normalizeChatFeatureState({ steeringHistory: [] });
-		expect(fs.chorus).toEqual({ enabled: false, members: [] });
+		expect(fs.chorus).toEqual({ enabled: false, members: [], presentOnly: false, presentDepth: 4 });
 		expect(fs.chorusReadings).toEqual({});
 	});
 
 	test('the roster round-trips through the feature-state normalizer', () => {
-		const state: ChorusChatState = { enabled: true, members: [member('a', 'Rowan')] };
+		const state: ChorusChatState = {
+			enabled: true,
+			members: [member('a', 'Rowan')],
+			presentOnly: true,
+			presentDepth: 6
+		};
 		const fs = normalizeChatFeatureState(JSON.stringify({ chorus: state }));
 		expect(fs.chorus).toEqual(state);
 	});
@@ -215,7 +230,9 @@ describe('chorus: goals across a branched path', () => {
 describe('chorus: the block', () => {
 	const state: ChorusChatState = {
 		enabled: true,
-		members: [member('x', 'Rowan'), member('y', 'Tamsin'), member('z', 'Corvin', { enabled: false })]
+		members: [member('x', 'Rowan'), member('y', 'Tamsin'), member('z', 'Corvin', { enabled: false })],
+		presentOnly: false,
+		presentDepth: 4
 	};
 
 	test('one line per answering member, in roster order; muted and failed members are left out', () => {
@@ -354,5 +371,77 @@ describe('chorus: in the assembled prompt', () => {
 	test('blank intentions inject nothing', () => {
 		const a = assemblePrompt(input({ chorus: { ...CHORUS, intentions: '   ' } }));
 		expect(a.messages.some((m) => m.content.includes('Wants'))).toBe(false);
+	});
+});
+
+describe('chorus: only characters in the scene', () => {
+	const LORE_DEFAULTS = { caseSensitive: false, matchWholeWords: true };
+
+	test('a name counts the way a lorebook key does: whole word, any case', () => {
+		expect(namedIn('Rowan', ['rowan shuts the door.'], LORE_DEFAULTS)).toBe(true);
+		expect(namedIn('Rowan', ['The rowanberries are ripe.'], LORE_DEFAULTS)).toBe(false);
+		expect(namedIn('Rowan', ['ROWAN!'], { caseSensitive: true, matchWholeWords: true })).toBe(false);
+	});
+
+	test('a two-word name matches as a phrase', () => {
+		expect(namedIn('Tamsin Vale', ['and then Tamsin Vale arrived'], LORE_DEFAULTS)).toBe(true);
+		expect(namedIn('Tamsin Vale', ['Tamsin arrived'], LORE_DEFAULTS)).toBe(false);
+	});
+
+	test('members split by whether the window names them, roster order kept', () => {
+		const members = [member('x', 'Rowan'), member('y', 'Tamsin'), member('z', 'Corvin')];
+		const { present, absent } = splitByPresence(members, ['Corvin waves.', 'Rowan nods.'], LORE_DEFAULTS);
+		expect(present.map((m) => m.name)).toEqual(['Rowan', 'Corvin']);
+		expect(absent.map((m) => m.name)).toEqual(['Tamsin']);
+	});
+
+	test('a read that skipped everyone is still a read, and keeps who it skipped', () => {
+		const r = normalizeChorusReadings({ a1: { at: 1, members: [], skipped: ['x', 'y'] } });
+		expect(r.a1).toEqual({ at: 1, members: [], skipped: ['x', 'y'] });
+		expect(normalizeChorusReadings({ a1: { at: 1, members: [] } })).toEqual({});
+	});
+
+	test('a skipped member is left out of the block and keeps the goals of their own last answer', () => {
+		const rowan = member('x', 'Rowan');
+		const state: ChorusChatState = { enabled: true, members: [rowan, member('y', 'Tamsin')], presentOnly: true, presentDepth: 4 };
+		const readings: ChorusReadings = {
+			a1: reading(1, [said('x', 'Rowan', { goals: { immediate: 'earlier', shortTerm: '', longTerm: '' } })]),
+			a2: { at: 2, members: [said('y', 'Tamsin')], skipped: ['x'] }
+		};
+		expect(renderIntentions(readings.a2, state)).not.toContain('Rowan');
+		const path = [msg('a1', 'assistant'), msg('a2', 'assistant')];
+		expect(effectiveGoals(rowan, path, readings).immediate).toBe('earlier');
+	});
+
+	test('the depth is clamped to a sane window', () => {
+		expect(normalizeChorusChatState({ presentDepth: 0 }).presentDepth).toBe(1);
+		expect(normalizeChorusChatState({ presentDepth: 999 }).presentDepth).toBe(25);
+		expect(normalizeChorusChatState({ presentDepth: 'x' }).presentDepth).toBe(4);
+	});
+});
+
+describe('chorus: asking every few replies', () => {
+	const path = ['a1', 'u2', 'a3', 'u4', 'a5', 'u6', 'a7'].map((id) => msg(id, id[0] === 'a' ? 'assistant' : 'user'));
+
+	test('every reply is read at 1', () => {
+		for (const id of ['a1', 'a3', 'a5', 'a7']) expect(repliesUntilRead(path, id, 1)).toBe(0);
+	});
+
+	test('the first reply is read, then every n-th after it', () => {
+		expect(['a1', 'a3', 'a5', 'a7'].map((id) => repliesUntilRead(path, id, 3))).toEqual([0, 2, 1, 0]);
+	});
+
+	test('the reach back grows by the replies the schedule skips', () => {
+		expect(effectiveStaleLimit({ staleLimit: 1, every: 1 })).toBe(1);
+		expect(effectiveStaleLimit({ staleLimit: 1, every: 3 })).toBe(3);
+		expect(effectiveStaleLimit({ staleLimit: 0, every: 3 })).toBe(2);
+	});
+
+	test('between reads, the last read reply still feeds the prompt', () => {
+		const state: ChorusChatState = { enabled: true, members: [member('x', 'Rowan')], presentOnly: false, presentDepth: 4 };
+		const readings: ChorusReadings = { a1: reading(1, [said('x', 'Rowan')]) };
+		const send = [...path.slice(0, 5), msg('u6', 'user', '.')];
+		expect(chorusForPrompt(send, state, readings, SETTINGS)).toBeUndefined();
+		expect(chorusForPrompt(send, state, readings, { ...SETTINGS, every: 3 })?.intentions).toContain('Rowan');
 	});
 });

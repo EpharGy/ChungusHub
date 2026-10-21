@@ -15,7 +15,12 @@
 	import { chorusStore } from '$lib/stores/chorus.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
-	import { CHORUS_GOAL_KEYS, CHORUS_MAX_MEMBERS, type ChorusGoalKey } from '$lib/chorus/state';
+	import {
+		CHORUS_GOAL_KEYS,
+		CHORUS_MAX_MEMBERS,
+		CHORUS_PRESENT_DEPTH_MAX,
+		type ChorusGoalKey
+	} from '$lib/chorus/state';
 
 	let chat = $derived(chatStore.currentChatState?.chat ?? null);
 	let engineOn = $derived(featurePromptsStore.chorusEnabled);
@@ -42,6 +47,13 @@
 		if (!roster.enabled) return 'Off in this chat.';
 		if (!roster.members.some((m) => m.enabled)) return 'Add a character, or switch one on, to start.';
 		if (!chorusStore.newestReply) return 'Waiting for a reply to read.';
+		if (status === 'between') {
+			const n = chorusStore.repliesUntilRead;
+			const next = n === 1 ? 'the next reply' : `${n} replies from now`;
+			return chorusStore.currentReading
+				? `Not asking about this reply. The last answers still go in, and the characters are asked again after ${next}.`
+				: `Not asking about this reply. The characters are asked again after ${next}.`;
+		}
 		return {
 			read: 'Read the newest reply. Their answers go into the next one.',
 			reading: 'Asking the characters about the newest reply…',
@@ -104,6 +116,31 @@
 						</span>
 					</span>
 				</label>
+
+				<div class="ch-switch ch-switch--sub">
+					<Toggle
+						checked={roster.presentOnly}
+						onchange={(v) => void chorusStore.setPresentOnly(v)}
+						size="sm"
+						label="Only ask characters in the scene"
+					/>
+					<span class="ch-switch-text">
+						<span class="ch-name">Only characters in the scene</span>
+						<span class="ch-dim">
+							Ask only the characters named in the last
+							<input
+								class="ch-numinput"
+								type="number"
+								min="1"
+								max={CHORUS_PRESENT_DEPTH_MAX}
+								value={roster.presentDepth}
+								onchange={(e) => void chorusStore.setPresentDepth(Number(e.currentTarget.value))}
+								aria-label="How many messages back to look for a character's name"
+							/>
+							messages, matched the way lorebook keys are. The others sit this one out.
+						</span>
+					</span>
+				</div>
 
 				<p class="ch-status" class:is-failed={running && status === 'failed'} role="status">
 					{#if running && status === 'reading'}<span class="ch-pulse" aria-hidden="true"></span>{/if}
@@ -169,7 +206,9 @@
 								</button>
 							</div>
 
-							{#if member.enabled && answer}
+							{#if member.enabled && chorusStore.wasSkipped(member.id)}
+								<p class="ch-dim ch-answer-note">Not in the scene, so not asked.</p>
+							{:else if member.enabled && answer}
 								{#if answer.error}
 									<p class="ch-answer ch-answer--error">Did not answer: {answer.error}</p>
 								{:else}
@@ -231,7 +270,7 @@
 
 				<p class="ch-dim ch-foot">
 					Typing a goal pins it. Unpin a goal to let the character's own answers move it.
-					Each character is one call on every reply.
+					Each character asked is one call.
 				</p>
 			{/if}
 		</div>
@@ -280,6 +319,37 @@
 		gap: 0.55rem;
 		margin-bottom: 0.6rem;
 		cursor: pointer;
+	}
+
+	/* The scene switch is a setting OF the chat switch above it, so it sits indented under it
+	   rather than as a peer. A div rather than a label: it holds its own number field, and a
+	   label wrapping both would hand every click on the field to the toggle. */
+	.ch-switch--sub {
+		margin-left: 1.2rem;
+		cursor: default;
+	}
+
+	.ch-numinput {
+		width: 2.8rem;
+		margin: 0 0.15rem;
+		padding: 0 0.25rem;
+		border: 1px solid color-mix(in srgb, var(--color-border-subtle) 80%, transparent);
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--color-text-primary);
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+	}
+
+	.ch-numinput:focus {
+		outline: none;
+		border-color: var(--color-accent);
+	}
+
+	.ch-answer-note {
+		margin: 0;
+		padding-left: 0.6rem;
+		border-left: 2px solid color-mix(in srgb, var(--color-border-subtle) 80%, transparent);
 	}
 
 	.ch-switch-text {

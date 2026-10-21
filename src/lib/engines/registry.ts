@@ -143,7 +143,7 @@ export const ENGINES: EngineDef[] = [
 		icon: 'users',
 		summary: 'Gives the characters on a chat’s list wants of their own',
 		description:
-			'After every reply, plays each character on the chat’s Chorus list with the triggered lore and asks what they want right now and what they would do about it. Their answers go into the next prompt for the story model to use as it sees fit. It spends one call per character on every reply, so it is off until you switch it on, and each chat has its own list and switch in the Chorus panel.',
+			'After every reply, plays each character on the chat’s Chorus list with the triggered lore and asks what they want right now and what they would do about it. Their answers go into the next prompt for the story model to use as it sees fit. It spends one call per character it asks, so it is off until you switch it on. Each chat has its own list and switches in the Chorus panel, and it can ask only the characters in the scene, or only every few replies.',
 		makesCalls: true,
 		prompts: [
 			{

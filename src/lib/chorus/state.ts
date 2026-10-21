@@ -49,6 +49,11 @@ export interface ChorusChatState {
 	 *  switch is a separate gate above it. */
 	enabled: boolean;
 	members: ChorusMember[];
+	/** Ask only the members named in the last `presentDepth` messages (chorus/presence.ts).
+	 *  Off asks everyone switched on, on every read. */
+	presentOnly: boolean;
+	/** How many messages back, the reply being read included, a name counts as present. */
+	presentDepth: number;
 }
 
 /** One member's answer, as stored. */
@@ -70,6 +75,10 @@ export interface ChorusMemberReading {
 export interface ChorusReading {
 	at: number;
 	members: ChorusMemberReading[];
+	/** Members left out of this read because nothing recent named them. Not asked, so not
+	 *  billed, and absent from the prompt it feeds; their goals carry on from their own last
+	 *  answer. Recorded so the panel can say why rather than showing them as silent. */
+	skipped?: string[];
 }
 
 /** The readings slice (`ChatFeatureState.chorusReadings`), by the id of the reply read. */
@@ -77,6 +86,12 @@ export type ChorusReadings = Record<string, ChorusReading>;
 
 /** A roster longer than this is a cost nobody meant: every member is a call per reply. */
 export const CHORUS_MAX_MEMBERS = 8;
+
+/** The present-only window. Narrower than a lorebook's scan depth by default on purpose: lore
+ *  asks "has this come up", presence asks "is this person in the scene", and a scene is the
+ *  last couple of exchanges, not the last twenty-five messages. */
+export const CHORUS_PRESENT_DEPTH_DEFAULT = 4;
+export const CHORUS_PRESENT_DEPTH_MAX = 25;
 
 /**
  * How many readings one chat keeps.
@@ -108,7 +123,13 @@ function noPins(): Record<ChorusGoalKey, boolean> {
 }
 
 export function defaultChorusChatState(): ChorusChatState {
-	return { enabled: false, members: [] };
+	return { enabled: false, members: [], presentOnly: false, presentDepth: CHORUS_PRESENT_DEPTH_DEFAULT };
+}
+
+export function clampPresentDepth(value: unknown): number {
+	return typeof value === 'number' && Number.isFinite(value)
+		? Math.min(CHORUS_PRESENT_DEPTH_MAX, Math.max(1, Math.round(value)))
+		: CHORUS_PRESENT_DEPTH_DEFAULT;
 }
 
 function clampText(raw: unknown, max: number): string {
@@ -159,7 +180,12 @@ export function normalizeChorusChatState(raw: unknown): ChorusChatState {
 		members.push(member);
 		if (members.length === CHORUS_MAX_MEMBERS) break;
 	}
-	return { enabled: obj.enabled === true, members };
+	return {
+		enabled: obj.enabled === true,
+		members,
+		presentOnly: obj.presentOnly === true,
+		presentDepth: clampPresentDepth(obj.presentDepth)
+	};
 }
 
 function normalizeMemberReading(raw: unknown): ChorusMemberReading | null {
@@ -188,11 +214,18 @@ function normalizeReading(raw: unknown): ChorusReading | null {
 	const members = Array.isArray(obj.members)
 		? obj.members.map(normalizeMemberReading).filter((m): m is ChorusMemberReading => m !== null)
 		: [];
-	if (members.length === 0) return null;
-	return {
+	const skipped = Array.isArray(obj.skipped)
+		? obj.skipped.filter((id): id is string => typeof id === 'string' && id.length > 0)
+		: [];
+	// A read where nobody was in the scene asked no one and is still a read: dropping it would
+	// leave the reply looking unread, and it would be "read" again on every render.
+	if (members.length === 0 && skipped.length === 0) return null;
+	const reading: ChorusReading = {
 		at: typeof obj.at === 'number' && Number.isFinite(obj.at) ? obj.at : 0,
 		members
 	};
+	if (skipped.length) reading.skipped = skipped;
+	return reading;
 }
 
 /** The readings as stored. Same contract as the rest of the feature state: anything corrupt

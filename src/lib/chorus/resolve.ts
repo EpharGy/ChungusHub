@@ -32,6 +32,8 @@ export interface ChorusPromptSettings {
 	role: SteeringRole;
 	/** How many replies back a reading may come from: 0 = only the newest reply's own. */
 	staleLimit: number;
+	/** Read every this-many replies (`repliesUntilRead`); 1 is every reply. */
+	every: number;
 }
 
 /** What assembly is handed: the lines, and where they go. The wrapper is filled inside
@@ -44,6 +46,35 @@ export interface ChorusPromptInput {
 }
 
 export const CHORUS_STALE_LIMIT_MAX = 5;
+export const CHORUS_EVERY_MAX = 10;
+
+/**
+ * How many replies after `replyId` the next scheduled read falls: 0 means this reply is read.
+ *
+ * Counted by the reply's position among the assistant turns on its path, the first reply
+ * read and then every `every`-th after it. Position rather than a running counter because
+ * it is the same for every sibling at that point: a swipe or a regenerate is read exactly
+ * when the reply it replaced was, and walking to another branch needs no bookkeeping.
+ */
+export function repliesUntilRead(path: readonly PathTurn[], replyId: string, every: number): number {
+	const step = Math.max(1, Math.round(every));
+	let position = 0;
+	for (const turn of path) {
+		if (turn.role === 'assistant') position += 1;
+		if (turn.id === replyId) break;
+	}
+	return (step - ((position - 1) % step)) % step;
+}
+
+/**
+ * How far back a reading may come from, once the schedule is counted in. The replies between
+ * scheduled reads are never read, so the reader's limit is counted from the last reply that
+ * was meant to be: reading every third reply with a limit of 1 reaches back 3, past the two
+ * skipped replies and one more for a read still in flight. At every reply it is the limit as set.
+ */
+export function effectiveStaleLimit(settings: Pick<ChorusPromptSettings, 'staleLimit' | 'every'>): number {
+	return settings.staleLimit + Math.max(1, Math.round(settings.every)) - 1;
+}
 
 /**
  * The reading the next reply should use, and which reply it belongs to.
@@ -143,7 +174,7 @@ export function chorusForPrompt(
 	settings: ChorusPromptSettings
 ): ChorusPromptInput | undefined {
 	if (!settings.enabled || !state.enabled) return undefined;
-	const found = readingFor(path, readings, settings.staleLimit);
+	const found = readingFor(path, readings, effectiveStaleLimit(settings));
 	if (!found) return undefined;
 	const intentions = renderIntentions(found.reading, state);
 	if (!intentions) return undefined;

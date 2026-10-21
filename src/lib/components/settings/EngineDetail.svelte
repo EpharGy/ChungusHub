@@ -20,7 +20,7 @@
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import PillRow from '$lib/components/ui/PillRow.svelte';
 	import { STEERING_ROLES, type SteeringRole } from '$lib/types/steering';
-	import { CHORUS_STALE_LIMIT_MAX } from '$lib/chorus/resolve';
+	import { CHORUS_EVERY_MAX, CHORUS_STALE_LIMIT_MAX } from '$lib/chorus/resolve';
 	import { engineById, type EngineId } from '$lib/engines/registry';
 	import {
 		FEATURE_PROMPT_DEFAULTS,
@@ -410,7 +410,8 @@
 				<p class="placement-note">
 					At the same depth as a lorebook entry, the answers go first. If you send before the
 					characters have answered the newest reply, the last answers within this range are
-					used instead.
+					used instead. When they are only asked every few replies, the range counts from the
+					last reply they were asked about.
 				</p>
 			</div>
 		</section>
@@ -420,6 +421,21 @@
 				<span class="card-title">Asking</span>
 			</div>
 			<div class="card-body">
+				<div class="toggle-row">
+					<label for="chorus-every" class="slider-label">Ask every</label>
+					<span class="every-field">
+						<input
+							id="chorus-every"
+							class="input-base every-input"
+							type="number"
+							min="1"
+							max={CHORUS_EVERY_MAX}
+							value={featurePromptsStore.chorusEvery}
+							onchange={(e) => featurePromptsStore.setChorusEvery(Number(e.currentTarget.value))}
+						/>
+						{featurePromptsStore.chorusEvery === 1 ? 'reply' : 'replies'}
+					</span>
+				</div>
 				<div class="toggle-row" use:toggleRow>
 					<span class="slider-label">One character at a time</span>
 					<Toggle
@@ -445,8 +461,10 @@
 					/>
 				</div>
 				<p class="placement-note">
-					All at once is faster. One at a time is for connections that refuse several calls at
-					once.
+					Between the replies they are asked about, the characters' last answers keep going into
+					the prompt. All at once is faster. One at a time is for connections that refuse several
+					calls at once, and lets a connection that caches the start of a prompt reuse the lore
+					and history the characters share.
 				</p>
 			</div>
 		</section>
@@ -568,6 +586,21 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.45rem;
+	}
+
+	.every-field {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.8rem;
+		color: var(--color-text-secondary);
+	}
+
+	.every-input {
+		width: 4rem;
+		padding: 0.3rem 0.5rem;
+		font-family: var(--font-mono);
+		font-size: 0.85rem;
 	}
 
 	.placement-note {

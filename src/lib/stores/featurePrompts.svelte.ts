@@ -13,7 +13,7 @@ import { DEFAULT_EXTRACT_TEMPLATE, DEFAULT_PROMOTE_TEMPLATE } from '$lib/memory/
 import { sanitizeMemoryDefaults } from '$lib/memory/config';
 import type { MemoryConfig } from '$lib/memory/types';
 import { clampSteeringDepth, STEERING_ROLES, type SteeringDefaults, type SteeringRole } from '$lib/types/steering';
-import { CHORUS_STALE_LIMIT_MAX, type ChorusPromptSettings } from '$lib/chorus/resolve';
+import { CHORUS_EVERY_MAX, CHORUS_STALE_LIMIT_MAX, type ChorusPromptSettings } from '$lib/chorus/resolve';
 
 const SETTINGS_KEY = 'featurePrompts';
 
@@ -66,20 +66,26 @@ Reply with only this JSON and nothing else: {"sprite": "<label>"}
 // model reads "(none set)" as a goal that has not changed and never fills it. So does a
 // finished one: a goal already reached reads as unchanged and outlives the scene it was for,
 // which is why reached, dropped and overtaken are named as reasons to replace it.
-const DEFAULT_CHORUS_AGENT_PROMPT = `You are {{member}}, a character in an ongoing story. You are not writing the story. Your job is to say what {{member}} wants at the moment the last message ends on, and what {{member}} would do about it, so the writer can use it.
+//
+// Everything every character shares comes first and nothing about the character until after
+// it: the lore and the history are most of the call, and a provider that caches a repeated
+// opening (prompt caching) bills them once per read rather than once per character. A single
+// {{member}} near the top would make every character's prompt differ from the first line.
+const DEFAULT_CHORUS_AGENT_PROMPT = `You are about to play one character in an ongoing story. You are not writing the story. Your job is to say what that character wants at the moment the last message ends on, and what they would do about it, so the writer can use it.
 
 What the story knows about its world and its people:
 {{lorebook}}
+
+The story so far:
+{{chatHistoryLast6}}
+
+The character you are playing: {{member}}
+Also in the story: {{castList}}
 
 {{member}}'s goals:
 - Immediate (this scene): {{immediateGoal}}
 - Short term (the next few days): {{shortTermGoal}}
 - Long term (what drives them): {{longTermGoal}}
-
-Also in the story: {{castList}}
-
-The story so far:
-{{chatHistoryLast6}}
 
 Answer as {{member}} would think it, in character. Be specific and decisive, and keep each field to one or two sentences. Reply with only this JSON and nothing else:
 {"want": "<what {{member}} wants right now>", "intends": "<what {{member}} would do or say next>", "goals": {"immediate": "<a new goal, if this one needs replacing>", "shortTerm": "<a new goal, if this one needs replacing>", "longTerm": "<a new goal, if this one needs replacing>"}}
@@ -154,6 +160,8 @@ interface FeaturePromptsState {
 	chorusSequential: boolean;
 	/** How many replies back a reading may still be used (chorus/resolve.ts `readingFor`). */
 	chorusStaleLimit: number;
+	/** Read every this-many replies, 1 being every reply (chorus/resolve.ts `repliesUntilRead`). */
+	chorusEvery: number;
 	/** The placement every steering note inherits until it overrides one (a note's own
 	 *  `depth`/`role` are tri-state, `null` = inherit; see types/steering.ts). */
 	steeringDefaultDepth: number;
@@ -173,6 +181,10 @@ interface FeaturePromptsState {
 
 function clampChorusStaleLimit(value: number): number {
 	return Number.isFinite(value) ? Math.min(CHORUS_STALE_LIMIT_MAX, Math.max(0, Math.round(value))) : 1;
+}
+
+function clampChorusEvery(value: number): number {
+	return Number.isFinite(value) ? Math.min(CHORUS_EVERY_MAX, Math.max(1, Math.round(value))) : 1;
 }
 
 function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsState {
@@ -195,6 +207,7 @@ function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsStat
 			: 'system',
 		chorusSequential: raw?.chorusSequential === true,
 		chorusStaleLimit: clampChorusStaleLimit(raw?.chorusStaleLimit ?? 1),
+		chorusEvery: clampChorusEvery(raw?.chorusEvery ?? 1),
 		steeringDefaultDepth: clampSteeringDepth(raw?.steeringDefaultDepth ?? 0),
 		steeringDefaultRole: STEERING_ROLES.includes(raw?.steeringDefaultRole as SteeringRole)
 			? (raw?.steeringDefaultRole as SteeringRole)
@@ -221,6 +234,7 @@ class FeaturePromptsStore {
 		chorusRole: 'system',
 		chorusSequential: false,
 		chorusStaleLimit: 1,
+		chorusEvery: 1,
 		steeringDefaultDepth: 0,
 		steeringDefaultRole: 'system',
 		memoryDefaults: {}
@@ -313,6 +327,10 @@ class FeaturePromptsStore {
 		return this.state.chorusStaleLimit;
 	}
 
+	get chorusEvery(): number {
+		return this.state.chorusEvery;
+	}
+
 	/** Everything `chorusForPrompt` needs from here, in one object, so the send and the meter
 	 *  cannot hand it two different halves. */
 	get chorusPromptSettings(): ChorusPromptSettings {
@@ -321,7 +339,8 @@ class FeaturePromptsStore {
 			wrapper: this.promptFor('chorusWrapper'),
 			depth: this.state.chorusDepth,
 			role: this.state.chorusRole,
-			staleLimit: this.state.chorusStaleLimit
+			staleLimit: this.state.chorusStaleLimit,
+			every: this.state.chorusEvery
 		};
 	}
 
@@ -443,6 +462,11 @@ class FeaturePromptsStore {
 
 	setChorusStaleLimit(value: number): void {
 		this.state = { ...this.state, chorusStaleLimit: clampChorusStaleLimit(value) };
+		this.persist();
+	}
+
+	setChorusEvery(value: number): void {
+		this.state = { ...this.state, chorusEvery: clampChorusEvery(value) };
 		this.persist();
 	}
 }
