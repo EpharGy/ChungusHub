@@ -61,7 +61,9 @@ Reply with only this JSON and nothing else: {"sprite": "<label>"}
 // One call per character on the chat's Chorus list, after every reply. {{lorebook}} is the
 // triggered lore exactly as the story prompt would get it, which is where the cast's sheets
 // live; {{chatHistoryLast6}} is the author's call, like Sprites' three. Goals are asked for
-// only when they move, so an answer without them means unchanged, never cleared.
+// when they move or have never been set, so an answer without them means unchanged, never
+// cleared. The unset case has to be spelled out: told only "leave it out if unchanged", a
+// model reads "(none set)" as a goal that has not changed and never fills it.
 const DEFAULT_CHORUS_AGENT_PROMPT = `You are {{member}}, a character in an ongoing story. You are not writing the story. Your job is to say what {{member}} wants at the moment the last message ends on, and what {{member}} would do about it, so the writer can use it.
 
 What the story knows about its world and its people:
@@ -78,8 +80,8 @@ The story so far:
 {{chatHistoryLast6}}
 
 Answer as {{member}} would think it, in character. Be specific and decisive, and keep each field to one or two sentences. Reply with only this JSON and nothing else:
-{"want": "<what {{member}} wants right now>", "intends": "<what {{member}} would do or say next>", "goals": {"immediate": "<only if it changed>", "shortTerm": "<only if it changed>", "longTerm": "<only if it changed>"}}
-Leave a goal out of "goals" if it has not changed.`;
+{"want": "<what {{member}} wants right now>", "intends": "<what {{member}} would do or say next>", "goals": {"immediate": "<if new or not set>", "shortTerm": "<if new or not set>", "longTerm": "<if new or not set>"}}
+A goal marked (none set) has not been decided yet: decide one for {{member}} from what the story shows, and include it. Leave a goal out of "goals" only when it is already set and has not changed.`;
 
 // Soft on purpose: the block is material for the writer, never orders. {{intentions}} is one
 // labelled entry per character who answered.
