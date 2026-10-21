@@ -63,16 +63,18 @@ Reply with only this JSON and nothing else: {"sprite": "<label>"}
 // live; {{chatHistoryLast6}} is the author's call, like Sprites' three. Goals are asked for
 // when they move or have never been set, so an answer without them means unchanged, never
 // cleared. The unset case has to be spelled out: told only "leave it out if unchanged", a
-// model reads "(none set)" as a goal that has not changed and never fills it.
+// model reads "(none set)" as a goal that has not changed and never fills it. So does a
+// finished one: a goal already reached reads as unchanged and outlives the scene it was for,
+// which is why reached, dropped and overtaken are named as reasons to replace it.
 const DEFAULT_CHORUS_AGENT_PROMPT = `You are {{member}}, a character in an ongoing story. You are not writing the story. Your job is to say what {{member}} wants at the moment the last message ends on, and what {{member}} would do about it, so the writer can use it.
 
 What the story knows about its world and its people:
 {{lorebook}}
 
 {{member}}'s goals:
-- Immediate: {{immediateGoal}}
-- Short term: {{shortTermGoal}}
-- Long term: {{longTermGoal}}
+- Immediate (this scene): {{immediateGoal}}
+- Short term (the next few days): {{shortTermGoal}}
+- Long term (what drives them): {{longTermGoal}}
 
 Also in the story: {{castList}}
 
@@ -80,8 +82,8 @@ The story so far:
 {{chatHistoryLast6}}
 
 Answer as {{member}} would think it, in character. Be specific and decisive, and keep each field to one or two sentences. Reply with only this JSON and nothing else:
-{"want": "<what {{member}} wants right now>", "intends": "<what {{member}} would do or say next>", "goals": {"immediate": "<if new or not set>", "shortTerm": "<if new or not set>", "longTerm": "<if new or not set>"}}
-A goal marked (none set) has not been decided yet: decide one for {{member}} from what the story shows, and include it. Leave a goal out of "goals" only when it is already set and has not changed.`;
+{"want": "<what {{member}} wants right now>", "intends": "<what {{member}} would do or say next>", "goals": {"immediate": "<a new goal, if this one needs replacing>", "shortTerm": "<a new goal, if this one needs replacing>", "longTerm": "<a new goal, if this one needs replacing>"}}
+Check each goal against the last message. Replace it when it has been reached, given up, or overtaken by what happened, and when it is marked (none set): a goal is for what {{member}} is still working towards, never something already done. The immediate goal belongs to the current scene, so it changes whenever the scene does. Leave a goal out of "goals" only when {{member}} is still working towards it.`;
 
 // Soft on purpose: the block is material for the writer, never orders. {{intentions}} is one
 // labelled entry per character who answered.
