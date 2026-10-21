@@ -23,6 +23,7 @@ import {
 	chorusForPrompt,
 	effectiveGoals,
 	effectiveStaleLimit,
+	isOpening,
 	readingFor,
 	renderIntentions,
 	repliesUntilRead,
@@ -168,13 +169,14 @@ describe('chorus: which reading the next reply uses', () => {
 	});
 
 	test('an unread newest reply falls back to the one before it within the limit', () => {
-		const path = [msg('a2', 'assistant'), msg('u3', 'user'), msg('a4', 'assistant'), msg('u5', 'user')];
+		const path = [msg('u1', 'user'), msg('a2', 'assistant'), msg('u3', 'user'), msg('a4', 'assistant'), msg('u5', 'user')];
 		expect(readingFor(path, readings, 1)?.messageId).toBe('a2');
 		expect(readingFor(path, readings, 0)).toBeNull();
 	});
 
 	test('past the limit there is nothing, not something old', () => {
 		const path = [
+			msg('u1', 'user'),
 			msg('a2', 'assistant'),
 			msg('a4', 'assistant'),
 			msg('a6', 'assistant'),
@@ -185,18 +187,45 @@ describe('chorus: which reading the next reply uses', () => {
 	});
 });
 
+describe('chorus: the opening is never read', () => {
+	const state: ChorusChatState = { enabled: true, members: [member('x', 'Rowan')], presentOnly: false, presentDepth: 4 };
+
+	test('every assistant turn before the first user turn is the opening, and nothing after it is', () => {
+		const path = [msg('a0', 'assistant'), msg('a1', 'assistant'), msg('u2', 'user'), msg('a3', 'assistant')];
+		expect(['a0', 'a1', 'u2', 'a3'].map((id) => isOpening(path, id))).toEqual([true, true, false, false]);
+		expect(isOpening([msg('a0', 'assistant')], 'a0')).toBe(true);
+		expect(isOpening(path, 'missing')).toBe(false);
+	});
+
+	test("a reading stored on the opening never reaches the first reply's prompt", () => {
+		const readings: ChorusReadings = { a0: reading(1, [said('x', 'Rowan')]) };
+		const send = [msg('a0', 'assistant'), msg('u1', 'user', 'hello')];
+		expect(readingFor(send, readings, 5)).toBeNull();
+		expect(chorusForPrompt(send, state, readings, SETTINGS)).toBeUndefined();
+	});
+
+	test("nor do the opening reading's goals", () => {
+		const rowan = member('x', 'Rowan', { goals: { immediate: 'roster now', shortTerm: '', longTerm: '' } });
+		const readings: ChorusReadings = {
+			a0: reading(1, [said('x', 'Rowan', { goals: { immediate: 'guessed', shortTerm: '', longTerm: '' } })])
+		};
+		const path = [msg('a0', 'assistant'), msg('u1', 'user'), msg('a2', 'assistant')];
+		expect(effectiveGoals(rowan, path, readings).immediate).toBe('roster now');
+	});
+});
+
 describe('chorus: goals across a branched path', () => {
 	const rowan = member('x', 'Rowan', { goals: { immediate: 'roster now', shortTerm: 'roster soon', longTerm: '' } });
 
 	test('with no reading on the path, the roster speaks', () => {
-		expect(effectiveGoals(rowan, [msg('a1', 'assistant')], {})).toEqual(rowan.goals);
+		expect(effectiveGoals(rowan, [msg('u0', 'user'), msg('a1', 'assistant')], {})).toEqual(rowan.goals);
 	});
 
 	test('the newest reading on the path wins over the roster, at any distance', () => {
 		const readings: ChorusReadings = {
 			a1: reading(1, [said('x', 'Rowan', { goals: { immediate: 'read now', shortTerm: '', longTerm: 'read long' } })])
 		};
-		const path = [msg('a1', 'assistant'), msg('u2', 'user'), msg('a3', 'assistant'), msg('a5', 'assistant')];
+		const path = [msg('u0', 'user'), msg('a1', 'assistant'), msg('u2', 'user'), msg('a3', 'assistant'), msg('a5', 'assistant')];
 		expect(effectiveGoals(rowan, path, readings)).toEqual({
 			immediate: 'read now',
 			shortTerm: 'roster soon',
@@ -209,21 +238,21 @@ describe('chorus: goals across a branched path', () => {
 		const readings: ChorusReadings = {
 			a1: reading(1, [said('x', 'Rowan', { goals: { immediate: 'read now', shortTerm: '', longTerm: '' } })])
 		};
-		expect(effectiveGoals(pinned, [msg('a1', 'assistant')], readings).immediate).toBe('roster now');
+		expect(effectiveGoals(pinned, [msg('u0', 'user'), msg('a1', 'assistant')], readings).immediate).toBe('roster now');
 	});
 
 	test('a reading on another branch is never consulted', () => {
 		const readings: ChorusReadings = {
 			elsewhere: reading(9, [said('x', 'Rowan', { goals: { immediate: 'other branch', shortTerm: '', longTerm: '' } })])
 		};
-		expect(effectiveGoals(rowan, [msg('a1', 'assistant')], readings).immediate).toBe('roster now');
+		expect(effectiveGoals(rowan, [msg('u0', 'user'), msg('a1', 'assistant')], readings).immediate).toBe('roster now');
 	});
 
 	test("a failed answer's goals do not count", () => {
 		const readings: ChorusReadings = {
 			a1: reading(1, [said('x', 'Rowan', { error: 'timed out', goals: { immediate: 'junk', shortTerm: '', longTerm: '' } })])
 		};
-		expect(effectiveGoals(rowan, [msg('a1', 'assistant')], readings).immediate).toBe('roster now');
+		expect(effectiveGoals(rowan, [msg('u0', 'user'), msg('a1', 'assistant')], readings).immediate).toBe('roster now');
 	});
 });
 
@@ -250,7 +279,7 @@ describe('chorus: the block', () => {
 	});
 
 	test('nothing when the engine is off, the chat is off, or no reading is in range', () => {
-		const path = [msg('a1', 'assistant'), msg('u2', 'user')];
+		const path = [msg('u0', 'user'), msg('a1', 'assistant'), msg('u2', 'user')];
 		const readings: ChorusReadings = { a1: reading(1, [said('x', 'Rowan')]) };
 		expect(chorusForPrompt(path, state, readings, SETTINGS)).toBeDefined();
 		expect(chorusForPrompt(path, state, readings, { ...SETTINGS, enabled: false })).toBeUndefined();
@@ -409,7 +438,7 @@ describe('chorus: only characters in the scene', () => {
 			a2: { at: 2, members: [said('y', 'Tamsin')], skipped: ['x'] }
 		};
 		expect(renderIntentions(readings.a2, state)).not.toContain('Rowan');
-		const path = [msg('a1', 'assistant'), msg('a2', 'assistant')];
+		const path = [msg('u0', 'user'), msg('a1', 'assistant'), msg('a2', 'assistant')];
 		expect(effectiveGoals(rowan, path, readings).immediate).toBe('earlier');
 	});
 
@@ -421,7 +450,7 @@ describe('chorus: only characters in the scene', () => {
 });
 
 describe('chorus: asking every few replies', () => {
-	const path = ['a1', 'u2', 'a3', 'u4', 'a5', 'u6', 'a7'].map((id) => msg(id, id[0] === 'a' ? 'assistant' : 'user'));
+	const path = ['u0', 'a1', 'u2', 'a3', 'u4', 'a5', 'u6', 'a7'].map((id) => msg(id, id[0] === 'a' ? 'assistant' : 'user'));
 
 	test('every reply is read at 1', () => {
 		for (const id of ['a1', 'a3', 'a5', 'a7']) expect(repliesUntilRead(path, id, 1)).toBe(0);
@@ -429,6 +458,11 @@ describe('chorus: asking every few replies', () => {
 
 	test('the first reply is read, then every n-th after it', () => {
 		expect(['a1', 'a3', 'a5', 'a7'].map((id) => repliesUntilRead(path, id, 3))).toEqual([0, 2, 1, 0]);
+	});
+
+	test('the opening is not on the schedule, so the first reply after it is read', () => {
+		const opened = [msg('a0', 'assistant'), ...path];
+		expect(['a1', 'a3', 'a5', 'a7'].map((id) => repliesUntilRead(opened, id, 3))).toEqual([0, 2, 1, 0]);
 	});
 
 	test('the reach back grows by the replies the schedule skips', () => {
@@ -440,7 +474,7 @@ describe('chorus: asking every few replies', () => {
 	test('between reads, the last read reply still feeds the prompt', () => {
 		const state: ChorusChatState = { enabled: true, members: [member('x', 'Rowan')], presentOnly: false, presentDepth: 4 };
 		const readings: ChorusReadings = { a1: reading(1, [said('x', 'Rowan')]) };
-		const send = [...path.slice(0, 5), msg('u6', 'user', '.')];
+		const send = [...path.slice(0, 6), msg('u6', 'user', '.')];
 		expect(chorusForPrompt(send, state, readings, SETTINGS)).toBeUndefined();
 		expect(chorusForPrompt(send, state, readings, { ...SETTINGS, every: 3 })?.intentions).toContain('Rowan');
 	});

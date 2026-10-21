@@ -47,6 +47,7 @@
 		if (!roster.enabled) return 'Off in this chat.';
 		if (!roster.members.some((m) => m.enabled)) return 'Add a character, or switch one on, to start.';
 		if (!chorusStore.newestReply) return 'Waiting for a reply to read.';
+		if (status === 'opening') return 'The opening is not read. The characters are asked after the first reply.';
 		if (status === 'between') {
 			const n = chorusStore.repliesUntilRead;
 			const next = n === 1 ? 'the next reply' : `${n} replies from now`;
@@ -92,7 +93,7 @@
 			icon="refresh"
 			label="Ask the characters about the newest reply again"
 			onclick={() => void chorusStore.runAgain()}
-			disabled={!running || status === 'reading' || !chorusStore.newestReply}
+			disabled={!running || status === 'reading' || status === 'opening' || !chorusStore.newestReply}
 		/>
 	{/snippet}
 

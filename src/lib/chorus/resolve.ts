@@ -48,21 +48,43 @@ export interface ChorusPromptInput {
 export const CHORUS_STALE_LIMIT_MAX = 5;
 export const CHORUS_EVERY_MAX = 10;
 
+/** Where the opening ends: the index of the first user turn, or the path's length when the
+ *  reader has not written one yet. Every assistant turn before it is the opening. */
+function openingEnd(path: readonly PathTurn[]): number {
+	const i = path.findIndex((turn) => turn.role === 'user');
+	return i < 0 ? path.length : i;
+}
+
+/**
+ * Whether `replyId` is part of the opening: an assistant turn no user turn comes before (a
+ * greeting, an opening scene). Chorus never reads one and never uses a reading stored on one.
+ *
+ * An opening is written before the story has started, so a reading of it is the agents
+ * guessing at a scene nobody has entered yet, with only the roster to say who is in it. That
+ * reading then feeds the first real reply, which is the worst place for a guess.
+ */
+export function isOpening(path: readonly PathTurn[], replyId: string): boolean {
+	const i = path.findIndex((turn) => turn.id === replyId);
+	return i >= 0 && i < openingEnd(path);
+}
+
 /**
  * How many replies after `replyId` the next scheduled read falls: 0 means this reply is read.
  *
- * Counted by the reply's position among the assistant turns on its path, the first reply
- * read and then every `every`-th after it. Position rather than a running counter because
+ * Counted by the reply's position among the assistant turns on its path after the opening
+ * (`isOpening`), the first reply read and then every `every`-th after it. An opening is not on
+ * the schedule at all and answers 0; the caller asks `isOpening` first. Position rather than a running counter because
  * it is the same for every sibling at that point: a swipe or a regenerate is read exactly
  * when the reply it replaced was, and walking to another branch needs no bookkeeping.
  */
 export function repliesUntilRead(path: readonly PathTurn[], replyId: string, every: number): number {
 	const step = Math.max(1, Math.round(every));
 	let position = 0;
-	for (const turn of path) {
-		if (turn.role === 'assistant') position += 1;
-		if (turn.id === replyId) break;
+	for (let i = openingEnd(path); i < path.length; i++) {
+		if (path[i].role === 'assistant') position += 1;
+		if (path[i].id === replyId) break;
 	}
+	if (position === 0) return 0;
 	return (step - ((position - 1) % step)) % step;
 }
 
@@ -83,7 +105,8 @@ export function effectiveStaleLimit(settings: Pick<ChorusPromptSettings, 'staleL
  * it 1 back. The first reply holding a reading within `staleLimit` wins. A send made while a
  * run is still in flight therefore goes out with the reading before it, rather than waiting
  * or going out with nothing. Past the limit it is nothing: an old reading describes a scene
- * the story has left.
+ * the story has left. The opening is never consulted, so a reading stored on one before this
+ * rule existed goes nowhere.
  */
 export function readingFor(
 	path: readonly PathTurn[],
@@ -91,7 +114,7 @@ export function readingFor(
 	staleLimit: number
 ): { messageId: string; reading: ChorusReading } | null {
 	let back = 0;
-	for (let i = path.length - 1; i >= 0; i--) {
+	for (let i = path.length - 1; i >= openingEnd(path); i--) {
 		const turn = path[i];
 		if (turn.role !== 'assistant') continue;
 		if (back > staleLimit) return null;
@@ -112,7 +135,7 @@ export function readingFor(
  *
  * Walking the PATH rather than the stored readings is what makes goals branch-correct: a
  * reading on another branch is never consulted, so a swipe or a walk to another branch moves
- * the goals with it at no cost.
+ * the goals with it at no cost. A reading on the opening is skipped, as `readingFor` skips it.
  */
 export function effectiveGoals(
 	member: ChorusMember,
@@ -120,7 +143,7 @@ export function effectiveGoals(
 	readings: ChorusReadings
 ): ChorusGoals {
 	let fromReading: ChorusGoals | null = null;
-	for (let i = path.length - 1; i >= 0 && !fromReading; i--) {
+	for (let i = path.length - 1; i >= openingEnd(path) && !fromReading; i--) {
 		const turn = path[i];
 		if (turn.role !== 'assistant') continue;
 		const said = readings[turn.id]?.members.find((m) => m.memberId === member.id && !m.error);

@@ -25,7 +25,7 @@ import { registerFloatingPanel } from '$lib/stores/floating-panels.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { askChorusMember, chorusContext } from '$lib/services/chorusService';
-import { effectiveGoals, effectiveStaleLimit, readingFor, repliesUntilRead } from '$lib/chorus/resolve';
+import { effectiveGoals, effectiveStaleLimit, isOpening, readingFor, repliesUntilRead } from '$lib/chorus/resolve';
 import { splitByPresence } from '$lib/chorus/presence';
 import {
 	CHORUS_MAX_MEMBERS,
@@ -45,8 +45,9 @@ import {
 import type { Message } from '$lib/types/chat';
 
 /** What the engine is doing about the newest reply, in one word. Sprites' vocabulary, plus
- *  `between` for a reply the schedule does not read (Settings → Engines → Chorus). */
-export type ChorusStatus = 'read' | 'reading' | 'failed' | 'idle' | 'between';
+ *  `between` for a reply the schedule does not read (Settings → Engines → Chorus) and
+ *  `opening` for a greeting or opening scene, which is never read (resolve.ts `isOpening`). */
+export type ChorusStatus = 'read' | 'reading' | 'failed' | 'idle' | 'between' | 'opening';
 
 /** Per device: whether the panel was left standing. A plain flag, since the panel follows
  *  whichever chat is open rather than belonging to one. */
@@ -119,6 +120,12 @@ class ChorusStore {
 		return null;
 	});
 
+	/** Whether the newest reply is still the opening, which Chorus never reads. */
+	atOpening = $derived.by((): boolean => {
+		const reply = this.newestReply;
+		return reply !== null && isOpening(this.path, reply.id);
+	});
+
 	/** The newest reply's own reading, if it has one yet. */
 	newestReading = $derived.by((): ChorusReading | null => {
 		const reply = this.newestReply;
@@ -148,6 +155,7 @@ class ChorusStore {
 	status = $derived.by((): ChorusStatus => {
 		const reply = this.newestReply;
 		if (!reply) return 'idle';
+		if (this.atOpening) return 'opening';
 		if (this.inFlight.has(reply.id)) return 'reading';
 		if (this.failed.get(reply.id) === reply.content) return 'failed';
 		const reading = this.readings[reply.id];
@@ -302,13 +310,16 @@ class ChorusStore {
 	 * than a coincidence of what the path holds mid-stream.
 	 *
 	 * A reply between scheduled reads is left alone unless `force`d, which is the run button:
-	 * asking by hand is always the reader's call.
+	 * asking by hand is always the reader's call. The opening is left alone even then: it is
+	 * written before the story starts, so the agents would have only the roster to say who is
+	 * in the scene, and that guess would feed the first real reply.
 	 */
 	ensureRead(force = false): void {
 		if (!this.active || chatStore.stream !== null) return;
 		const reply = this.newestReply;
 		const chatId = this.chatId;
 		if (!reply || !chatId) return;
+		if (this.atOpening) return;
 		if (!force && this.repliesUntilRead > 0) return;
 		if (this.readings[reply.id]) return;
 		if (this.inFlight.has(reply.id)) return;
